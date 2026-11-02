@@ -4,6 +4,9 @@ import dev.beacon.core.api.ChatsApi
 import dev.beacon.core.api.OwuiApi
 import dev.beacon.core.api.OwuiApiException
 import dev.beacon.core.data.local.MessageEntity
+import dev.beacon.core.render.ChatPart
+import dev.beacon.core.render.FoldedMessage
+import dev.beacon.core.render.PartBuilder
 import dev.beacon.core.sse.OwuiStreamParser
 import dev.beacon.core.sse.SseFrameScanner
 import dev.beacon.core.sse.StreamEvent
@@ -62,6 +65,8 @@ class ChatEngine(
         val pending: Boolean = false,
         val sourceCount: Int = 0,
         val followUps: List<String> = emptyList(),
+        /** Render-part list (§4 contract) — the UI renders ONLY through this. */
+        val parts: List<ChatPart> = emptyList(),
     )
 
     data class ChatUiModel(
@@ -86,6 +91,8 @@ class ChatEngine(
     private var assistantContent = StringBuilder()
     private var assistantReasoning = StringBuilder()
     private var outputAdopted = false
+    private var outputSeen = false
+    private var outItems: List<JsonElement> = emptyList()
     private var lastRoomWrite = 0L
     private var activeModelId: String? = null
     private var projectionSnapshot: List<ProjectionMessage> = emptyList()
@@ -114,13 +121,50 @@ class ChatEngine(
         )
     }
 
-    private fun renderOf(entity: MessageEntity): RenderMessage = RenderMessage(
-        id = entity.messageId,
-        role = entity.role,
-        markdown = entity.content.orEmpty(),
-        reasoning = entity.reasoningText(json),
-        pending = !entity.done,
-    )
+    private fun renderOf(entity: MessageEntity): RenderMessage {
+        val outElement = entity.outputJson?.let { runCatching { json.parseToJsonElement(it) }.getOrNull() }
+        val outputItems = (outElement as? kotlinx.serialization.json.JsonArray)?.toList() ?: emptyList()
+        val base = RenderMessage(
+            id = entity.messageId,
+            role = entity.role,
+            markdown = entity.content.orEmpty(),
+            reasoning = entity.reasoningText(json),
+            pending = !entity.done,
+        )
+        return base.copy(
+            parts = PartBuilder.build(
+                FoldedMessage(
+                    contentMd = entity.content.orEmpty(),
+                    outputItems = outputItems,
+                    outputSeen = outputItems.isNotEmpty(),
+                    streaming = !entity.done,
+                ),
+            ),
+        )
+    }
+
+    /** Recomputes the streaming assistant's part list from accumulated fold state. */
+    private fun foldPartsFor(id: String, transform: (RenderMessage) -> RenderMessage) =
+        patch { copy(messages = messages.map { current ->
+            if (current.id == id) {
+                val next = transform(current)
+                next.copy(
+                    parts = PartBuilder.build(
+                        FoldedMessage(
+                            contentMd = assistantContent.toString(),
+                            reasoningMd = assistantReasoning.toString().takeIf { it.isNotEmpty() },
+                            outputItems = outItems,
+                            outputSeen = outputSeen,
+                            sourceCount = next.sourceCount,
+                            followUps = next.followUps,
+                            streaming = true,
+                        ),
+                    ),
+                )
+            } else {
+                current
+            }
+        }) }
 
     /** Intent: send [text] with [modelId]; creates the chat server-side when fresh. */
     fun send(text: String, modelId: String) {
@@ -292,27 +336,31 @@ class ChatEngine(
         when (event) {
             is StreamEvent.Content -> {
                 assistantContent.append(event.text)
-                patchAssistant(assistantMessageId) { it.copy(markdown = assistantContent.toString()) }
+                foldPartsFor(assistantMessageId) { it.copy(markdown = assistantContent.toString()) }
                 maybeWriteThrough(chatId, assistantMessageId)
             }
             is StreamEvent.Reasoning -> {
                 assistantReasoning.append(event.text)
-                patchAssistant(assistantMessageId) { it.copy(reasoning = assistantReasoning.toString()) }
+                foldPartsFor(assistantMessageId) { it.copy(reasoning = assistantReasoning.toString()) }
             }
             is StreamEvent.Status -> patch { copy(statusText = if (event.done == true) null else event.text) }
             is StreamEvent.OutputSnapshot -> {
+                outItems = event.items
                 if (!outputAdopted) {
                     val displayed = displayTextFromOutput(event.items)
                     if (displayed != null && assistantContent.isBlank()) {
                         outputAdopted = true
-                        patchAssistant(assistantMessageId) { it.copy(markdown = displayed) }
                     }
                 }
+                // §17: the presence ALONE makes outputs authoritative (even empty[]);
+                // parts derive from outputs from here on.
+                outputSeen = true
+                foldPartsFor(assistantMessageId) { it.copy(markdown = displayTextFromOutput(event.items) ?: it.markdown) }
             }
             is StreamEvent.FollowUps ->
-                patchAssistant(assistantMessageId) { it.copy(followUps = event.items) }
+                foldPartsFor(assistantMessageId) { it.copy(followUps = event.items) }
             is StreamEvent.SourceEmitted ->
-                patchAssistant(assistantMessageId) { it.copy(sourceCount = it.sourceCount + 1) }
+                foldPartsFor(assistantMessageId) { it.copy(sourceCount = it.sourceCount + 1) }
             is StreamEvent.TitleUpdate -> chatId?.let { store.setChatTitle(it, event.title) }
             is StreamEvent.TagsUpdate -> chatId?.let { store.setChatTags(it, event.tags) }
             is StreamEvent.ChatListDiscovered -> adoptLearnedChat(event.chatId, assistantMessageId)

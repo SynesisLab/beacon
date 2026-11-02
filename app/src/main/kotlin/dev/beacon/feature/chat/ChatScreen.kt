@@ -234,32 +234,19 @@ private fun MessageBubble(
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                 modifier = Modifier.widthIn(max = 640.dp),
             ) {
-                MiniMarkdown(
-                    markdown = message.markdown,
-                    streaming = streaming,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                )
-            }
-            if (message.reasoning != null) { /* M2: reasoning drawer */ }
-            if (message.sourceCount > 0) {
-                Text(
-                    text = "📚 ${message.sourceCount}",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 8.dp, top = 4.dp),
-                )
-            }
-            if (message.followUps.isNotEmpty() && !streaming) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.padding(start = 4.dp, top = 6.dp),
-                ) {
-                    message.followUps.take(2).forEach { followUp ->
-                        Button(
-                            onClick = { onFollowUp(followUp) },
-                            shape = RoundedCornerShape(50),
-                        ) { Text(followUp, maxLines = 1) }
-                    }
+                if (message.parts.isEmpty()) {
+                    // Persisted legacy rows / tests without a part pipeline.
+                    MiniMarkdown(
+                        markdown = message.markdown,
+                        streaming = streaming,
+                        modifier = Modifier,
+                    )
+                } else {
+                    PartsView(
+                        parts = message.parts,
+                        onFollowUp = onFollowUp,
+                        modifier = Modifier,
+                    )
                 }
             }
         }

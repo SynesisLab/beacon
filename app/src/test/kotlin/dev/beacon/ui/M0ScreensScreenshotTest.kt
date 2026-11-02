@@ -12,8 +12,6 @@ import dev.beacon.core.data.local.ChatEntity
 import dev.beacon.feature.chat.ChatActions
 import dev.beacon.feature.chat.ChatScreen
 import dev.beacon.feature.chat.ChatViewModel
-import dev.beacon.feature.home.ChatListActions
-import dev.beacon.feature.home.HomeViewModel
 import dev.beacon.feature.onboarding.OnboardingActions
 import dev.beacon.feature.onboarding.OnboardingScreen
 import dev.beacon.feature.onboarding.OnboardingViewModel
@@ -55,7 +53,11 @@ class M0ScreensScreenshotTest {
         ChatEntity(chatId = "c1", updatedAt = 1730000000, title = "Weekly plan"),
         ChatEntity(chatId = "c2", updatedAt = 1730000001, title = "Ideas", pinned = true),
     )
-    private val home = HomeViewModel.UiState(chats = chats)
+    private val bootState = ChatViewModel.UiState(
+        engine = ChatEngine.ChatUiModel(),
+        models = models,
+        selectedModelId = "claude-sonnet-5",
+    )
     private val settings = SettingsViewModel.UiState(
         serverUrl = "https://ai.example.com",
         serverVersion = "0.7.2",
@@ -88,10 +90,22 @@ class M0ScreensScreenshotTest {
         submitApiKey = {}, setEmailDraft = {}, setPasswordDraft = {}, submitPassword = {},
         chooseModel = {}, finish = {},
     )
-    private val homeActions = ChatListActions(
-        onNewChat = {}, onOpenChat = {}, onRefresh = {}, onOpenSettings = {}, onOpenModels = {},
-        onTogglePin = {}, onDelete = {}, onLoadNextPage = {},
+    private val chatActionsAll = ChatActions(
+        onDraft = {}, onSend = {}, onStop = {}, onBack = {}, onOpenModelPicker = {},
+        onOpenFile = { _, _, _, _, _ -> },
+        onReadAloud = { _, _ -> }, onRegenerate = {},
+        onRate = { _, _ -> }, onShare = { _, _ -> },
     )
+
+    @Test
+    fun chat_boot_surface_light() {
+        // The boot/new-chat surface: greeting hero + composer (interface copy).
+        render {
+            // The empty UiState = no engine messages → the hero renders.
+            ChatScreen(bootState, chatActionsAll, showModelPicker = false, onDismissPicker = {}, onPickModel = {})
+        }
+        capture("Chat/boot_light")
+    }
 
     @Test
     fun onboarding_url_light() {
@@ -116,23 +130,6 @@ class M0ScreensScreenshotTest {
     fun onboarding_models_light() {
         render { OnboardingScreen(modelsState, onboardingActions) }
         capture("Onboarding/onboarding_models_light")
-    }
-
-    @Test
-    fun home_light() {
-        render {
-            dev.beacon.feature.home.HomeScreen(home, homeActions)
-        }
-        capture("Home/home_light")
-    }
-
-    @Test
-    @Config(qualifiers = "+night")
-    fun home_dark() {
-        render {
-            dev.beacon.feature.home.HomeScreen(home, homeActions)
-        }
-        capture("Home/home_dark")
     }
 
     @Test

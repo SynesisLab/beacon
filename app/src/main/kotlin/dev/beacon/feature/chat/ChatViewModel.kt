@@ -144,18 +144,9 @@ class ChatViewModel @Inject constructor(
             }
             selected.value = selected.value ?: serverDefault
         }
-        // Voice partials stream into the composer (§8.1); finals replace them.
-        viewModelScope.launch {
-            voice.partials().collect { partial ->
-                when (partial) {
-                    is dev.beacon.core.speech.VoicePartial.Partial ->
-                        draft.value = ((dictationBase ?: "") + " " + partial.text).trimStart()
-                    is dev.beacon.core.speech.VoicePartial.Final ->
-                        draft.value = ((dictationBase ?: "") + " " + partial.text).trimStart()
-                    null -> Unit
-                }
-            }
-        }
+        // (the voice partials collector starts per-dictation in startDictation —
+        // a construction-time collect here would see the not-yet-initialized
+        // `voice` property: the crash on 2026-11-02's device log.)
     }
 
     fun setDraft(value: String) {
@@ -314,15 +305,38 @@ class ChatViewModel @Inject constructor(
     }
 
     /** Tap = on-device dictation with live partials. The permission request stays on the screen. */
+    private var partialsJob: kotlinx.coroutines.Job? = null
+
     fun startDictation() {
         if (!voice.hasPermission()) return
         micError.value = null
         dictationBase = draft.value.trimEnd()
         val started = voice.startOnDevice { error -> if (error != null) micError.value = error }
-        micState.value = if (started) MicState.OnDevice else MicState.Idle
+        if (!started) {
+            micState.value = MicState.Idle
+            return
+        }
+        micState.value = MicState.OnDevice
+        // Live partials stream into the composer only while dictating (§8.1).
+        partialsJob = viewModelScope.launch {
+            voice.partials().collect { partial ->
+                when (partial) {
+                    is dev.beacon.core.speech.VoicePartial.Partial ->
+                        draft.value = ((dictationBase ?: "") + " " + partial.text).trimStart()
+                    is dev.beacon.core.speech.VoicePartial.Final -> {
+                        draft.value = ((dictationBase ?: "") + " " + partial.text).trimStart()
+                        dictationBase = null
+                        micState.value = MicState.Idle
+                    }
+                    null -> Unit
+                }
+            }
+        }
     }
 
     fun stopDictation() {
+        partialsJob?.cancel()
+        partialsJob = null
         voice.stopOnDevice()
         micState.value = MicState.Idle
         dictationBase = null

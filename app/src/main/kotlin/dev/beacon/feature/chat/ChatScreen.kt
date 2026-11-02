@@ -22,6 +22,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -58,6 +59,9 @@ data class ChatActions(
     val onStop: () -> Unit,
     val onBack: () -> Unit,
     val onOpenModelPicker: () -> Unit,
+    /** The chats drawer (boot surface = hamburger home; Claude-app structure). */
+    val onOpenDrawer: () -> Unit = {},
+    val onNewChat: () -> Unit = {},
     val onOpenFile: (fileId: String, name: String, mime: String, terminalServerId: String?, terminalPath: String?) -> Unit,
     val onFlickRefetch: () -> Unit = {},
     val onAppResume: () -> Unit = {},
@@ -141,8 +145,15 @@ fun ChatScreen(
             TopAppBar(
                 title = { Text(state.engine.title ?: "New chat") },
                 navigationIcon = {
-                    IconButton(onClick = actions.onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    if (state.engine.chatId == null) {
+                        IconButton(onClick = actions.onOpenDrawer) {
+                            // The drawer affordance on the boot surface (interface copy).
+                            Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Chats")
+                        }
+                    } else {
+                        IconButton(onClick = actions.onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
                     }
                 },
                 actions = {

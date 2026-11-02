@@ -31,20 +31,25 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 
 /**
- * M1 transcript renderer (ADR-0009): segments streaming markdown into paragraphs
- * and fenced code blocks; fenced blocks render as horizontally-scrollable
- * monospace rows with copy/wrap. M2 replaces this with the full render pipeline
- * (segmenter → ChatPart + m3 markdown renderer, agent.md §7.1).
- *
- * [segmentMarkdown] is pure and table-tested; an open fence while streaming
- * renders as a live preview (agent.md §7.1 partial-HTML rule).
+ * M1 transcript renderer (ADR-0009): segments streaming markdown into
+ * paragraphs / lists / fenced code blocks. M2 replaces this with the full
+ * render pipeline (segmenter → ChatPart + m3 markdown renderer, agent.md §7.1).
+ * [segmentMarkdown] + [inlineText] are pure and table-tested.
  */
 
-enum class BlockKind { Paragraph, Code }
+enum class BlockKind { Paragraph, List_, Code }
 
-data class TextBlock(val kind: BlockKind, val text: String, val language: String? = null)
+data class TextBlock(
+    val kind: BlockKind,
+    val text: String,
+    val language: String? = null,
+    val ordered: Boolean = false,
+    val items: List<String> = emptyList(),
+)
 
 private val fenceLine = Regex("^\\s*(```+|~~~+)\\s*([a-zA-Z0-9_+-]*)\\s*$")
+private val bulletLine = Regex("^\\s{0,6}[-*+]\\s+(.*)$")
+private val orderedLine = Regex("^\\s{0,6}(\\d{1,3})[.)]\\s+(.*)$")
 
 fun segmentMarkdown(md: String): List<TextBlock> {
     if (md.isBlank()) return emptyList()
@@ -54,6 +59,8 @@ fun segmentMarkdown(md: String): List<TextBlock> {
     var inFence = false
     var fenceLanguage: String? = null
     val fence = StringBuilder()
+    var listItems: ArrayList<String>? = null
+    var listOrdered = false
 
     fun flushParagraph() {
         val text = paragraph.toString().trim('\n')
@@ -61,10 +68,19 @@ fun segmentMarkdown(md: String): List<TextBlock> {
         paragraph.setLength(0)
     }
 
+    fun flushList() {
+        val items = listItems
+        if (items != null && items.isNotEmpty()) {
+            blocks.add(TextBlock(BlockKind.List_, "", ordered = listOrdered, items = items))
+        }
+        listItems = null
+    }
+
     md.split('\n').forEach { line ->
-        val opens = !inFence && fenceLine.matches(line)
-        if (opens) {
+        val fenceOpen = !inFence && fenceLine.matches(line)
+        if (fenceOpen) {
             flushParagraph()
+            flushList()
             inFence = true
             fenceLanguage = fenceLine.find(line)!!.groupValues[2].takeIf { it.isNotEmpty() }
             return@forEach
@@ -80,24 +96,45 @@ fun segmentMarkdown(md: String): List<TextBlock> {
             }
             return@forEach
         }
-        if (line.isBlank()) {
-            // Blank line ends a paragraph (markdown paragraph rule)
-            flushParagraph()
-            return@forEach
+
+        val bullet = bulletLine.find(line)
+        val ordered = orderedLine.find(line)
+        when {
+            bullet != null -> {
+                flushParagraph()
+                if (listItems != null && listOrdered) flushList()
+                (listItems ?: ArrayList<String>().also { listItems = it }).add(bullet.groupValues[1])
+                listOrdered = false
+            }
+            ordered != null -> {
+                flushParagraph()
+                if (listItems != null && !listOrdered) flushList()
+                (listItems ?: ArrayList<String>().also { listItems = it }).add(ordered.groupValues[2])
+                listOrdered = true
+            }
+            line.isBlank() -> {
+                flushParagraph()
+                flushList()
+            }
+            else -> {
+                flushList()
+                paragraph.append(line).append('\n')
+            }
         }
-        paragraph.append(line).append('\n')
     }
 
     if (inFence && fence.isNotBlank()) {
         blocks.add(TextBlock(BlockKind.Code, fence.toString().trim('\n'), fenceLanguage))
     }
+    flushList()
     flushParagraph()
     return blocks
 }
 
 private val INLINE_MARKS = Regex("(\\*\\*[^*\\n]+\\*\\*)|(`[^`\\n]+`)|(\\*[^*\\n]+\\*)")
 
-private fun inlineText(raw: String, caret: Boolean): AnnotatedString = buildAnnotatedString {
+/** Inline marks → styled spans. Bold, inline code (ticks removed), italic. */
+internal fun inlineText(raw: String, caret: Boolean = false): AnnotatedString = buildAnnotatedString {
     var last = 0
     for (match in INLINE_MARKS.findAll(raw)) {
         append(raw.substring(last, match.range.first))
@@ -126,15 +163,27 @@ fun MiniMarkdown(
 ) {
     val blocks = segmentMarkdown(markdown)
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        blocks.forEachIndexed { index, block ->
+        blocks.forEach { block ->
             when (block.kind) {
                 BlockKind.Paragraph -> Text(
-                    text = inlineText(
-                        block.text,
-                        caret = streaming && block === blocks.last(),
-                    ),
+                    text = inlineText(block.text, caret = streaming && block === blocks.last()),
                     style = MaterialTheme.typography.bodyLarge,
                 )
+                BlockKind.List_ -> Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    block.items.forEachIndexed { index, item ->
+                        Row {
+                            Text(
+                                text = if (block.ordered) "${index + 1}.  " else "•  ",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                text = inlineText(item, caret = streaming && block === blocks.last() && index == block.items.lastIndex),
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                        }
+                    }
+                }
                 BlockKind.Code -> CodeBlock(text = block.text, language = block.language)
             }
         }

@@ -6,8 +6,12 @@ import androidx.compose.ui.test.onRoot
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.captureRoboImage
 import dev.beacon.core.api.dto.OwuiModel
+import dev.beacon.core.chat.ChatEngine
 import dev.beacon.core.data.AuthMethod
 import dev.beacon.core.data.local.ChatEntity
+import dev.beacon.feature.chat.ChatActions
+import dev.beacon.feature.chat.ChatScreen
+import dev.beacon.feature.chat.ChatViewModel
 import dev.beacon.feature.home.ChatListActions
 import dev.beacon.feature.home.HomeViewModel
 import dev.beacon.feature.onboarding.OnboardingActions
@@ -57,6 +61,25 @@ class M0ScreensScreenshotTest {
         serverVersion = "0.7.2",
         authMethod = AuthMethod.ApiKey,
         signedInEmail = "you@example.com",
+    )
+    private val chat = ChatViewModel.UiState(
+        engine = ChatEngine.ChatUiModel(
+            chatId = "c1",
+            messages = listOf(
+                ChatEngine.RenderMessage("m1", "user", markdown = "Check the build logs for me?"),
+                ChatEngine.RenderMessage(
+                    "m2",
+                    "assistant",
+                    markdown = "Sure — the relevant lines:\n\n```kotlin\nfun logs() {\n    println(logs)\n}\n```\n\nHere are the findings:\n- First item with `code`\n- Second item with **bold**",
+                ),
+            ),
+        ),
+        models = models,
+        selectedModelId = "claude-sonnet-5",
+    )
+
+    private val chatActions = ChatActions(
+        onDraft = {}, onSend = {}, onStop = {}, onBack = {}, onOpenModelPicker = {},
     )
 
     private val onboardingActions = OnboardingActions(
@@ -109,6 +132,19 @@ class M0ScreensScreenshotTest {
             dev.beacon.feature.home.HomeScreen(home, homeActions)
         }
         capture("Home/home_dark")
+    }
+
+    @Test
+    fun chat_bubbles_light() {
+        render { ChatScreen(chat, chatActions, showModelPicker = false, onDismissPicker = {}, onPickModel = {}) }
+        capture("Chat/chat_light")
+    }
+
+    @Test
+    @Config(qualifiers = "+night")
+    fun chat_bubbles_dark() {
+        render { ChatScreen(chat, chatActions, showModelPicker = false, onDismissPicker = {}, onPickModel = {}) }
+        capture("Chat/chat_dark")
     }
 
     @Test

@@ -67,7 +67,7 @@ Rule for the implementing agent: **never invent an endpoint or a field**. If a r
 
 | Concern | Choice | Notes |
 | --- | --- | --- |
-| Language / runtime | Kotlin 2.1+, JDK 21 toolchain, AGP 8.13+ | minSdk **29** (WebView+API coverage), targetSdk 35, compileSdk 36 |
+| Language / runtime | Kotlin 2.1+, JDK 21 toolchain, AGP 8.13+ | minSdk **29** (WebView+API coverage), targetSdk 36, compileSdk 37 (`compileSdkMinor` for minor platforms; ADR-0006) |
 | UI | Jetpack Compose (BOM latest stable), **Material 3**, dynamic color optional, `androidx.navigation:navigation-compose` | Claude-app feel: edge-to-edge, predictive back, bottom-sheet model switcher |
 | DI | Hilt | Constructor-injected services; no service locators |
 | Async | Coroutines + Flow (`kotlinx-coroutines`) | Every network/streaming call suspend; UI collects with `repeatOnLifecycle` |
@@ -133,7 +133,7 @@ sealed interface ChatPart {
 
 1. **API key path (default, first-class):** user generates a key in OWUI *Settings → Account*; app stores it in `EncryptedSharedPreferences`/Keystore; sent as `Authorization: Bearer <key>`. This is the whole story for ~90% of self-hosted users.
 2. **Username/password:** `POST /api/v1/auths/signin` → JWT stored in Keystore; auto-refresh on 401. (Conduit additionally supports SSO/LDAP/proxy-cookie capture — see `docs/` and its auth screens; port proxy-cookie support only in M4+, gated to "advanced".)
-3. `GET /api/version` at connect; persist and surface it. Behavior flags come from `GET /api/v1/configs/` — gates channels/notes/images/web-search screens exactly like Conduit hides permission-less sections.
+3. `GET /api/version` at connect; persist and surface it. Behavior flags come from `GET /api/config` (optional auth; the web UI's own pre-auth config) — gates channels/notes/images/web-search screens exactly like Conduit hides permission-less sections. `/api/v1/configs/` is the admin import/export surface, not the client gate. Verified: open-webui `main.py:2289` (config), `routers/configs.py:100-134` (admin surface); see `docs/protocol-notes.md`.
 4. Custom headers (org-routing, `X-API-Key` behind gateways): settings screen field, appended by an OkHttp interceptor.
 5. TLS: trust-user-CAs **off** by default; provide an opt-in advanced toggle for self-signed labs, clearly marked.
 

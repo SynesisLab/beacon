@@ -1,0 +1,20 @@
+# Normalize line endings: LF in the repo and working tree for source files (Windows host),
+# byte-exact for protocol fixtures.
+* text=auto
+*.kt text eol=lf
+*.kts text eol=lf
+*.toml text eol=lf
+*.xml text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.properties text eol=lf
+gradlew text eol=lf
+*.bat text eol=crlf
+
+# Protocol fixtures must stay byte-exact (agent.md §13 torture tests)
+*.sse -text binary
+
+# Binaries
+*.png binary
+*.jar binary
+*.webp binary

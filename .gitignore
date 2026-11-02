@@ -1,0 +1,28 @@
+# Gradle
+.gradle/
+build/
+*/build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Android Studio / IDE
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Local machine-specific config
+local.properties
+
+# Kotlin
+.kotlin/
+kls-platform-metadata/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets — never commit instance credentials or captures
+*.keystore
+!debug.keystore
+secrets.properties

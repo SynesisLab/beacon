@@ -27,6 +27,11 @@ class OwuiApiException(
     message: String,
 ) : IOException(message)
 
+/** Narrow instance-origin source — tests supply MockWebServer roots directly. */
+fun interface InstanceSource {
+    fun instanceUrl(): String?
+}
+
 /**
  * One HTTP client for REST + SSE (agent.md §3). M0 routes:
  * /api/version, /api/config, /api/v1/auths/signin, /api/v1/models/list.
@@ -37,7 +42,7 @@ class OwuiApiException(
 class OwuiApi @Inject constructor(
     private val client: OkHttpClient,
     private val json: Json,
-    private val session: SessionStore,
+    private val source: InstanceSource,
 ) {
     suspend fun probeVersion(baseUrl: String): VersionInfo = withContext(Dispatchers.IO) {
         val request = Request.Builder().url(joinUrl(baseUrl, "/api/version")).get().build()
@@ -114,7 +119,7 @@ class OwuiApi @Inject constructor(
     }
 
     fun instance(): String =
-        session.instanceUrlSnapshot()
+        source.instanceUrl()
             ?: throw OwuiApiException(0, null, "No connected instance")
 
     @kotlinx.serialization.Serializable

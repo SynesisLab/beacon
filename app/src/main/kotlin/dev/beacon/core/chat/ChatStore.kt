@@ -23,5 +23,10 @@ interface ChatStore {
         timestamp: Long,
     )
     suspend fun activePath(chatId: String): List<MessageEntity>
+
+    /** Adopt an externally-obtained server payload into the store. */
     suspend fun upsertServerChat(payload: ChatPayload)
+
+    /** Fetch the full tree from the instance + upsert; false when unreachable. */
+    suspend fun refreshServerChat(chatId: String): Boolean
 }

@@ -39,6 +39,12 @@ object NetworkGraph {
         .readTimeout(45, TimeUnit.SECONDS)
         .build()
 
+    /** Api-side instance source: the session's server origin. */
+    @Provides
+    @Singleton
+    fun instanceSource(session: dev.beacon.core.data.SessionStore): dev.beacon.core.api.InstanceSource =
+        dev.beacon.core.api.InstanceSource { session.instanceUrlSnapshot() }
+
     @Provides
     @Singleton
     fun settingsDataStore(@ApplicationContext context: Context): DataStore<ServerSettings> =

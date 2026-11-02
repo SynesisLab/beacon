@@ -50,7 +50,6 @@ private const val JSON_TYPE = "application/json; charset=utf-8"
  */
 class ChatEngine(
     private val api: OwuiApi,
-    private val chatsApi: ChatsApi,
     private val store: ChatStore,
     private val json: Json,
 ) {
@@ -98,8 +97,11 @@ class ChatEngine(
             return
         }
         try {
-            store.upsertServerChat(chatsApi.full(existingChatId))
-            paintFromStore(existingChatId)
+            if (store.refreshServerChat(existingChatId)) {
+                paintFromStore(existingChatId)
+            } else {
+                _state.value = ChatUiModel(chatId = existingChatId, error = "Instance unreachable")
+            }
         } catch (e: OwuiApiException) {
             _state.value = ChatUiModel(chatId = existingChatId, error = describe(e))
         }
@@ -246,25 +248,30 @@ class ChatEngine(
 
         currentCall = api.streamingCompletion(CompletionRequests.encode(request))
         drain(currentCall!!, assistantMessageId)
-        finalizeAssistant(existingChatId, assistantMessageId)
+        // The chat id may have been learned mid-stream (chat:list); resolve at finalize.
+        finalizeAssistant(assistantMessageId)
     }
 
     private suspend fun drain(call: Call, assistantMessageId: String) = withContext(Dispatchers.IO) {
         val parser = OwuiStreamParser(json)
         call.execute().use { response ->
-            val kind = classifyTransport(response.header(CONTENT_TYPE))
-            if (kind != TransportKind.HttpStream) {
-                // §6.1: taskSocket (M4, needs socket bind) and jsonCompletion are
-                // separately supported transports; M1 errors visibly instead of guessing.
-                throw OwuiApiException(
+            val body = response.body ?: throw OwuiApiException(response.code, null, "Empty body")
+            when (classifyTransport(response.header(CONTENT_TYPE))) {
+                TransportKind.HttpStream -> sourceFrames(body).forEach { frame ->
+                    parser.onFrame(frame).forEach { event -> fold(event, assistantMessageId) }
+                }
+                TransportKind.JsonCompletion -> {
+                    // Plain-JSON completions (tiny models, some pipelines — §6.1): the
+                    // whole payload flows through the same fold (choices[].message).
+                    val text = body.string()
+                    parser.onFrame(SseFrameScanner.Frame(null, text))
+                        .forEach { event -> fold(event, assistantMessageId) }
+                }
+                TransportKind.TaskSocket -> throw OwuiApiException(
                     response.code,
                     null,
-                    "Completion arrived on a non-streaming transport (${kind::class.simpleName}); not supported in M1",
+                    "Server routed the completion to a socket task; task transports land in M4",
                 )
-            }
-            val body = response.body ?: throw OwuiApiException(response.code, null, "Empty stream body")
-            sourceFrames(body).forEach { frame ->
-                parser.onFrame(frame).forEach { event -> fold(event, assistantMessageId) }
             }
         }
     }
@@ -363,8 +370,9 @@ class ChatEngine(
         )
     }
 
-    private suspend fun finalizeAssistant(chatId: String?, assistantMessageId: String) {
+    private suspend fun finalizeAssistant(assistantMessageId: String) {
         val now = System.currentTimeMillis()
+        val chatId = _state.value.chatId
         if (chatId != null) {
             store.updateAssistantContent(
                 chatId = chatId,
@@ -382,12 +390,13 @@ class ChatEngine(
             runCatching {
                 val completed = api.chatCompleted(completedBody(chatId, assistantMessageId))
                 completedAdopt(completed)
-                store.upsertServerChat(chatsApi.full(chatId))
-                _state.value = ChatUiModel(
-                    chatId = chatId,
-                    messages = store.activePath(chatId).map(::renderOf),
-                    usage = _state.value.usage,
-                )
+                if (store.refreshServerChat(chatId)) {
+                    _state.value = ChatUiModel(
+                        chatId = chatId,
+                        messages = store.activePath(chatId).map(::renderOf),
+                        usage = _state.value.usage,
+                    )
+                }
             }
         }
     }

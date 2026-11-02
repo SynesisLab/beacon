@@ -91,6 +91,8 @@ class ChatRepository @Inject constructor(
 
     override suspend fun upsertServerChat(payload: ChatPayload) = upsertPayload(payload)
 
+    override suspend fun refreshServerChat(chatId: String): Boolean = adoptServerChat(chatId) != null
+
     // ── server-mirroring operations ──────────────────────────────────────────
 
     /** Refresh [page] into Room + pinned rows on page 1 (list rows lack `pinned` — chats.py:351-359). */

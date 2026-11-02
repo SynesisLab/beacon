@@ -3,7 +3,6 @@ package dev.beacon.core.api
 import dev.beacon.core.api.dto.ChatPayload
 import dev.beacon.core.api.dto.ChatsListRow
 import dev.beacon.core.api.dto.NewChatBody
-import dev.beacon.core.data.SessionStore
 import dev.beacon.core.network.await
 import dev.beacon.core.network.decodeJson
 import kotlinx.coroutines.Dispatchers
@@ -25,42 +24,42 @@ internal fun joinUrl(baseUrl: String, path: String): String {
     return trimmedBase + cleanPath
 }
 
-/**
- * Chat CRUD over /api/v1/chats (verified: docs/protocol-notes.md M1 · chats table).
- * M1 surface: list paging, full-tree fetch, create, delete, pin, archive.
- */
+// ── M1 · chats table (verified: docs/protocol-notes.md) ─────────────────────
+// list:        GET  /api/v1/chats/?page=N (chats.py:261; 60/page, sort updated_at desc)
+// pinned rows: GET  /api/v1/chats/pinned (chats.py:994; list rows lack `pinned`)
+// full tree:   GET  /api/v1/chats/{id}  (chats.py:1380)
+// create:      POST /api/v1/chats/new (chats.py:789; ChatForm {chat, variables?, folder_id?})
+// delete:      DELETE /api/v1/chats/{id} (chats.py:1677)
+// pin:         POST /api/v1/chats/{id}/pin (chats.py:1751)
+// archive:     POST /api/v1/chats/{id}/archive (chats.py:2048)
+
 @Singleton
 class ChatsApi @Inject constructor(
     private val client: OkHttpClient,
     private val json: Json,
-    private val session: SessionStore,
+    private val source: InstanceSource,
 ) {
     private val rows = ListSerializer(ChatsListRow.serializer())
-
     private val jsonType = "application/json; charset=utf-8".toMediaType()
 
-    /** Paged rows: GET /api/v1/chats/?page=N (60/page server-side, sort updated_at desc). */
     suspend fun list(page: Int = 1): List<ChatsListRow> = withContext(Dispatchers.IO) {
         client.newCall(
             Request.Builder().url(joinUrl(instance(), "/api/v1/chats/?page=$page")).get().build(),
         ).await().decodeJson(rows, json)
     }
 
-    /** Pinned rows: GET /api/v1/chats/pinned (chats.py:994). */
     suspend fun pinned(): List<ChatsListRow> = withContext(Dispatchers.IO) {
         client.newCall(
             Request.Builder().url(joinUrl(instance(), "/api/v1/chats/pinned")).get().build(),
         ).await().decodeJson(rows, json)
     }
 
-    /** Full tree: GET /api/v1/chats/{id} (chats.py:1380). */
     suspend fun full(chatId: String): ChatPayload = withContext(Dispatchers.IO) {
         client.newCall(
             Request.Builder().url(joinUrl(instance(), "/api/v1/chats/$chatId")).get().build(),
         ).await().decodeJson(ChatPayload.serializer(), json)
     }
 
-    /** POST /api/v1/chats/new (chats.py:789). */
     suspend fun create(body: NewChatBody): ChatPayload = withContext(Dispatchers.IO) {
         client.newCall(
             Request.Builder()
@@ -70,14 +69,12 @@ class ChatsApi @Inject constructor(
         ).await().decodeJson(ChatPayload.serializer(), json)
     }
 
-    /** DELETE /api/v1/chats/{id} → bool (chats.py:1677). */
     suspend fun delete(chatId: String): Boolean = withContext(Dispatchers.IO) {
         client.newCall(
             Request.Builder().url(joinUrl(instance(), "/api/v1/chats/$chatId")).delete().build(),
         ).await().use { it.isSuccessful }
     }
 
-    /** POST /api/v1/chats/{id}/pin (chats.py:1751) — returns the updated chat. */
     suspend fun pin(chatId: String): ChatPayload = withContext(Dispatchers.IO) {
         client.newCall(
             Request.Builder()
@@ -87,7 +84,6 @@ class ChatsApi @Inject constructor(
         ).await().decodeJson(ChatPayload.serializer(), json)
     }
 
-    /** POST /api/v1/chats/{id}/archive (chats.py:2048). */
     suspend fun archive(chatId: String): ChatPayload = withContext(Dispatchers.IO) {
         client.newCall(
             Request.Builder()
@@ -98,6 +94,6 @@ class ChatsApi @Inject constructor(
     }
 
     private fun instance(): String =
-        session.instanceUrlSnapshot()
+        source.instanceUrl()
             ?: throw OwuiApiException(0, null, "No connected instance")
 }

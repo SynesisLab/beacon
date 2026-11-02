@@ -205,6 +205,10 @@ private class InMemoryChatStore : ChatStore {
             }.asReversed()
         } ?: emptyList()
 
+    override suspend fun messages(chatId: String): List<MessageEntity> = messages.toList()
+
+    override suspend fun fetchServerTree(chatId: String): dev.beacon.core.api.dto.ChatPayload? = chats[chatId]
+
     override suspend fun upsertServerChat(payload: ChatPayload) {
         chats[payload.id] = payload
     }

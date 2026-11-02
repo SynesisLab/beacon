@@ -91,6 +91,18 @@ class ChatRepository @Inject constructor(
 
     override suspend fun upsertServerChat(payload: ChatPayload) = upsertPayload(payload)
 
+    override suspend fun messages(chatId: String): List<MessageEntity> =
+        withContext(Dispatchers.IO) { db.messages().byChat(chatId) }
+
+    override suspend fun fetchServerTree(chatId: String): ChatPayload? =
+        withContext(Dispatchers.IO) {
+            try {
+                chatsApi.full(chatId)
+            } catch (_: Exception) {
+                null
+            }
+        }
+
     override suspend fun refreshServerChat(chatId: String): Boolean = adoptServerChat(chatId) != null
 
     // ── server-mirroring operations ──────────────────────────────────────────
@@ -160,9 +172,6 @@ class ChatRepository @Inject constructor(
         withContext(Dispatchers.IO) { db.chats().byId(chatId) }
 
     suspend fun chatsCount(): Int = withContext(Dispatchers.IO) { db.chats().count() }
-
-    suspend fun messages(chatId: String): List<MessageEntity> =
-        withContext(Dispatchers.IO) { db.messages().byChat(chatId) }
 
     suspend fun deleteChat(chatId: String): Boolean = withContext(Dispatchers.IO) {
         val ok = try {

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -33,6 +34,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
@@ -40,6 +45,7 @@ import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.beacon.core.chat.ChatEngine
+import kotlinx.coroutines.launch
 
 /** Composer + bubble transcript (messaging-app style) + status/error surfaces. */
 data class ChatActions(
@@ -49,6 +55,9 @@ data class ChatActions(
     val onBack: () -> Unit,
     val onOpenModelPicker: () -> Unit,
     val onOpenFile: (fileId: String, name: String, mime: String, terminalServerId: String?, terminalPath: String?) -> Unit,
+    val onFlickRefetch: () -> Unit = {},
+    val onAppResume: () -> Unit = {},
+    val onClearUpdatedPill: () -> Unit = {},
 )
 
 // Gentle radii with padding ≥ corner clearance — Surface clips to shape, so
@@ -73,9 +82,42 @@ fun ChatScreen(
 ) {
     val listState = rememberLazyListState()
 
+    // §9.1 flick-to-refetch: at bottom + upward flick ≥ ~4/3 viewport/sec ⇒ silent sync.
+    val flickConnection = remember(listState) {
+        object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+            override suspend fun onPostFling(
+                consumed: androidx.compose.ui.unit.Velocity,
+                available: androidx.compose.ui.unit.Velocity,
+            ): androidx.compose.ui.unit.Velocity {
+                val info = listState.layoutInfo
+                val viewport = info.viewportSize.height.toFloat().coerceAtLeast(1f)
+                val upward = -available.y
+                val threshold = (viewport * (1f / 0.3f) * 0.4f) // 40% of viewport per 300ms
+                val atBottom = listState.canScrollForward.not()
+                if (atBottom && upward >= threshold) {
+                    actions.onFlickRefetch()
+                }
+                return androidx.compose.ui.unit.Velocity.Zero
+            }
+        }
+    }
+
     LaunchedEffect(state.engine.messages.size, state.engine.streamingMessageId) {
         if (listState.canScrollForward.not()) {
             listState.scrollToItem(0)
+        }
+    }
+
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        actions.onAppResume()
+        onPauseOrDispose { }
+    }
+
+    // Updated pill auto-clears (subtle: fades via recomposition removal).
+    LaunchedEffect(state.updatedPill) {
+        if (state.updatedPill) {
+            kotlinx.coroutines.delay(2_000)
+            actions.onClearUpdatedPill()
         }
     }
 
@@ -133,12 +175,24 @@ fun ChatScreen(
                 )
             }
 
+            // §9.1 pills: "Updated ✓" after a silent sync found changes; and the
+            // "Latest ⇅" fallback whenever the list sits away from the bottom.
+            Row(horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth()) {
+                if (state.updatedPill) {
+                    androidx.compose.material3.AssistChip(
+                        onClick = actions.onClearUpdatedPill,
+                        label = { Text("Updated ✓") },
+                    )
+                }
+            }
+
             LazyColumn(
                 state = listState,
                 reverseLayout = true,
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth(),
+                    .fillMaxWidth()
+                    .nestedScroll(flickConnection),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom),
             ) {
@@ -155,7 +209,20 @@ fun ChatScreen(
                 }
             }
 
-            HorizontalDivider()
+            // §9.1 fallback affordance when scrolled away from the newest content.
+            val notAtBottom by androidx.compose.runtime.remember {
+                androidx.compose.runtime.derivedStateOf { listState.canScrollForward }
+            }
+            if (notAtBottom) {
+                val clickScope = androidx.compose.runtime.rememberCoroutineScope()
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        clickScope.launch { listState.scrollToItem(0) }
+                        actions.onFlickRefetch()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Latest ⇅") }
+            }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier

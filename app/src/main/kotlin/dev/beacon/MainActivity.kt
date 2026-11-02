@@ -115,6 +115,9 @@ private fun BeaconNavHost() {
                             onStop = vm::stop,
                             onBack = { nav.popBackStack() },
                             onOpenModelPicker = { pickerOpen = true },
+                            onFlickRefetch = vm::flickRefetch,
+                            onAppResume = vm::onAppResume,
+                            onClearUpdatedPill = vm::clearUpdatedPill,
                             onOpenFile = { fileId, name, mime, terminalServer, terminalPath ->
                                 val base = "file/${android.net.Uri.encode(fileId)}/${android.net.Uri.encode(name)}/${android.net.Uri.encode(mime)}"
                                 val suffix = buildString {

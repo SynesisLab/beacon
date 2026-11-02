@@ -38,6 +38,8 @@ class ChatViewModel @Inject constructor(
         // HtmlCard panes share the app client (same-origin auth, §11).
         val httpClient: okhttp3.OkHttpClient? = null,
         val instanceUrl: String? = null,
+        /** §9.1: a background sync found changes — show the Updated pill. */
+        val updatedPill: Boolean = false,
     ) {
         /** Display label: the model's NAME when known, else its id. */
         val modelLabel: String?
@@ -48,13 +50,15 @@ class ChatViewModel @Inject constructor(
     private val modelsState = MutableStateFlow<List<OwuiModel>>(emptyList())
     private val selected = MutableStateFlow<String?>(session.settingsSnapshot().selectedModelId)
     private val draft = MutableStateFlow("")
+    private val justUpdated = MutableStateFlow(false)
     private var serverDefault: String? = null
     private val httpClient = api.publicClient()
     private val instanceUrl = session.instanceUrlSnapshot()
 
-    val ui: StateFlow<UiState> = combine(engine.state, modelsState, selected, draft) { e, m, sel, d ->
-        UiState(e, m, sel, d, httpClient, instanceUrl)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState(engine = engine.state.value))
+    val ui: StateFlow<UiState> =
+        combine(engine.state, modelsState, selected, draft, justUpdated) { e, m, sel, d, upd ->
+            UiState(e, m, sel, d, httpClient, instanceUrl, upd)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState(engine = engine.state.value))
 
     init {
         viewModelScope.launch {
@@ -83,6 +87,35 @@ class ChatViewModel @Inject constructor(
     }
 
     fun stop() = engine.stop()
+
+    /** Lifecycle hook: silent reconciler sync on app resume (§9.1/§9.2). */
+    fun onAppResume() {
+        viewModelScope.launch {
+            val changed = try {
+                engine.sync()
+            } catch (_: Exception) {
+                false
+            }
+            if (changed) justUpdated.value = true
+        }
+    }
+
+    /** §9.1: true right after a background sync found changes (Updated pill). */
+    val updatedPill: StateFlow<Boolean> = justUpdated
+
+    fun clearUpdatedPill() {
+        justUpdated.value = false
+    }
+
+    /** §9.1 flick-to-refetch gesture → silent sync. */
+    fun flickRefetch() {
+        viewModelScope.launch {
+            try {
+                if (engine.sync()) justUpdated.value = true
+            } catch (_: Exception) {
+            }
+        }
+    }
 
     fun chooseModel(modelId: String) {
         selected.value = modelId

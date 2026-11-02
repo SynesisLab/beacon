@@ -95,6 +95,7 @@ class ChatEngine(
     private var outItems: List<JsonElement> = emptyList()
     private var embedsHtml: List<String> = emptyList()
     private var lastRoomWrite = 0L
+    private var lastSyncAt = 0L
     private var activeModelId: String? = null
     private var projectionSnapshot: List<ProjectionMessage> = emptyList()
 
@@ -211,6 +212,34 @@ class ChatEngine(
         currentCall?.cancel()
         streamJob?.cancel()
         scope.coroutineContext.cancelChildren()
+    }
+
+    /**
+     * §9.1/§9.2: silent reconciler sync (flick-to-refetch, resume). Debounced 1s;
+     * disabled mid-stream (the stream is the source of truth while live).
+     * Returns true when the server had changes — the UI shows the Updated pill.
+     */
+    suspend fun sync(): Boolean {
+        val chatId = _state.value.chatId ?: return false
+        if (_state.value.busy) return false
+        val now = System.currentTimeMillis()
+        if (now - lastSyncAt < SYNC_DEBOUNCE_MS) return false
+        lastSyncAt = now
+
+        val payload = store.fetchServerTree(chatId) ?: return false
+        val serverNodes = payload.chat?.history?.messages?.values.orEmpty().toList()
+        val serverCurrent = payload.chat?.history?.currentId
+        val diffs = ChatReconciler.reconcile(
+            local = store.messages(chatId),
+            server = serverNodes,
+            chatId = chatId,
+            serverCurrentId = serverCurrent,
+            localCurrentId = null,
+        )
+        diffs.upserts.forEach { store.insertNode(it) }
+        diffs.pointer?.let { store.setCurrentMessage(chatId, it) }
+        paintFromStore(chatId)
+        return diffs.upserts.isNotEmpty() || diffs.pointer != null
     }
 
     // ── send pipeline ──────────────────────────────────────────────────────
@@ -550,6 +579,7 @@ class ChatEngine(
     companion object {
         private const val CHUNK_BUFFER = 8192
         private const val ROOM_WRITE_INTERVAL_MS = 750L
+        private const val SYNC_DEBOUNCE_MS = 1_000L
     }
 }
 

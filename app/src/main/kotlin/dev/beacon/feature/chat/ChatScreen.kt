@@ -32,6 +32,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -67,6 +68,12 @@ data class ChatActions(
     val onToggleImageGeneration: () -> Unit = {},
     val onToggleCodeInterpreter: () -> Unit = {},
     val onToggleTemp: () -> Unit = {},
+    /** §8 mic: tap-dictation/stop; the screen handles the permission prompt. */
+    val onMicTap: () -> Unit = {},
+    val onMicStop: () -> Unit = {},
+    /** §8.4 read-aloud for an assistant bubble. */
+    val onReadAloud: (messageId: String, text: String) -> Unit = { _, _ -> },
+    val onRegenerate: () -> Unit = {},
 )
 
 // Gentle radii with padding ≥ corner clearance — Surface clips to shape, so
@@ -320,6 +327,39 @@ fun ChatScreen(
                         )
                     }
                 }
+                // §8 mic: tap = dictate (partials), tap-again = stop; server mode
+                // (long-press) transcribes on release. Hidden when unavailable (§8.5).
+                if (state.micAvailable) {
+                    Surface(
+                        shape = CircleShape,
+                        color = when (state.mic) {
+                            ChatViewModel.MicState.Idle -> MaterialTheme.colorScheme.surfaceVariant
+                            else -> MaterialTheme.colorScheme.primary
+                        },
+                        modifier = Modifier
+                            .padding(end = 4.dp)
+                            .size(40.dp),
+                    ) {
+                        IconButton(
+                            onClick = {
+                                if (state.mic == ChatViewModel.MicState.Idle) {
+                                    actions.onMicTap()
+                                } else {
+                                    actions.onMicStop()
+                                }
+                            },
+                        ) {
+                            Icon(
+                                painter = androidx.compose.ui.res.painterResource(dev.beacon.R.drawable.ic_mic),
+                                contentDescription = if (state.mic == ChatViewModel.MicState.Idle) "Dictate" else "Stop dictation",
+                                tint = when (state.mic) {
+                                    ChatViewModel.MicState.Idle -> MaterialTheme.colorScheme.onSurfaceVariant
+                                    else -> MaterialTheme.colorScheme.onPrimary
+                                },
+                            )
+                        }
+                    }
+                }
                 OutlinedTextField(
                     value = state.draft,
                     onValueChange = actions.onDraft,
@@ -385,6 +425,8 @@ private fun MessageBubble(
     onOpenFile: (fileId: String, name: String, mime: String, terminalServerId: String?, terminalPath: String?) -> Unit,
     httpClient: okhttp3.OkHttpClient?,
     instanceUrl: String?,
+    onRegenerate: () -> Unit = {},
+    onReadAloud: (messageId: String, text: String) -> Unit = { _, _ -> },
 ) {
     val streaming = message.id == streamingMessageId
     if (message.role == "user") {
@@ -426,6 +468,22 @@ private fun MessageBubble(
                         httpClient = httpClient,
                         instanceUrl = instanceUrl,
                     )
+                }
+            }
+
+            // Assistant bubble footer: copy / regenerate / read-aloud (§9.3, §8.4).
+            if (!streaming) {
+                Row(horizontalArrangement = Arrangement.spacedBy(0.dp)) {
+                    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+                    TextButton(
+                        onClick = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(message.markdown)) },
+                    ) { Text("Copy", style = MaterialTheme.typography.labelLarge) }
+                    TextButton(onClick = onRegenerate) {
+                        Text("Retry", style = MaterialTheme.typography.labelLarge)
+                    }
+                    TextButton(onClick = { onReadAloud(message.id, message.markdown) }) {
+                        Text("🔊", style = MaterialTheme.typography.labelLarge)
+                    }
                 }
             }
         }

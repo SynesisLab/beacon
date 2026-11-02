@@ -5,6 +5,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.serialization.json.Json
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dev.beacon.core.api.OwuiApi
 import dev.beacon.core.api.dto.OwuiModel
@@ -60,6 +61,10 @@ class ChatViewModel @Inject constructor(
         val toggles: Toggles = Toggles(),
         val tempMode: Boolean = false,
         val featuresGate: dev.beacon.core.api.dto.Features? = null,
+        /** §8 voice state (the composer's mic + surfaced service errors). */
+        val mic: MicState = MicState.Idle,
+        val micError: String? = null,
+        val micAvailable: Boolean = false,
     ) {
         /** Display label: the model's NAME when known, else its id. */
         val modelLabel: String?
@@ -76,6 +81,9 @@ class ChatViewModel @Inject constructor(
     private val attachmentError = MutableStateFlow<String?>(null)
     private val toggles = MutableStateFlow(Toggles())
     private val tempMode = MutableStateFlow(false)
+    private val micState = MutableStateFlow<MicState>(MicState.Idle)
+    private val micError = MutableStateFlow<String?>(null)
+    private var dictationBase: String? = null
     private var configFeatures: dev.beacon.core.api.dto.Features? = null
     private var serverDefault: String? = null
     private val httpClient = api.publicClient()
@@ -93,6 +101,8 @@ class ChatViewModel @Inject constructor(
             attachmentError,
             toggles,
             tempMode,
+            micState,
+            micError,
         ) { values ->
             @Suppress("UNCHECKED_CAST")
             UiState(
@@ -109,6 +119,9 @@ class ChatViewModel @Inject constructor(
                 toggles = values[8] as Toggles,
                 tempMode = values[9] as Boolean,
                 featuresGate = configFeatures,
+                mic = values[10] as MicState,
+                micError = values[11] as String?,
+                micAvailable = micAvailable(),
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState(engine = engine.state.value))
 
@@ -130,6 +143,18 @@ class ChatViewModel @Inject constructor(
                     ?.takeIf { it.isNotEmpty() }
             }
             selected.value = selected.value ?: serverDefault
+        }
+        // Voice partials stream into the composer (§8.1); finals replace them.
+        viewModelScope.launch {
+            voice.partials().collect { partial ->
+                when (partial) {
+                    is dev.beacon.core.speech.VoicePartial.Partial ->
+                        draft.value = ((dictationBase ?: "") + " " + partial.text).trimStart()
+                    is dev.beacon.core.speech.VoicePartial.Final ->
+                        draft.value = ((dictationBase ?: "") + " " + partial.text).trimStart()
+                    null -> Unit
+                }
+            }
         }
     }
 
@@ -261,8 +286,89 @@ class ChatViewModel @Inject constructor(
             ?: serverDefault
             ?: modelsState.value.firstOrNull()?.id
 
+    // ── voice (agent.md §8; both engines) ───────────────────────────────────
+
+    sealed interface MicState {
+        data object Idle : MicState
+        data object OnDevice : MicState
+        data object ServerRecording : MicState
+    }
+
+    private val voice = dev.beacon.core.speech.VoiceInput(appContext)
+    private val audioApi = dev.beacon.core.api.AudioApi(
+        api.publicClient(),
+        kotlinx.serialization.json.Json { encodeDefaults = true; ignoreUnknownKeys = true },
+        dev.beacon.core.api.InstanceSource { session.instanceUrlSnapshot() },
+    )
+    private val tts = dev.beacon.core.speech.TtsPlayer(audioApi)
+
+    fun micAvailable(): Boolean = voice.hasPermission() &&
+        android.speech.SpeechRecognizer.isRecognitionAvailable(appContext)
+
+    fun micPermissionGranted(): Boolean = voice.hasPermission()
+
+    /** Regenerate with the resolved model (screen convenience). */
+    fun regenerate() {
+        val modelId = resolveModel() ?: return
+        engine.regenerate(modelId)
+    }
+
+    /** Tap = on-device dictation with live partials. The permission request stays on the screen. */
+    fun startDictation() {
+        if (!voice.hasPermission()) return
+        micError.value = null
+        dictationBase = draft.value.trimEnd()
+        val started = voice.startOnDevice { error -> if (error != null) micError.value = error }
+        micState.value = if (started) MicState.OnDevice else MicState.Idle
+    }
+
+    fun stopDictation() {
+        voice.stopOnDevice()
+        micState.value = MicState.Idle
+        dictationBase = null
+    }
+
+    /** Long-press = server mode: record → release → transcribe → draft. */
+    fun startServerDictation() {
+        val error = voice.startServerRecording()
+        micState.value = if (error == null) MicState.ServerRecording else MicState.Idle
+        micError.value = error
+    }
+
+    fun finishServerDictation() {
+        if (micState.value != MicState.ServerRecording) return
+        micState.value = MicState.Idle
+        val bytes = voice.stopServerRecording() ?: run {
+            micError.value = "Recording was empty."
+            return
+        }
+        viewModelScope.launch {
+            try {
+                val text = audioApi.transcribe("beacon-dictation.wav", "audio/wav", bytes, null)
+                    ?: "Transcription failed — check the server's STT engine."
+                draft.value = (draft.value + " " + text).trim()
+            } catch (e: Exception) {
+                micError.value = e.message ?: "Transcription failed"
+            }
+        }
+    }
+
+    /** Read-aloud (server TTS). */
+    fun readAloud(messageId: String, text: String) {
+        viewModelScope.launch {
+            val ok = runCatching {
+                tts.speak(appContext, messageId, text)
+            }.getOrDefault(false)
+            if (!ok) micError.value = "The server's TTS engine is unavailable."
+        }
+    }
+
+    fun stopTts() = tts.stop()
+
     override fun onCleared() {
         engine.close()
+        voice.release()
+        tts.release()
         super.onCleared()
     }
 

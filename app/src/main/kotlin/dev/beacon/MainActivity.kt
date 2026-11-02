@@ -154,6 +154,9 @@ private fun BeaconNavHost() {
                             )
                         }
                     }
+                    val micPermission = androidx.activity.compose.rememberLauncherForActivityResult(
+                        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+                    ) { granted -> if (granted) vm.startDictation() }
 
                     ChatScreen(
                         state = vm.ui.collectAsStateWithLifecycle().value,
@@ -171,6 +174,16 @@ private fun BeaconNavHost() {
                             onToggleImageGeneration = vm::toggleImageGeneration,
                             onToggleCodeInterpreter = vm::toggleCodeInterpreter,
                             onToggleTemp = vm::toggleTempMode,
+                            onMicTap = {
+                                if (vm.micPermissionGranted()) {
+                                    vm.startDictation()
+                                } else {
+                                    micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+                                }
+                            },
+                            onMicStop = { vm.stopDictation() },
+                            onReadAloud = { id, text -> vm.readAloud(id, text) },
+                            onRegenerate = { vm.regenerate() },
                             onFlickRefetch = vm::flickRefetch,
                             onAppResume = vm::onAppResume,
                             onClearUpdatedPill = vm::clearUpdatedPill,

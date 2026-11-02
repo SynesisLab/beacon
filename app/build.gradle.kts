@@ -80,6 +80,8 @@ dependencies {
     implementation(libs.navigation.compose)
     implementation(libs.lifecycle.runtime.compose)
     implementation(libs.core.ktx)
+    implementation(libs.biometric2)
+    implementation(libs.appcompat2)
     implementation(libs.datastore)
     implementation(libs.okhttp)
     implementation(libs.kotlinx.serialization.json)

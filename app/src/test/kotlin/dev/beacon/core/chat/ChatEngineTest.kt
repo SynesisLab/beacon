@@ -35,9 +35,27 @@ class ChatEngineTest {
 
     private lateinit var server: MockWebServer
 
+    /**
+     * Path-based dispatch (mockwebserver3): streams route to /api/chat/completions,
+     * everything else (the completed round-trip, tasks/stop) gets a canned OK —
+     * immune to the stream/completed arrival races that made FIFO enqueue flaky.
+     */
+    private val pendingStreams = ArrayDeque<Pair<String, String>>() // content-type, body
+    private val dispatcher = object : mockwebserver3.Dispatcher() {
+        override fun dispatch(request: mockwebserver3.RecordedRequest): MockResponse {
+            if (request.url.encodedPath == "/api/chat/completions") {
+                val next = synchronized(pendingStreams) { pendingStreams.removeFirstOrNull() }
+                    ?: return MockResponse.Builder().code(404).build()
+                return MockResponse.Builder().code(200).addHeader("Content-Type", next.first).body(next.second).build()
+            }
+            return MockResponse.Builder().code(200).addHeader("Content-Type", "application/json").body("{}").build()
+        }
+    }
+
     @Before
     fun start() {
         server = MockWebServer()
+        server.dispatcher = dispatcher
         server.start()
     }
 
@@ -63,15 +81,23 @@ class ChatEngineTest {
             engine.state.value
         }
 
+    /** Stream bodies queue for the /api/chat/completions dispatcher. */
+    private fun enqueueStream(body: String) {
+        synchronized(pendingStreams) {
+            pendingStreams.addLast("text/event-stream; charset=utf-8" to body)
+        }
+    }
+
+    /** Plain-JSON stream body (the jsonCompletion transport). */
+    private fun enqueueJson(body: String) {
+        synchronized(pendingStreams) {
+            pendingStreams.addLast("application/json" to body)
+        }
+    }
+
     @Test
     fun firstMessageStreamsWithChatDiscovery() = runBlocking {
-        server.enqueue(
-            MockResponse.Builder()
-                .code(200)
-                .addHeader("Content-Type", "text/event-stream; charset=utf-8")
-                .body(FIRST_MESSAGE)
-                .build(),
-        )
+        enqueueStream(FIRST_MESSAGE)
         val (engine, store) = newEngine()
         engine.load(null)
         engine.send("hi", "m1")
@@ -91,14 +117,8 @@ class ChatEngineTest {
 
     @Test
     fun jsonCompletionBodyFallsBack() = runBlocking {
-        server.enqueue(
-            MockResponse.Builder()
-                .code(200)
-                .addHeader("Content-Type", "application/json")
-                .body("""{"choices":[{"message":{"role":"assistant","content":"Whole answer"}}]}""")
-                .build(),
-        )
-        val (engine, _) = newEngine()
+        enqueueJson("""{"choices":[{"message":{"role":"assistant","content":"Whole answer"}}]}""")
+                val (engine, _) = newEngine()
         engine.load(null)
         engine.send("hi", "m1")
         assertEquals("Whole answer", awaitIdle(engine).messages.last { it.role == "assistant" }.markdown)
@@ -106,14 +126,8 @@ class ChatEngineTest {
 
     @Test
     fun reasoningDeltasLandSeparately() = runBlocking {
-        server.enqueue(
-            MockResponse.Builder()
-                .code(200)
-                .addHeader("Content-Type", "text/event-stream; charset=utf-8")
-                .body(REASONING)
-                .build(),
-        )
-        val (engine, _) = newEngine()
+        enqueueStream(REASONING)
+                val (engine, _) = newEngine()
         engine.load(null)
         engine.send("hi", "m1")
         val final = awaitIdle(engine)
@@ -124,15 +138,15 @@ class ChatEngineTest {
 
     @Test
     fun regenerateCreatesSiblingBranch() = runBlocking {
-        // First a normal exchange…
-        server.enqueue(sse(FIRST_MESSAGE_TWO_TURNS))
-        val (engine, store) = newEngine()
+        // First a normal exchange… (orders FIFO: stream, completed, stream, completed)
+        enqueueStream(FIRST_MESSAGE_TWO_TURNS)
+                val (engine, store) = newEngine()
         engine.load(null)
         engine.send("first question", "m1")
         awaitIdle(engine)
         // …then a regenerate — the sibling branch hangs off the same USER turn.
-        server.enqueue(sse(FIRST_SHORT))
-        engine.regenerate("m1")
+        enqueueStream(FIRST_SHORT)
+                engine.regenerate("m1")
         val final = awaitIdle(engine)
         assertEquals("short regen", final.messages.last { it.role == "assistant" }.markdown)
         val assistants = store.messages.filter { it.role == "assistant" }
@@ -142,12 +156,6 @@ class ChatEngineTest {
         assertEquals(2, userNode.childrenIds.size)
     }
 
-    private fun sse(body: String) =
-        MockResponse.Builder()
-            .code(200)
-            .addHeader("Content-Type", "text/event-stream; charset=utf-8")
-            .body(body)
-            .build()
 
     private companion object {
         val FIRST_MESSAGE = """

@@ -121,7 +121,9 @@ class ChatViewModel @Inject constructor(
                 featuresGate = configFeatures,
                 mic = values[10] as MicState,
                 micError = values[11] as String?,
-                micAvailable = micAvailable(),
+                // §8.5: the mic STAYS visible; the tap requests the permission
+                // (a hidden mic would never produce the prompt).
+                micAvailable = true,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState(engine = engine.state.value))
 

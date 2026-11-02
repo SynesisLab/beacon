@@ -1,5 +1,7 @@
 package dev.beacon.core.chat
 
+import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dev.beacon.core.api.OwuiApi
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
@@ -11,6 +13,11 @@ class ChatEngineFactory @Inject constructor(
     private val api: OwuiApi,
     private val store: ChatStore,
     private val json: Json,
+    @ApplicationContext private val appContext: Context,
 ) {
-    fun create(): ChatEngine = ChatEngine(api, store, json)
+    init {
+        StreamingLeaseService.ensureChannel(appContext)
+    }
+
+    fun create(): ChatEngine = ChatEngine(api, store, json, appContext)
 }

@@ -52,7 +52,7 @@ class ChatEngineTest {
         val api = OwuiApi(client, json, InstanceSource { root })
         val chatsApi = ChatsApi(client, json, InstanceSource { root })
         val store = InMemoryChatStore()
-        return ChatEngine(api, store, json) to store
+        return ChatEngine(api, store, json, appContext = null) to store
     }
 
     private suspend fun awaitIdle(engine: ChatEngine): ChatEngine.ChatUiModel =

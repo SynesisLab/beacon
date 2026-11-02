@@ -55,6 +55,8 @@ class ChatEngine(
     private val api: OwuiApi,
     private val store: ChatStore,
     private val json: Json,
+    /** null in JVM tests — the lease is a device-only concern. */
+    private val appContext: android.content.Context?,
 ) {
     data class RenderMessage(
         val id: String,
@@ -207,6 +209,8 @@ class ChatEngine(
     private fun launchStream(block: suspend () -> SendPlan) {
         if (_state.value.busy) return
         streamJob = scope.launch {
+            // The foreground lease holds the stream alive while backgrounded (§6.3).
+            appContext?.let { StreamingLeaseService.start(it) }
             try {
                 sendFromParams(block())
             } catch (e: CancellationException) {
@@ -217,6 +221,8 @@ class ChatEngine(
                     busy = false,
                     streamingMessageId = null,
                 )
+            } finally {
+                appContext?.let { StreamingLeaseService.stop(it) }
             }
         }
     }

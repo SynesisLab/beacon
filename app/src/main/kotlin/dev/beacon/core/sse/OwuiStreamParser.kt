@@ -31,6 +31,12 @@ sealed interface StreamEvent {
     /** type:chat:tags — data is the tag list (middleware.py:3740-3747). */
     data class TagsUpdate(val tags: List<String>) : StreamEvent
 
+    /**
+     * type:chat:list — the created chat's id (server-side chat creation on first
+     * send without chat_id; main.py:304-307, middleware.py:249).
+     */
+    data class ChatListDiscovered(val chatId: String, val folderId: String?) : StreamEvent
+
     /** choices[].finish_reason — distinguishes a natural stop from a client abort (§6.3). */
     data class FinishReason(val value: String) : StreamEvent
 
@@ -124,6 +130,20 @@ class OwuiStreamParser(
             "chat:title" -> {
                 val title = (obj["data"] as? JsonPrimitive)?.content
                 return if (title != null) listOf(StreamEvent.TitleUpdate(title)) else emptyList()
+            }
+            "chat:list" -> {
+                val body = obj["data"] as? JsonObject
+                val chatId = (body?.get("chat_id") as? JsonPrimitive)?.content
+                return if (chatId != null) {
+                    listOf(
+                        StreamEvent.ChatListDiscovered(
+                            chatId,
+                            (body["folder_id"] as? JsonPrimitive)?.content,
+                        ),
+                    )
+                } else {
+                    emptyList()
+                }
             }
             "chat:tags" -> {
                 val tags = (obj["data"] as? JsonArray)?.stringList().orEmpty()

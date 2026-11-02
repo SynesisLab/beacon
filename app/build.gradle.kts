@@ -7,6 +7,11 @@ plugins {
     alias(libs.plugins.roborazzi)
 }
 
+// Room's KSP processor wants its own plugin pass through KSP (agents.md §3: Room 2.7+ KSP).
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 android {
     namespace = "dev.beacon"
     // Current androidx stack (Compose BOM 2026.09, lifecycle 2.11, okhttp 5.5)
@@ -82,9 +87,14 @@ dependencies {
     implementation(libs.hilt.android)
     implementation(libs.hilt.navigation.compose)
     ksp(libs.hilt.compiler)
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    ksp(libs.room.compiler)
     implementation(libs.timber)
 
     testImplementation(libs.junit)
+    testImplementation(libs.mockwebserver3)
+    testImplementation(libs.coroutines.test)
     testImplementation(libs.robolectric)
     testImplementation(libs.roborazzi)
     testImplementation(libs.roborazzi.compose)

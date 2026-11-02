@@ -1,0 +1,214 @@
+package dev.beacon.core.data
+
+import dev.beacon.core.api.ChatsApi
+import dev.beacon.core.api.dto.ChatPayload
+import dev.beacon.core.api.dto.ChatsListRow
+import dev.beacon.core.api.dto.StoredMessage
+import dev.beacon.core.chat.ChatStore
+import dev.beacon.core.chat.activePathFrom
+import dev.beacon.core.data.local.BeaconDatabase
+import dev.beacon.core.data.local.ChatEntity
+import dev.beacon.core.data.local.MessageEntity
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.withContext
+import javax.inject.Inject
+import javax.inject.Singleton
+
+/**
+ * Room-first data access for chats (agent.md §10): all screens read Room; network
+ * actions write through. Mutations mirror OWUI endpoints BEFORE optimistic-local
+ * application when the device is online (§6.4). Implements [ChatStore] for the engine.
+ */
+@Singleton
+class ChatRepository @Inject constructor(
+    private val db: BeaconDatabase,
+    private val chatsApi: ChatsApi,
+) : ChatStore {
+    internal fun chats() = db.chats()
+    internal fun messages() = db.messages()
+
+    fun observeChats(): Flow<List<ChatEntity>> = db.chats().observeAll()
+
+    // ── ChatStore (engine surface) ───────────────────────────────────────────
+
+    override suspend fun insertNode(message: MessageEntity): Unit = withContext(Dispatchers.IO) {
+        db.messages().upsert(listOf(message))
+        message.parentId?.let { parentId ->
+            if (parentId != message.messageId) {
+                db.messages().byId(parentId)?.let { parent ->
+                    if (!parent.childrenIds.contains(message.messageId)) {
+                        db.messages().upsert(listOf(parent.copy(childrenIds = parent.childrenIds + message.messageId)))
+                    }
+                }
+            }
+        }
+        Unit
+    }
+
+    override suspend fun setCurrentMessage(chatId: String, messageId: String) =
+        withContext(Dispatchers.IO) { db.chats().setCurrentMessageId(chatId, messageId) }
+
+    override suspend fun setChatTitle(chatId: String, title: String) =
+        withContext(Dispatchers.IO) { db.chats().setTitle(chatId, title) }
+
+    override suspend fun setChatTags(chatId: String, tags: List<String>) =
+        withContext(Dispatchers.IO) { db.chats().setTags(chatId, tags) }
+
+    override suspend fun setDone(messageId: String, done: Boolean) =
+        withContext(Dispatchers.IO) { db.messages().setDone(messageId, done) }
+
+    override suspend fun updateAssistantContent(
+        chatId: String,
+        messageId: String,
+        content: String,
+        outputJson: String?,
+        done: Boolean,
+        timestamp: Long,
+    ): Unit = withContext(Dispatchers.IO) {
+        val existing = db.messages().byId(messageId)
+        if (existing != null) {
+            db.messages().upsert(
+                listOf(
+                    existing.copy(
+                        content = content,
+                        outputJson = outputJson ?: existing.outputJson,
+                        done = done,
+                        timestamp = timestamp,
+                    ),
+                ),
+            )
+            db.chats().byId(chatId)?.let { chat ->
+                db.chats().upsert(listOf(chat.copy(updatedAt = timestamp)))
+            }
+        }
+        Unit
+    }
+
+    override suspend fun activePath(chatId: String): List<MessageEntity> = withContext(Dispatchers.IO) {
+        activePathFrom(db.messages().byChat(chatId), db.chats().byId(chatId)?.currentMessageId)
+    }
+
+    override suspend fun upsertServerChat(payload: ChatPayload) = upsertPayload(payload)
+
+    // ── server-mirroring operations ──────────────────────────────────────────
+
+    /** Refresh page 1 + pinned rows into Room (list rows lack `pinned` — chats.py:351-359). */
+    suspend fun refreshChats(): Unit = withContext(Dispatchers.IO) {
+        val rows = chatsApi.list(page = 1)
+        val pinnedRows = try {
+            chatsApi.pinned()
+        } catch (_: Exception) {
+            emptyList()
+        }
+        val pinnedIds = pinnedRows.map { it.id }.toSet()
+        // List rows carry no tags/branch pointer — merge with the locally-known
+        // row instead of clobbering them (REPLACE would null them out).
+        db.chats().upsert(
+            (rows + pinnedRows).map { row ->
+                val existing = db.chats().byId(row.id)
+                row.toEntity(pinnedIds.contains(row.id)).copy(
+                    tags = existing?.tags ?: emptyList(),
+                    currentMessageId = existing?.currentMessageId,
+                    folderId = existing?.folderId,
+                )
+            },
+        )
+    }
+
+    /** Fetch the full tree (§6.4) and adopt it. */
+    suspend fun adoptServerChat(chatId: String): ChatPayload? = withContext(Dispatchers.IO) {
+        val payload = try {
+            chatsApi.full(chatId)
+        } catch (e: Exception) {
+            null
+        }
+        if (payload != null) upsertPayload(payload)
+        payload
+    }
+
+    suspend fun upsertPayload(payload: ChatPayload) = withContext(Dispatchers.IO) {
+        val storage = payload.chat
+        val history = storage?.history
+
+        db.chats().upsert(
+            ChatEntity(
+                chatId = payload.id,
+                updatedAt = payload.updated_at,
+                title = payload.title,
+                pinned = payload.pinned ?: false,
+                archived = payload.archived,
+                folderId = payload.folder_id,
+                currentMessageId = history?.currentId,
+                tags = emptyList(),
+            ),
+        )
+        val nodes = history?.messages?.values.orEmpty()
+        db.messages().upsert(nodes.map { it.toEntity(payload.id) })
+        db.chats().setCurrentMessageId(payload.id, history?.currentId)
+    }
+
+    suspend fun chat(chatId: String): ChatEntity? =
+        withContext(Dispatchers.IO) { db.chats().byId(chatId) }
+
+    suspend fun messages(chatId: String): List<MessageEntity> =
+        withContext(Dispatchers.IO) { db.messages().byChat(chatId) }
+
+    suspend fun deleteChat(chatId: String): Boolean = withContext(Dispatchers.IO) {
+        val ok = try {
+            chatsApi.delete(chatId)
+        } catch (_: Exception) {
+            false
+        }
+        if (ok) {
+            db.messages().deleteByChat(chatId)
+            db.chats().delete(chatId)
+        }
+        ok
+    }
+
+    /** Pin toggles server-side (chats.py:1751); response truth wins, Room follows. */
+    suspend fun togglePin(chatId: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            upsertPayload(chatsApi.pin(chatId))
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    suspend fun toggleArchive(chatId: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            upsertPayload(chatsApi.archive(chatId))
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+}
+
+/** Maps a list row + pinned ids into Room entities (server owns updated_at). */
+private fun ChatsListRow.toEntity(pinned: Boolean): ChatEntity = ChatEntity(
+    chatId = id,
+    updatedAt = updated_at,
+    title = title,
+    pinned = pinned,
+    archived = archived,
+    folderId = null,
+    currentMessageId = null,
+    tags = emptyList(),
+    lastReadAt = last_read_at,
+)
+
+/** Stored tree node → Room row (tree shape preserved: parentId + childrenIds). */
+private fun StoredMessage.toEntity(chatId: String): MessageEntity = MessageEntity(
+    messageId = id,
+    chatId = chatId,
+    parentId = parentId,
+    childrenIds = childrenIds,
+    role = role,
+    content = content,
+    outputJson = output?.toString(),
+    done = done ?: true,
+    timestamp = updatedAt ?: createdAt ?: timestamp,
+)

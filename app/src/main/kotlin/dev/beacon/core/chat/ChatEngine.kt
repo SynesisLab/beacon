@@ -172,9 +172,15 @@ class ChatEngine(
         }) }
 
     /** Intent: send [text] with [modelId]; creates the chat server-side when fresh. */
-    fun send(text: String, modelId: String, files: List<FileAttachment> = emptyList()) {
+    fun send(
+        text: String,
+        modelId: String,
+        files: List<FileAttachment> = emptyList(),
+        features: Features? = null,
+        temporary: Boolean = false,
+    ) {
         if (text.isBlank() || _state.value.busy) return
-        launchStream { sendParams(text, modelId).copy(files = files) }
+        launchStream { sendParams(text, modelId).copy(files = files, features = features, temporary = temporary) }
     }
 
     /** §4: regenerate = a sibling branch under the same parent (new assistant id). */
@@ -293,6 +299,10 @@ class ChatEngine(
         val replaceUserMessageId: String? = null,
         /** continue: append to this assistant turn (same id on the wire). */
         val continueAssistantId: String? = null,
+        /** composer feature toggles (§9.3; server-gated) — the wire-typed set. */
+        val features: Features? = null,
+        /** temporary chat: client-owned `temporary:<uuid>` id, never saved (§9.3) */
+        val temporary: Boolean = false,
     )
 
     private suspend fun sendParams(
@@ -300,7 +310,12 @@ class ChatEngine(
         modelId: String,
         regenerate: Boolean = false,
         replaceUserMessageId: String? = null,
-    ): SendPlan = SendPlan(text, modelId, emptyList(), regenerate, replaceUserMessageId)
+        features: Features? = null,
+        temporary: Boolean = false,
+    ): SendPlan = SendPlan(text, modelId, emptyList(), regenerate, replaceUserMessageId, features = features, temporary = temporary)
+
+    /** Temporary chats own a client-generated `temporary:<uuid>` id (utils/chat_id.py verified). */
+    private var tempSessionId: String? = null
 
     private suspend fun continueParams(modelId: String): SendPlan = SendPlan(
         text = "",
@@ -310,6 +325,15 @@ class ChatEngine(
     )
 
     private suspend fun sendFromParams(plan: SendPlan) {
+        // Temporary chats: the id scheme is client-owned, nothing persists (§9.3).
+        val tempId = if (plan.temporary) {
+            (tempSessionId ?: "temporary:${UUID.randomUUID()}").also { tempSessionId = it }
+        } else {
+            null
+        }
+        if (tempId != null) {
+            _state.value = _state.value.copy(chatId = tempId)
+        }
         val existingChatId = _state.value.chatId
         val isNewChat = existingChatId == null
         val now = System.currentTimeMillis()
@@ -403,10 +427,11 @@ class ChatEngine(
             regeneration_message_id = if (plan.regenerate) previousAssistantId else null,
             regeneration_prompt = null,
             assistant_message_id = plan.continueAssistantId,
-            background_tasks = if (isNewChat) {
-                BackgroundTasks(title_generation = true, tags_generation = true, follow_up_generation = true)
-            } else {
-                BackgroundTasks(follow_up_generation = true)
+            features = plan.features ?: Features(),
+            background_tasks = when {
+                plan.temporary -> BackgroundTasks() // nothing persists for temp chats
+                isNewChat -> BackgroundTasks(title_generation = true, tags_generation = true, follow_up_generation = true)
+                else -> BackgroundTasks(follow_up_generation = true)
             },
         )
         activeModelId = plan.modelId

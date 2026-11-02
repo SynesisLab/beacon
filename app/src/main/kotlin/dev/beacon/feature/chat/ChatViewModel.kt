@@ -56,6 +56,10 @@ class ChatViewModel @Inject constructor(
         val attachments: List<Attachment> = emptyList(),
         val uploading: Boolean = false,
         val attachmentError: String? = null,
+        /** §9.3 composer toggles + gates (hidden when the server doesn't expose them). */
+        val toggles: Toggles = Toggles(),
+        val tempMode: Boolean = false,
+        val featuresGate: dev.beacon.core.api.dto.Features? = null,
     ) {
         /** Display label: the model's NAME when known, else its id. */
         val modelLabel: String?
@@ -70,6 +74,9 @@ class ChatViewModel @Inject constructor(
     private val attachments = MutableStateFlow<List<Attachment>>(emptyList())
     private val uploading = MutableStateFlow(false)
     private val attachmentError = MutableStateFlow<String?>(null)
+    private val toggles = MutableStateFlow(Toggles())
+    private val tempMode = MutableStateFlow(false)
+    private var configFeatures: dev.beacon.core.api.dto.Features? = null
     private var serverDefault: String? = null
     private val httpClient = api.publicClient()
     private val instanceUrl = session.instanceUrlSnapshot()
@@ -84,6 +91,8 @@ class ChatViewModel @Inject constructor(
             attachments,
             uploading,
             attachmentError,
+            toggles,
+            tempMode,
         ) { values ->
             @Suppress("UNCHECKED_CAST")
             UiState(
@@ -97,6 +106,9 @@ class ChatViewModel @Inject constructor(
                 attachments = values[5] as List<Attachment>,
                 uploading = values[6] as Boolean,
                 attachmentError = values[7] as String?,
+                toggles = values[8] as Toggles,
+                tempMode = values[9] as Boolean,
+                featuresGate = configFeatures,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState(engine = engine.state.value))
 
@@ -110,8 +122,10 @@ class ChatViewModel @Inject constructor(
             engine.load(savedStateHandle.get<String>(KEY_CHAT)?.takeUnless { it == NEW_CHAT })
             runCatching {
                 modelsState.value = api.models().items
+                val config = api.config()
+                configFeatures = config.features
                 // OWUI admin-assigned default: "model-a,model-b" list → first id
-                serverDefault = api.config().default_models
+                serverDefault = config.default_models
                     ?.split(',')?.firstOrNull()?.trim()
                     ?.takeIf { it.isNotEmpty() }
             }
@@ -132,6 +146,35 @@ class ChatViewModel @Inject constructor(
         attachments.value = attachments.value - entry
     }
 
+    /** §9.3 composer toggles, gated by the server's config capabilities. */
+    data class Toggles(
+        val webSearch: Boolean = false,
+        val imageGeneration: Boolean = false,
+        val codeInterpreter: Boolean = false,
+    )
+
+    fun toggleWebSearch() {
+        toggles.value = toggles.value.copy(webSearch = !toggles.value.webSearch)
+    }
+
+    fun toggleImageGeneration() {
+        toggles.value = toggles.value.copy(imageGeneration = !toggles.value.imageGeneration)
+    }
+
+    fun toggleCodeInterpreter() {
+        toggles.value = toggles.value.copy(codeInterpreter = !toggles.value.codeInterpreter)
+    }
+
+    fun toggleTempMode() {
+        tempMode.value = !tempMode.value
+    }
+
+    private fun currentFeatures(): dev.beacon.core.chat.Features = dev.beacon.core.chat.Features(
+        web_search = toggles.value.webSearch && (configFeatures?.enable_web_search ?: true),
+        image_generation = toggles.value.imageGeneration && (configFeatures?.enable_image_generation ?: true),
+        code_interpreter = toggles.value.codeInterpreter && (configFeatures?.enable_code_interpreter ?: true),
+    )
+
     fun send() {
         val text = draft.value.trim()
         if (text.isEmpty() || uploading.value) return
@@ -139,7 +182,7 @@ class ChatViewModel @Inject constructor(
         val pending = attachments.value.toList()
         if (pending.isEmpty()) {
             draft.value = ""
-            engine.send(text, modelId)
+            engine.send(text, modelId, features = currentFeatures(), temporary = tempMode.value)
             return
         }
 

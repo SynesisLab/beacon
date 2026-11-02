@@ -62,6 +62,11 @@ data class ChatActions(
     /** M3-d: attach (docs/photos via the pickers) / remove a pending chip. */
     val onAttach: () -> Unit = {},
     val onRemoveAttachment: (ChatViewModel.Attachment) -> Unit = {},
+    /** §9.3 composer toggles + temp chat. */
+    val onToggleWebSearch: () -> Unit = {},
+    val onToggleImageGeneration: () -> Unit = {},
+    val onToggleCodeInterpreter: () -> Unit = {},
+    val onToggleTemp: () -> Unit = {},
 )
 
 // Gentle radii with padding ≥ corner clearance — Surface clips to shape, so
@@ -226,6 +231,45 @@ fun ChatScreen(
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Latest ⇅") }
+            }
+            // §9.3 composer toggles (server-gated) + temp chat.
+            val gate = state.featuresGate
+            if (gate != null && (gate.enable_web_search == true || gate.enable_image_generation == true ||
+                    gate.enable_code_interpreter == true)
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp),
+                ) {
+                    if (gate.enable_web_search == true) {
+                        androidx.compose.material3.FilterChip(
+                            selected = state.toggles.webSearch,
+                            onClick = actions.onToggleWebSearch,
+                            label = { Text("🌐 Web") },
+                        )
+                    }
+                    if (gate.enable_image_generation == true) {
+                        androidx.compose.material3.FilterChip(
+                            selected = state.toggles.imageGeneration,
+                            onClick = actions.onToggleImageGeneration,
+                            label = { Text("🎨 Image") },
+                        )
+                    }
+                    if (gate.enable_code_interpreter == true) {
+                        androidx.compose.material3.FilterChip(
+                            selected = state.toggles.codeInterpreter,
+                            onClick = actions.onToggleCodeInterpreter,
+                            label = { Text("⌨️ Code") },
+                        )
+                    }
+                    androidx.compose.material3.FilterChip(
+                        selected = state.tempMode,
+                        onClick = actions.onToggleTemp,
+                        label = { Text("Temp") },
+                    )
+                }
             }
             // M3-d: pending attachments (chips) + the attach affordance.
             if (state.attachments.isNotEmpty()) {

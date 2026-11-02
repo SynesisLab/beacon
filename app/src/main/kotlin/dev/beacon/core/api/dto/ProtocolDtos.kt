@@ -53,6 +53,9 @@ data class Features(
     val enable_tags_generation: Boolean? = null,
     val enable_follow_up_generation: Boolean? = null,
     val enable_direct_connections: Boolean? = null,
+    // gates verified: main.py:2470-2471
+    val enable_code_execution: Boolean? = null,
+    val enable_code_interpreter: Boolean? = null,
 )
 
 /**

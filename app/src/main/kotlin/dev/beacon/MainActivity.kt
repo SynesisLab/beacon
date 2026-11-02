@@ -167,6 +167,10 @@ private fun BeaconNavHost() {
                                 docPicker.launch(arrayOf("*/*"))
                             },
                             onRemoveAttachment = vm::removeAttachment,
+                            onToggleWebSearch = vm::toggleWebSearch,
+                            onToggleImageGeneration = vm::toggleImageGeneration,
+                            onToggleCodeInterpreter = vm::toggleCodeInterpreter,
+                            onToggleTemp = vm::toggleTempMode,
                             onFlickRefetch = vm::flickRefetch,
                             onAppResume = vm::onAppResume,
                             onClearUpdatedPill = vm::clearUpdatedPill,

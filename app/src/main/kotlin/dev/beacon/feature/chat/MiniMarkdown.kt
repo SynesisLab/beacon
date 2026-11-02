@@ -37,7 +37,7 @@ import androidx.compose.ui.unit.dp
  * [segmentMarkdown] + [inlineText] are pure and table-tested.
  */
 
-enum class BlockKind { Paragraph, List_, Code }
+enum class BlockKind { Paragraph, List_, Code, Heading }
 
 data class TextBlock(
     val kind: BlockKind,
@@ -45,11 +45,13 @@ data class TextBlock(
     val language: String? = null,
     val ordered: Boolean = false,
     val items: List<String> = emptyList(),
+    val headingLevel: Int = 0,
 )
 
 private val fenceLine = Regex("^\\s*(```+|~~~+)\\s*([a-zA-Z0-9_+-]*)\\s*$")
 private val bulletLine = Regex("^\\s{0,6}[-*+]\\s+(.*)$")
 private val orderedLine = Regex("^\\s{0,6}(\\d{1,3})[.)]\\s+(.*)$")
+private val headingLine = Regex("^(#{1,6})\\s+(.*)$")
 
 fun segmentMarkdown(md: String): List<TextBlock> {
     if (md.isBlank()) return emptyList()
@@ -99,7 +101,19 @@ fun segmentMarkdown(md: String): List<TextBlock> {
 
         val bullet = bulletLine.find(line)
         val ordered = orderedLine.find(line)
+        val heading = headingLine.find(line)
         when {
+            heading != null -> {
+                flushParagraph()
+                flushList()
+                blocks.add(
+                    TextBlock(
+                        BlockKind.Heading,
+                        heading.groupValues[2],
+                        headingLevel = heading.groupValues[1].length,
+                    ),
+                )
+            }
             bullet != null -> {
                 flushParagraph()
                 if (listItems != null && listOrdered) flushList()
@@ -184,6 +198,16 @@ fun MiniMarkdown(
                         }
                     }
                 }
+                BlockKind.Heading -> Text(
+                    text = inlineText(block.text),
+                    style = when {
+                        block.headingLevel <= 1 -> MaterialTheme.typography.headlineSmall
+                        block.headingLevel == 2 -> MaterialTheme.typography.titleLarge
+                        block.headingLevel == 3 -> MaterialTheme.typography.titleMedium
+                        else -> MaterialTheme.typography.titleMedium
+                    },
+                    fontWeight = FontWeight.SemiBold,
+                )
                 BlockKind.Code -> CodeBlock(text = block.text, language = block.language)
             }
         }

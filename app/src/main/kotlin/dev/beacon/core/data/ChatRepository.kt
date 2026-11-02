@@ -136,22 +136,24 @@ class ChatRepository @Inject constructor(
     suspend fun upsertPayload(payload: ChatPayload) = withContext(Dispatchers.IO) {
         val storage = payload.chat
         val history = storage?.history
+        // Preserve locally-known tags (list refresh merges them; full adopt re-derives).
+        val existing = db.chats().byId(payload.id)
 
         db.chats().upsert(
             ChatEntity(
                 chatId = payload.id,
-                updatedAt = payload.updated_at,
+                updatedAt = epochMs(payload.updated_at),
                 title = payload.title,
-                pinned = payload.pinned ?: false,
+                pinned = payload.pinned ?: existing?.pinned ?: false,
                 archived = payload.archived,
-                folderId = payload.folder_id,
-                currentMessageId = history?.currentId,
-                tags = emptyList(),
+                folderId = payload.folder_id ?: existing?.folderId,
+                currentMessageId = history?.currentId ?: existing?.currentMessageId,
+                tags = existing?.tags ?: emptyList(),
             ),
         )
         val nodes = history?.messages?.values.orEmpty()
         db.messages().upsert(nodes.map { it.toEntity(payload.id) })
-        db.chats().setCurrentMessageId(payload.id, history?.currentId)
+        db.chats().setCurrentMessageId(payload.id, history?.currentId ?: existing?.currentMessageId)
     }
 
     suspend fun chat(chatId: String): ChatEntity? =

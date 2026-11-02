@@ -38,6 +38,7 @@ fun PartsView(
     parts: List<dev.beacon.core.render.ChatPart>,
     modifier: Modifier = Modifier,
     onFollowUp: (String) -> Unit = {},
+    onOpenFile: (fileId: String, name: String, mime: String) -> Unit = { _, _, _ -> },
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         parts.forEach { part ->
@@ -50,9 +51,56 @@ fun PartsView(
                 is dev.beacon.core.render.ChatPart.Citations -> CitationsPill(part)
                 is dev.beacon.core.render.ChatPart.FollowUps -> FollowUpRow(part, onFollowUp)
                 is dev.beacon.core.render.ChatPart.HtmlCard -> HtmlCardPlaceholder(part)
-                is dev.beacon.core.render.ChatPart.File -> Unit // M2-3
-                is dev.beacon.core.render.ChatPart.GeneratedImage -> Unit // M2-3
+                is dev.beacon.core.render.ChatPart.File -> FileChip(part, onOpenFile)
+                is dev.beacon.core.render.ChatPart.GeneratedImage -> Unit // M2-2 (generation rendering)
             }
+        }
+    }
+}
+
+/** display_file inline chip (matches the web UI's file card affordance, not a JSON dump). */
+@Composable
+private fun FileChip(
+    part: dev.beacon.core.render.ChatPart.File,
+    onOpenFile: (String, String, String) -> Unit,
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onOpenFile(part.fileId, part.name, part.mime) },
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.padding(12.dp),
+        ) {
+            Text(
+                text = when (part.viewer) {
+                    dev.beacon.core.render.FileViewer.Image -> "🖼️"
+                    dev.beacon.core.render.FileViewer.Pdf -> "📄"
+                    dev.beacon.core.render.FileViewer.Text -> "📝"
+                    dev.beacon.core.render.FileViewer.AudioVideo -> "▶️"
+                    dev.beacon.core.render.FileViewer.Download -> "📦"
+                },
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Column(Modifier.weight(1f)) {
+                Text(part.name, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+                Text(
+                    part.mime,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
+            Text(
+                "Open",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+            )
         }
     }
 }

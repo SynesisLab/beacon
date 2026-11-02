@@ -115,6 +115,9 @@ private fun BeaconNavHost() {
                             onStop = vm::stop,
                             onBack = { nav.popBackStack() },
                             onOpenModelPicker = { pickerOpen = true },
+                            onOpenFile = { fileId, name, mime ->
+                                nav.navigate("file/$fileId/${android.net.Uri.encode(name)}/${android.net.Uri.encode(mime)}")
+                            },
                         ),
                         showModelPicker = pickerOpen,
                         onDismissPicker = { pickerOpen = false },
@@ -130,6 +133,23 @@ private fun BeaconNavHost() {
                         state = vm.state.collectAsStateWithLifecycle().value,
                         onSignOut = vm::signOut,
                         onClose = { nav.popBackStack() },
+                    )
+                }
+                composable(
+                    route = "file/{fileId}/{name}/{mime}",
+                    arguments = listOf(
+                        navArgument("fileId") { type = NavType.StringType },
+                        navArgument("name") { type = NavType.StringType },
+                        navArgument("mime") { type = NavType.StringType },
+                    ),
+                ) { entry ->
+                    val fileVm: dev.beacon.feature.chat.FileViewerViewModel = hiltViewModel()
+                    dev.beacon.feature.chat.FileViewerScreen(
+                        filesApi = fileVm.api,
+                        fileId = entry.arguments?.getString("fileId").orEmpty(),
+                        name = android.net.Uri.decode(entry.arguments?.getString("name").orEmpty()),
+                        mime = android.net.Uri.decode(entry.arguments?.getString("mime").orEmpty()),
+                        onBack = { nav.popBackStack() },
                     )
                 }
             }

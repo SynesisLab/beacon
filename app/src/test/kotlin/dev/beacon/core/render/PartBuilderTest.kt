@@ -91,4 +91,40 @@ class PartBuilderTest {
             assertTrue(it.md.isEmpty() && it.streaming)
         }
     }
+
+    // display_file → ChatPart.File (verified: backend tools/builtin.py display_file)
+    @Test
+    fun displayFileOutputBecomesFilePart() {
+        // Single-line: the tool result rides inside a JSON string (quotes escaped).
+        val fileJson =
+            """{"type":"file","source":"open_webui","exists":true,"displayed":true,""" +
+                """"path":"/api/v1/files/abc-123/content","name":"report.pdf",""" +
+                """"content_type":"application/pdf","mime_type":"application/pdf"}"""
+        val embedded = fileJson.replace("\"", "\\\"")
+        val parts = PartBuilder.build(
+            FoldedMessage(
+                outputSeen = true,
+                outputItems = items(
+                    """{"type":"function_call","call_id":"c1","name":"display_file","arguments":"{\"path\":\"abc-123\"}","status":"completed"}""",
+                    """{"type":"function_call_output","call_id":"c1","output":"$embedded"}""",
+                ),
+            ),
+        )
+        val file = parts.filterIsInstance<ChatPart.File>().single()
+        assertEquals("abc-123", file.fileId)
+        assertEquals("report.pdf", file.name)
+        assertEquals(FileViewer.Pdf, file.viewer)
+        // The call itself still renders as a tool chip.
+        assertEquals("display_file", parts.filterIsInstance<ChatPart.ToolCall>().single().name)
+    }
+
+    @Test
+    fun fileViewerMimeMapping() {
+        assertEquals(FileViewer.Image, DisplayFile.viewerForMime("image/png"))
+        assertEquals(FileViewer.Pdf, DisplayFile.viewerForMime("application/pdf"))
+        assertEquals(FileViewer.Text, DisplayFile.viewerForMime("text/plain"))
+        assertEquals(FileViewer.Text, DisplayFile.viewerForMime("application/json"))
+        assertEquals(FileViewer.AudioVideo, DisplayFile.viewerForMime("audio/mpeg"))
+        assertEquals(FileViewer.Download, DisplayFile.viewerForMime("application/vnd.openxmlformats-officedocument.wordprocessingml.document"))
+    }
 }

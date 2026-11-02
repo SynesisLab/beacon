@@ -1,5 +1,6 @@
 package dev.beacon.core.render
 
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -14,6 +15,7 @@ import kotlinx.serialization.json.JsonPrimitive
  *   (agent.md §17); text-accumulation parts are used only when outputs never appeared;
  * - message items carry output_text parts; reasoning items carry their own;
  * - function_call + function_call_output pair by call_id into a single ToolCall;
+ * - display_file outputs become [ChatPart.File]s — never JSON text (§7.1);
  * - status renders as a transient pill at the top; citations/follow-ups at the bottom.
  */
 data class FoldedMessage(
@@ -30,13 +32,15 @@ data class FoldedMessage(
 )
 
 object PartBuilder {
-    fun build(m: FoldedMessage): List<ChatPart> = buildList {
+    private val displayFile = DisplayFile
+
+    fun build(m: FoldedMessage, json: Json = Json): List<ChatPart> = buildList {
         if (!m.statusText.isNullOrBlank()) {
             add(ChatPart.Status(m.statusText, m.statusDone))
         }
 
         if (m.outputSeen) {
-            buildFromOutputs(m.outputItems, m.streaming).forEach { add(it) }
+            buildFromOutputs(m.outputItems, m.streaming, json).forEach { add(it) }
         } else {
             m.reasoningMd?.takeIf { it.isNotBlank() }?.let {
                 add(ChatPart.Reasoning(it, streaming = m.streaming))
@@ -57,7 +61,11 @@ object PartBuilder {
         }
     }
 
-    private fun buildFromOutputs(items: List<JsonElement>, streaming: Boolean): List<ChatPart> = buildList {
+    private fun buildFromOutputs(
+        items: List<JsonElement>,
+        streaming: Boolean,
+        json: Json,
+    ): List<ChatPart> = buildList {
         val pendingCalls = HashMap<String, ChatPart.ToolCall>()
 
         items.forEach { raw ->
@@ -71,8 +79,7 @@ object PartBuilder {
                 }
                 "message" -> {
                     val text = (item["content"] as? JsonArray).outputText()
-                    // The message item carries the visible markdown; blank until the
-                    // first delta arrives — render nothing while empty and non-streaming.
+                    // Blank until the first delta; the streaming caret covers the gap.
                     if (text.isNotBlank() || item.statusInProgress()) {
                         add(ChatPart.Markdown(text, streaming = item.statusInProgress()))
                     }
@@ -80,22 +87,27 @@ object PartBuilder {
                 "function_call" -> {
                     val callId = (item["call_id"] as? JsonPrimitive)?.content
                         ?: (item["id"] as? JsonPrimitive)?.content
-                    val call = ChatPart.ToolCall(
-                        callId = callId,
-                        name = (item["name"] as? JsonPrimitive)?.content ?: "tool",
-                        args = (item["arguments"] as? JsonPrimitive)?.content ?: "",
-                        status = if (item.statusInProgress()) ToolStatus.Running else ToolStatus.Done,
-                        result = pendingCalls[callId]?.result,
+                    add(
+                        ChatPart.ToolCall(
+                            callId = callId,
+                            name = (item["name"] as? JsonPrimitive)?.content ?: "tool",
+                            args = (item["arguments"] as? JsonPrimitive)?.content ?: "",
+                            status = if (item.statusInProgress()) ToolStatus.Running else ToolStatus.Done,
+                            result = pendingCalls[callId]?.result,
+                        ),
                     )
-                    add(call)
                 }
                 "function_call_output" -> {
                     val callId = (item["call_id"] as? JsonPrimitive)?.content
                     val result = item["output"]
-                    // Attach the result onto the matching call part already collected.
-                    val index = indexOfFirst {
-                        (it as? ChatPart.ToolCall)?.callId == callId
+                    val asFile = displayFile.parse(result, json)
+                    // display_file results become FILE parts — never JSON text (§7.1).
+                    if (asFile != null) {
+                        add(asFile)
+                        return@forEach
                     }
+                    // Attach the result onto the matching call part already collected.
+                    val index = indexOfFirst { (it as? ChatPart.ToolCall)?.callId == callId }
                     if (index >= 0 && callId != null) {
                         val call = get(index) as ChatPart.ToolCall
                         set(index, call.copy(result = result))

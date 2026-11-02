@@ -80,6 +80,7 @@ class M0ScreensScreenshotTest {
 
     private val chatActions = ChatActions(
         onDraft = {}, onSend = {}, onStop = {}, onBack = {}, onOpenModelPicker = {},
+        onOpenFile = { _, _, _ -> },
     )
 
     private val onboardingActions = OnboardingActions(

@@ -22,6 +22,7 @@ val MutedInk = Color(0xFF6B6657)
 // Dark scheme
 val Umber = Color(0xFF262624)
 val UmberSurface = Color(0xFF30302E)
-val UmberSurfaceVariant = Color(0xFF3A3A36)
+/** Distinctly lighter for bubbles/cards so they never vanish against the bg (user report). */
+val UmberSurfaceVariant = Color(0xFF40403C)
 val WarmWhite = Color(0xFFF5F4EE)
 val WarmMuted = Color(0xFFA8A396)

@@ -48,6 +48,7 @@ data class ChatActions(
     val onStop: () -> Unit,
     val onBack: () -> Unit,
     val onOpenModelPicker: () -> Unit,
+    val onOpenFile: (fileId: String, name: String, mime: String) -> Unit,
 )
 
 private val UserBubbleShape = RoundedCornerShape(
@@ -136,6 +137,7 @@ fun ChatScreen(
                         message = messages[index],
                         streamingMessageId = state.engine.streamingMessageId,
                         onFollowUp = actions.onDraft,
+                        onOpenFile = actions.onOpenFile,
                     )
                 }
             }
@@ -209,6 +211,7 @@ private fun MessageBubble(
     message: ChatEngine.RenderMessage,
     streamingMessageId: String?,
     onFollowUp: (String) -> Unit,
+    onOpenFile: (fileId: String, name: String, mime: String) -> Unit,
 ) {
     val streaming = message.id == streamingMessageId
     if (message.role == "user") {
@@ -232,7 +235,7 @@ private fun MessageBubble(
                 color = MaterialTheme.colorScheme.surface,
                 shape = AssistantBubbleShape,
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                modifier = Modifier.widthIn(max = 640.dp),
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 if (message.parts.isEmpty()) {
                     // Persisted legacy rows / tests without a part pipeline.
@@ -245,6 +248,7 @@ private fun MessageBubble(
                     PartsView(
                         parts = message.parts,
                         onFollowUp = onFollowUp,
+                        onOpenFile = onOpenFile,
                         modifier = Modifier,
                     )
                 }

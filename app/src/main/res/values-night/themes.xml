@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark: Claude umber -->
+    <style name="Theme.Beacon" parent="android:Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowBackground">@color/brand_window_background</item>
+        <item name="android:colorBackground">@color/brand_window_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+    </style>
+</resources>

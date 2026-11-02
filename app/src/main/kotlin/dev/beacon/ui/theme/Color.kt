@@ -2,16 +2,26 @@ package dev.beacon.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-/** Beacon brand palette: indigo ink, warm beacon-amber accent. */
-val BrandIndigo = Color(0xFF6D7BFF)
-val BrandIndigoDim = Color(0xFF4A56C7)
-val BrandAmber = Color(0xFFFFB454)
-val BrandInk = Color(0xFF10131A)
-val BrandSurface = Color(0xFF161A24)
-val BrandSurfaceHigh = Color(0xFF1E2431)
-val BrandOnSurface = Color(0xFFE7EAF6)
-val BrandOnSurfaceDim = Color(0xFF9AA2B9)
+/**
+ * Claude-style warm palette (ADR-0010): cream light, umber dark, coral accent —
+ * "similar to Claude's default color", calm and literary rather than cool-indigo.
+ */
 
-val BrandIndigoLight = Color(0xFF5B68E0)
-val BrandLightSurface = Color(0xFFF7F8FC)
-val BrandLightOnSurface = Color(0xFF1A1D26)
+// Accent (both modes; dark gets the brighter coral)
+val Coral = Color(0xFFD97757)
+val CoralDeep = Color(0xFFC96442)
+val CoralBright = Color(0xFFE08763)
+
+// Light scheme
+val Cream = Color(0xFFFAF9F5)
+val LightSurface = Color(0xFFFFFFFF)
+val LightSurfaceVariant = Color(0xFFF0EEE4)
+val Ink = Color(0xFF3D3929)
+val MutedInk = Color(0xFF6B6657)
+
+// Dark scheme
+val Umber = Color(0xFF262624)
+val UmberSurface = Color(0xFF30302E)
+val UmberSurfaceVariant = Color(0xFF3A3A36)
+val WarmWhite = Color(0xFFF5F4EE)
+val WarmMuted = Color(0xFFA8A396)

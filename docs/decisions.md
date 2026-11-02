@@ -110,3 +110,27 @@ fix).
 **Consequences.** Any future Robolectric screenshot test that launches a real app
 Activity must keep this entry; pure-state-hoisted screens (the M0 pattern) don't launch
 app activities, which also avoids Hilt test setup for now.
+
+## ADR-0011 — Password fields: Compose autofill contentType + platform commit
+
+*Date:* 2026-11-01 · *Milestone:* M1 · *Requested:* by Anthony after first device run
+
+**Decision.** The password-mode fields carry autofill hints via
+`Modifier.contentType(ContentType.EmailAddress / ContentType.Password)` (Compose UI
+1.12.1 `androidx.compose.ui.autofill`, verified present in the resolved artifact).
+After a successful password sign-in, the screen calls the platform
+`android.view.autofill.AutofillManager.commit()` to trigger the password-manager
+save prompt (Google Password Manager on GMS devices). No androidx.credentials
+dependency for the save path; failures are swallowed (never block sign-in).
+
+**Why.** User request: email/password sign-in must trigger Android's password
+manager prompting — both the fill prompt on field focus and the save offer on
+success. The compose `contentType` modifier is the platform integration for fills;
+`commit()` is the standard deterministic save trigger. (The abandoned
+`LocalAutofillManager` symbol could not be located in the resolved artifact's class
+inventory; the platform manager route reaches the same framework without it.)
+
+**Consequences.** Save prompting requires the fields to have been served by the
+framework (autofilled or typed into hint-decorated fields) — verify on device with
+Google Password Manager in manual matrix. API-key auth never gets password-save
+treatment (not a password).

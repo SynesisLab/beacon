@@ -1,23 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Beacon mark: a lit beacon dot with radiating signal arcs, centered in the
-     108dp adaptive-icon canvas (66dp safe zone). -->
+<!-- Beacon mark: a lit beacon with radiating signal arcs, Claude-coral on umber,
+     centered in the 108dp adaptive-icon canvas (66dp safe zone). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Signal arcs (upper hemisphere), stroke, round caps -->
+    <!-- Signal arcs -->
     <group>
         <path
             android:pathData="M 40,54 A 14,14 0 0 1 68,54"
-            android:strokeColor="#8B93FF"
+            android:strokeColor="#E9B9A2"
             android:strokeWidth="3.5"
             android:strokeLineCap="round"
             android:fillColor="#00000000" />
         <path
             android:pathData="M 46,54 A 8,8 0 0 1 62,54"
-            android:strokeColor="#B9C2FF"
+            android:strokeColor="#F3D6C6"
             android:strokeWidth="2.5"
             android:strokeLineCap="round"
             android:fillColor="#00000000" />
@@ -26,7 +26,7 @@
     <!-- Base line under the beacon -->
     <path
         android:pathData="M 42,66 L 66,66"
-        android:strokeColor="#8B93FF"
+        android:strokeColor="#D97757"
         android:strokeWidth="3.5"
         android:strokeLineCap="round"
         android:fillColor="#00000000" />
@@ -34,11 +34,11 @@
     <!-- The beacon itself -->
     <path
         android:pathData="M 54,38 A 7,7 0 0 1 54,52 Z M 47,52 A 7,7 0 0 1 61,52 Z"
-        android:fillColor="#FFB454" />
+        android:fillColor="#D97757" />
     <path
         android:pathData="M 51,52 L 57,52 L 56,58 L 52,58 Z"
-        android:fillColor="#FFB454" />
+        android:fillColor="#D97757" />
     <path
         android:pathData="M 54,43 A 2.2,2.2 0 0 1 54,47.4 A 2.2,2.2 0 0 1 54,43 Z"
-        android:fillColor="#FFFFFF" />
+        android:fillColor="#FFF8F2" />
 </vector>

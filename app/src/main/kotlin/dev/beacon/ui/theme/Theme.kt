@@ -12,34 +12,39 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
 private val DarkScheme = darkColorScheme(
-    primary = BrandIndigo,
-    onPrimary = Color(0xFF10131A),
-    secondary = BrandAmber,
-    onSecondary = Color(0xFF10131A),
-    background = BrandInk,
-    onBackground = BrandOnSurface,
-    surface = BrandSurface,
-    onSurface = BrandOnSurface,
-    surfaceVariant = BrandSurfaceHigh,
-    onSurfaceVariant = BrandOnSurfaceDim,
+    primary = CoralBright,
+    onPrimary = Umber,
+    primaryContainer = CoralDeep,
+    onPrimaryContainer = WarmWhite,
+    secondary = WarmMuted,
+    onSecondary = Umber,
+    background = Umber,
+    onBackground = WarmWhite,
+    surface = UmberSurface,
+    onSurface = WarmWhite,
+    surfaceVariant = UmberSurfaceVariant,
+    onSurfaceVariant = WarmMuted,
+    outline = Color(0xFF57534E),
 )
 
 private val LightScheme = lightColorScheme(
-    primary = BrandIndigoLight,
+    primary = Coral,
     onPrimary = Color.White,
-    secondary = BrandAmber,
-    onSecondary = Color(0xFF10131A),
-    background = BrandLightSurface,
-    onBackground = BrandLightOnSurface,
-    surface = BrandLightSurface,
-    onSurface = BrandLightOnSurface,
-    surfaceVariant = Color(0xFFE8EAF3),
-    onSurfaceVariant = Color(0xFF5A6070),
+    primaryContainer = Color(0xFFFFEDE4),
+    onPrimaryContainer = Ink,
+    secondary = MutedInk,
+    onSecondary = Color.White,
+    background = Cream,
+    onBackground = Ink,
+    surface = LightSurface,
+    onSurface = Ink,
+    surfaceVariant = LightSurfaceVariant,
+    onSurfaceVariant = MutedInk,
+    outline = Color(0xFFD6D3CB),
 )
 
 /**
- * Brand scheme is the default; dynamic color is opt-in (agent.md §3: optional).
- * When [useDynamicColor] is true on Android 12+, the wallpaper palette wins.
+ * Claude-warm brand scheme is the default; dynamic color stays opt-in (agent.md §3).
  */
 @Composable
 fun BeaconTheme(

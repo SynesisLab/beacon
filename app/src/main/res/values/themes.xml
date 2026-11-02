@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Manifest-level theme only (window chrome + background pre-Compose).
-         All real theming is Material 3 in Compose (ui.theme). -->
+         Light: Claude cream. All real theming is Material 3 in Compose (ui.theme). -->
     <style name="Theme.Beacon" parent="android:Theme.DeviceDefault.NoActionBar">
-        <item name="android:windowBackground">#10131A</item>
-        <item name="android:colorBackground">#10131A</item>
+        <item name="android:windowBackground">@color/brand_window_background</item>
+        <item name="android:colorBackground">@color/brand_window_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
     </style>
 </resources>

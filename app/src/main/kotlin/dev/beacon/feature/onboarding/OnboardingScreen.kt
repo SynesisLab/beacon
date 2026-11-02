@@ -1,6 +1,7 @@
 package dev.beacon.feature.onboarding
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -22,10 +23,16 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.autofill.ContentType
+import androidx.compose.ui.autofill.contentType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import dev.beacon.core.data.AuthMethod
 import dev.beacon.ui.theme.Paddings
@@ -50,6 +57,22 @@ fun OnboardingScreen(
     actions: OnboardingActions,
     modifier: Modifier = Modifier,
 ) {
+    // Password-manager save hook (agent.md §9.3-parity; ADR-0011): when the user
+    // finished password sign-in (step transitioned to Models with a password present),
+    // commit the Android autofill save — Google Password Manager prompts to save.
+    val context = LocalContext.current
+    LaunchedEffect(state.step) {
+        if (state.step == OnboardingViewModel.Step.Models && state.passwordDraft.isNotEmpty()) {
+            try {
+                context.getSystemService(
+                    android.view.autofill.AutofillManager::class.java,
+                )?.commit()
+            } catch (_: Exception) {
+                // Some OEMs lack the autofill service — never block sign-in on it.
+            }
+        }
+    }
+
     when (state.step) {
         OnboardingViewModel.Step.Url -> UrlStep(state, actions, modifier)
         OnboardingViewModel.Step.Auth -> AuthStep(state, actions, modifier)
@@ -142,14 +165,21 @@ private fun AuthStep(state: OnboardingViewModel.UiState, actions: OnboardingActi
                     onValueChange = actions.setEmailDraft,
                     label = { Text("Email") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .contentType(ContentType.EmailAddress),
                 )
                 OutlinedTextField(
                     value = state.passwordDraft,
                     onValueChange = actions.setPasswordDraft,
                     label = { Text("Password") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .contentType(ContentType.Password),
                 )
             }
         }

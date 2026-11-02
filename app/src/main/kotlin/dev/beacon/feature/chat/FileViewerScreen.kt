@@ -175,9 +175,10 @@ fun FileViewerScreen(
                     dev.beacon.core.render.FileViewer.Image -> ImageView(localFile!!)
                     dev.beacon.core.render.FileViewer.Pdf -> PdfView(localFile!!, name)
                     dev.beacon.core.render.FileViewer.Text -> TextView(localFile!!)
-                    dev.beacon.core.render.FileViewer.AudioVideo,
-                    dev.beacon.core.render.FileViewer.Download,
-                    -> OpenExternallyColumn(localFile!!, viewer, onOpen = { openExternally(context, localFile!!, mime) })
+                    dev.beacon.core.render.FileViewer.AudioVideo ->
+                        dev.beacon.core.speech.Media3Card(localFile!!, mime)
+                    dev.beacon.core.render.FileViewer.Download ->
+                        OpenExternallyColumn(localFile!!, viewer, onOpen = { openExternally(context, localFile!!, mime) })
                 }
             }
         }

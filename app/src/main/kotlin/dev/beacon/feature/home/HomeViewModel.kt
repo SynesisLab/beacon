@@ -2,10 +2,8 @@ package dev.beacon.feature.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import dev.beacon.core.api.OwuiApi
-import dev.beacon.core.api.OwuiApiException
-import dev.beacon.core.api.dto.OwuiModel
-import dev.beacon.core.data.SessionStore
+import dev.beacon.core.data.ChatRepository
+import dev.beacon.core.data.local.ChatEntity
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -13,45 +11,31 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import java.io.IOException
 import javax.inject.Inject
 
-/** M0 home: connected-server summary + model picker. Room-backed chat list lands in M1. */
+/** M1 home: chats list (Room-backed, paginated §9.3), pin/delete, new chat. */
 @HiltViewModel
 class HomeViewModel @Inject constructor(
-    private val api: OwuiApi,
-    private val session: SessionStore,
+    private val repository: ChatRepository,
 ) : ViewModel() {
 
     data class UiState(
-        val serverUrl: String = "",
-        val serverVersion: String? = null,
-        val selectedModelId: String? = null,
-        val signedInEmail: String? = null,
-        val models: List<OwuiModel> = emptyList(),
+        val chats: List<ChatEntity> = emptyList(),
         val loading: Boolean = false,
         val error: String? = null,
     )
 
-    private data class LoadUi(
-        val loading: Boolean = false,
-        val error: String? = null,
-    )
+    private data class Load(val loading: Boolean = false, val error: String? = null)
 
-    private val modelsState = MutableStateFlow<List<OwuiModel>>(emptyList())
-    private val loadState = MutableStateFlow(LoadUi())
+    private val roomChats = repository.observeChats()
+    private val load = MutableStateFlow(Load(loading = true))
+    private var page = 1
+    private var lastPageCount = 0
+    private var exhausted = false
 
-    val state: StateFlow<UiState> =
-        combine(session.settings, modelsState, loadState) { settings, models, load ->
-            UiState(
-                serverUrl = settings.serverUrl,
-                serverVersion = settings.serverVersion,
-                selectedModelId = settings.selectedModelId,
-                signedInEmail = settings.signedInEmail,
-                models = models,
-                loading = load.loading,
-                error = load.error,
-            )
+    val ui: StateFlow<UiState> =
+        combine(roomChats, load) { chats, l ->
+            UiState(chats = chats, loading = l.loading, error = l.error)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())
 
     init {
@@ -60,35 +44,43 @@ class HomeViewModel @Inject constructor(
 
     fun refresh() {
         viewModelScope.launch {
-            loadState.value = LoadUi(loading = true)
+            load.value = Load(loading = true)
             try {
-                modelsState.value = api.models().items
-                loadState.value = LoadUi(loading = false)
+                page = 1
+                repository.refreshChats(page = 1)
+                lastPageCount = 0
+                exhausted = false
+                load.value = Load(loading = false)
             } catch (e: Exception) {
-                loadState.value = LoadUi(loading = false, error = describe(e))
+                load.value = Load(loading = false, error = e.message ?: e.javaClass.simpleName)
             }
         }
     }
 
-    fun choose(modelId: String) {
+    /** Infinite scroll (§9.3): next page when the list end is reached. */
+    fun loadNextPage() {
+        if (exhausted || load.value.loading) return
         viewModelScope.launch {
-            session.update { it.copy(selectedModelId = modelId) }
+            try {
+                val before = repository.chatsCount()
+                repository.refreshChats(page = page + 1)
+                val after = repository.chatsCount()
+                if (after == before) exhausted = true else page += 1
+            } catch (_: Exception) {
+                exhausted = true
+            }
         }
     }
 
-    fun signOut() {
-        viewModelScope.launch {
-            session.signOut()
-        }
+    fun togglePin(chatId: String) {
+        viewModelScope.launch { repository.togglePin(chatId) }
     }
 
-    private fun describe(e: Exception): String = when (e) {
-        is OwuiApiException -> if (e.code == 401 || e.code == 403) {
-            "Signed out or rejected by the server (${e.code})."
-        } else {
-            "Models fetch failed (${e.code})"
-        }
-        is IOException -> "This instance is unreachable right now — retry when it's back."
-        else -> e.message ?: e.javaClass.simpleName
+    fun delete(chatId: String) {
+        viewModelScope.launch { repository.deleteChat(chatId) }
+    }
+
+    fun toggleArchive(chatId: String) {
+        viewModelScope.launch { repository.toggleArchive(chatId) }
     }
 }

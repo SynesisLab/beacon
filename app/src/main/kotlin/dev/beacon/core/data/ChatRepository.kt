@@ -93,12 +93,16 @@ class ChatRepository @Inject constructor(
 
     // ── server-mirroring operations ──────────────────────────────────────────
 
-    /** Refresh page 1 + pinned rows into Room (list rows lack `pinned` — chats.py:351-359). */
-    suspend fun refreshChats(): Unit = withContext(Dispatchers.IO) {
-        val rows = chatsApi.list(page = 1)
-        val pinnedRows = try {
-            chatsApi.pinned()
-        } catch (_: Exception) {
+    /** Refresh [page] into Room + pinned rows on page 1 (list rows lack `pinned` — chats.py:351-359). */
+    suspend fun refreshChats(page: Int = 1): Unit = withContext(Dispatchers.IO) {
+        val rows = chatsApi.list(page = page)
+        val pinnedRows = if (page == 1) {
+            try {
+                chatsApi.pinned()
+            } catch (_: Exception) {
+                emptyList()
+            }
+        } else {
             emptyList()
         }
         val pinnedIds = pinnedRows.map { it.id }.toSet()
@@ -151,6 +155,8 @@ class ChatRepository @Inject constructor(
     suspend fun chat(chatId: String): ChatEntity? =
         withContext(Dispatchers.IO) { db.chats().byId(chatId) }
 
+    suspend fun chatsCount(): Int = withContext(Dispatchers.IO) { db.chats().count() }
+
     suspend fun messages(chatId: String): List<MessageEntity> =
         withContext(Dispatchers.IO) { db.messages().byChat(chatId) }
 
@@ -190,15 +196,19 @@ class ChatRepository @Inject constructor(
 /** Maps a list row + pinned ids into Room entities (server owns updated_at). */
 private fun ChatsListRow.toEntity(pinned: Boolean): ChatEntity = ChatEntity(
     chatId = id,
-    updatedAt = updated_at,
+    updatedAt = epochMs(updated_at),
     title = title,
     pinned = pinned,
     archived = archived,
     folderId = null,
     currentMessageId = null,
     tags = emptyList(),
-    lastReadAt = last_read_at,
+    lastReadAt = epochMs(last_read_at),
 )
+
+/** Server timestamps are epoch SECONDS (python time.time()) — normalize to millis. */
+private fun epochMs(seconds: Long?): Long? =
+    seconds?.takeIf { it > 0 }?.let { if (it < 10_000_000_000L) it * 1000 else it }
 
 /** Stored tree node → Room row (tree shape preserved: parentId + childrenIds). */
 private fun StoredMessage.toEntity(chatId: String): MessageEntity = MessageEntity(

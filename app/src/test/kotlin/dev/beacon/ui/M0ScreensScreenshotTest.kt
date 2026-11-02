@@ -7,7 +7,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.captureRoboImage
 import dev.beacon.core.api.dto.OwuiModel
 import dev.beacon.core.data.AuthMethod
-import dev.beacon.feature.home.HomeActions
+import dev.beacon.core.data.local.ChatEntity
+import dev.beacon.feature.home.ChatListActions
 import dev.beacon.feature.home.HomeViewModel
 import dev.beacon.feature.onboarding.OnboardingActions
 import dev.beacon.feature.onboarding.OnboardingScreen
@@ -46,13 +47,11 @@ class M0ScreensScreenshotTest {
         models = models,
         chosenModelId = "claude-sonnet-5",
     )
-    private val home = HomeViewModel.UiState(
-        serverUrl = "https://ai.example.com",
-        serverVersion = "0.7.2",
-        signedInEmail = "you@example.com",
-        models = models,
-        selectedModelId = "claude-sonnet-5",
+    private val chats = listOf(
+        ChatEntity(chatId = "c1", updatedAt = 1730000000, title = "Weekly plan"),
+        ChatEntity(chatId = "c2", updatedAt = 1730000001, title = "Ideas", pinned = true),
     )
+    private val home = HomeViewModel.UiState(chats = chats)
     private val settings = SettingsViewModel.UiState(
         serverUrl = "https://ai.example.com",
         serverVersion = "0.7.2",
@@ -65,7 +64,10 @@ class M0ScreensScreenshotTest {
         submitApiKey = {}, setEmailDraft = {}, setPasswordDraft = {}, submitPassword = {},
         chooseModel = {}, finish = {},
     )
-    private val homeActions = HomeActions(refresh = {}, openSettings = {}, chooseModel = {})
+    private val homeActions = ChatListActions(
+        onNewChat = {}, onOpenChat = {}, onRefresh = {}, onOpenSettings = {}, onOpenModels = {},
+        onTogglePin = {}, onDelete = {}, onLoadNextPage = {},
+    )
 
     @Test
     fun onboarding_url_light() {

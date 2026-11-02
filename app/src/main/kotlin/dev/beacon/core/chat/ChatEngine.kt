@@ -172,9 +172,43 @@ class ChatEngine(
     /** Intent: send [text] with [modelId]; creates the chat server-side when fresh. */
     fun send(text: String, modelId: String) {
         if (text.isBlank() || _state.value.busy) return
+        launchStream { sendParams(text, modelId, regenerate = false) }
+    }
+
+    /** §4: regenerate = a sibling branch under the same parent (new assistant id). */
+    fun regenerate(modelId: String) {
+        if (_state.value.busy) return
+        launchStream { sendParams("", modelId, regenerate = true) }
+    }
+
+    /** §4/§9.3: edit-and-retry — a sibling branch seeded by the same user turn. */
+    fun editAndRetry(messageId: String, newContent: String, modelId: String) {
+        if (newContent.isBlank() || _state.value.busy) return
+        launchStream { sendParams(newContent, modelId, regenerate = false, replaceUserMessageId = messageId) }
+    }
+
+    /** §9.3: continue an interrupted/ended assistant turn (assistant_message_id). */
+    fun continueResponse(modelId: String) {
+        if (_state.value.busy) return
+        launchStream { continueParams(modelId) }
+    }
+
+    fun rate(messageId: String, rating: Int) {
+        val chatId = _state.value.chatId ?: return
+        val model = activeModelId
+        scope.launch {
+            val ok = runCatching { api.rate(chatId, model, messageId, rating) }.getOrDefault(false)
+            if (ok) {
+                patch { copy(messages = messages) } // rating state lands via meta in M4
+            }
+        }
+    }
+
+    private fun launchStream(block: suspend () -> SendPlan) {
+        if (_state.value.busy) return
         streamJob = scope.launch {
             try {
-                streamSend(text, modelId)
+                sendFromParams(block())
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -244,48 +278,87 @@ class ChatEngine(
 
     // ── send pipeline ──────────────────────────────────────────────────────
 
-    private suspend fun streamSend(text: String, modelId: String) {
+    private data class SendPlan(
+        val text: String,
+        val modelId: String,
+        val regenerate: Boolean = false,
+        /** edit-and-retry: the sibling branch replaces this user turn's content. */
+        val replaceUserMessageId: String? = null,
+        /** continue: append to this assistant turn (same id on the wire). */
+        val continueAssistantId: String? = null,
+    )
+
+    private suspend fun sendParams(text: String, modelId: String, regenerate: Boolean, replaceUserMessageId: String? = null): SendPlan =
+        SendPlan(text, modelId, regenerate, replaceUserMessageId)
+
+    private suspend fun continueParams(modelId: String): SendPlan = SendPlan(
+        text = "",
+        modelId = modelId,
+        continueAssistantId = _state.value.messages.lastOrNull { it.role == MessageEntity.ROLE_ASSISTANT }?.id
+            ?: _state.value.streamingMessageId,
+    )
+
+    private suspend fun sendFromParams(plan: SendPlan) {
         val existingChatId = _state.value.chatId
         val isNewChat = existingChatId == null
-        val userMessageId = UUID.randomUUID().toString()
-        val assistantMessageId = UUID.randomUUID().toString()
-        val previousAssistantId = _state.value.messages.lastOrNull { it.role == MessageEntity.ROLE_ASSISTANT }?.id
         val now = System.currentTimeMillis()
+        val previousAssistantId = _state.value.messages.lastOrNull { it.role == MessageEntity.ROLE_ASSISTANT }?.id
 
-        // Optimistic UI state first (the assistant placeholder streams locally)
+        // The user turn the response hangs from (tree semantics, agent.md §6.4).
+        // A sibling branch attaches to the user turn BEFORE the replaced assistant.
+        val lastAssistantIndex = _state.value.messages.indexOfLast { it.role == MessageEntity.ROLE_ASSISTANT }
+        val userTurnId: String? = when {
+            plan.regenerate -> _state.value.messages.getOrNull(lastAssistantIndex - 1)
+                ?.takeIf { it.role == MessageEntity.ROLE_USER }?.id
+                ?: plan.replaceUserMessageId
+            plan.continueAssistantId != null -> previousAssistantId
+            else -> null // fresh turn
+        }
+        val parentIdForWire: String? = when {
+            plan.regenerate -> userTurnId // parent_id = the user message (wire semantics: the assistant's parent)
+            plan.continueAssistantId != null -> previousAssistantId
+            else -> previousAssistantId
+        }
+        val assistantMessageId = plan.continueAssistantId ?: UUID.randomUUID().toString()
+
+        // Optimistic UI state; Room rows follow (fresh chats persist post chat:list).
         _state.value = _state.value.copy(
             busy = true,
             error = null,
             streamingMessageId = assistantMessageId,
-            messages = _state.value.messages +
-                RenderMessage(userMessageId, MessageEntity.ROLE_USER, markdown = text) +
-                RenderMessage(assistantMessageId, MessageEntity.ROLE_ASSISTANT),
+            messages = _state.value.messages + buildList {
+                when {
+                    plan.regenerate ->
+                        add(RenderMessage(assistantMessageId, MessageEntity.ROLE_ASSISTANT, pending = true))
+                    plan.continueAssistantId != null -> add(RenderMessage(assistantMessageId, MessageEntity.ROLE_ASSISTANT, pending = true))
+                    else -> {
+                        add(
+                            RenderMessage(
+                                plan.replaceUserMessageId ?: UUID.randomUUID().toString().also { },
+                                MessageEntity.ROLE_USER,
+                                markdown = plan.text,
+                            ),
+                        )
+                        add(RenderMessage(assistantMessageId, MessageEntity.ROLE_ASSISTANT, pending = true))
+                    }
+                }
+            },
         )
 
-        // Room write-through when the chat already exists locally; a fresh chat
-        // persists its nodes once the server reveals the id (chat:list frame).
-        if (!isNewChat) {
-            store.insertNode(
-                MessageEntity(
-                    messageId = userMessageId,
-                    chatId = existingChatId!!,
-                    parentId = previousAssistantId,
-                    role = MessageEntity.ROLE_USER,
-                    content = text,
-                    timestamp = now,
-                ),
-            )
-            store.insertNode(
-                MessageEntity(
-                    messageId = assistantMessageId,
-                    chatId = existingChatId,
-                    parentId = userMessageId,
-                    role = MessageEntity.ROLE_ASSISTANT,
-                    content = "",
-                    done = false,
-                    timestamp = now,
-                ),
-            )
+        if (!isNewChat && plan.continueAssistantId == null) {
+            if (plan.regenerate) {
+                store.insertNode(
+                    MessageEntity(
+                        messageId = assistantMessageId,
+                        chatId = existingChatId!!,
+                        parentId = userTurnId,
+                        role = MessageEntity.ROLE_ASSISTANT,
+                        content = "",
+                        done = false,
+                        timestamp = now,
+                    ),
+                )
+            }
             store.setCurrentMessage(existingChatId, assistantMessageId)
         }
 
@@ -298,36 +371,66 @@ class ChatEngine(
         lastRoomWrite = now
         scanner = SseFrameScanner()
 
-        val projection = _state.value.messages
-            .filterNot { it.id == assistantMessageId && it.role == MessageEntity.ROLE_ASSISTANT }
-            .map {
-                if (it.role == MessageEntity.ROLE_USER) {
-                    ProjectionMessage.user(it.markdown)
-                } else {
-                    ProjectionMessage.assistant(it.markdown)
-                }
-            } + ProjectionMessage.user(text)
+        val projection = projectionFor(plan) + buildList {
+            if (plan.regenerate.not() && plan.continueAssistantId == null) {
+                add(ProjectionMessage.user(plan.text))
+            }
+        }
 
         val request = CompletionRequest(
-            model = modelId,
+            model = plan.modelId,
             messages = projection,
             chat_id = existingChatId,
             id = assistantMessageId,
-            parent_id = previousAssistantId,
-            user_message = ProjectionMessage.user(text),
+            parent_id = parentIdForWire,
+            user_message = when {
+                plan.continueAssistantId != null -> null
+                plan.regenerate -> null
+                else -> ProjectionMessage.user(plan.text)
+            },
+            regeneration_message_id = if (plan.regenerate) previousAssistantId else null,
+            regeneration_prompt = null,
+            assistant_message_id = plan.continueAssistantId,
             background_tasks = if (isNewChat) {
-                BackgroundTasks(title_generation = true, tags_generation = true)
+                BackgroundTasks(title_generation = true, tags_generation = true, follow_up_generation = true)
             } else {
-                BackgroundTasks()
+                BackgroundTasks(follow_up_generation = true)
             },
         )
-        activeModelId = modelId
+        activeModelId = plan.modelId
         projectionSnapshot = projection
 
         currentCall = api.streamingCompletion(CompletionRequests.encode(request))
         drain(currentCall!!, assistantMessageId)
         // The chat id may have been learned mid-stream (chat:list); resolve at finalize.
         finalizeAssistant(assistantMessageId)
+    }
+
+    /** Visible-history projection of the branch, honoring the plan's edits. */
+    private fun projectionFor(plan: SendPlan): List<ProjectionMessage> {
+        val all = _state.value.messages
+        val bounded = when {
+            plan.regenerate -> {
+                // Everything up to AND INCLUDING the user turn the response hangs
+                // from; the assistant being regenerated (and anything after it)
+                // is excluded — the server regenerates from the parent.
+                val stopIndex = all.indexOfLast { it.role == MessageEntity.ROLE_USER }
+                if (stopIndex >= 0) all.take(stopIndex + 1) else emptyList()
+            }
+            plan.continueAssistantId != null -> all // full branch including the assistant
+            else -> all
+        }
+        return bounded
+            .filterNot { it.id == _state.value.streamingMessageId && it.pending && (plan.regenerate || plan.continueAssistantId == null) }
+            .map { message ->
+                if (plan.replaceUserMessageId == message.id) {
+                    ProjectionMessage.user(plan.text)
+                } else if (message.role == MessageEntity.ROLE_USER) {
+                    ProjectionMessage.user(message.markdown)
+                } else {
+                    ProjectionMessage.assistant(message.markdown)
+                }
+            }
     }
 
     private suspend fun drain(call: Call, assistantMessageId: String) = withContext(Dispatchers.IO) {

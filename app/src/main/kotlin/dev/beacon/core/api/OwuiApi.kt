@@ -11,6 +11,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import okhttp3.Call
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -117,6 +119,46 @@ class OwuiApi @Inject constructor(
             false
         }
     }
+
+    // ── M3 branch mutations (verified: chats.py:1510/1577; evaluations:247) ──
+
+    /** Edit-a-message content: POST /api/v1/chats/{id}/messages/{message_id} {content}. */
+    suspend fun updateMessageContent(chatId: String, messageId: String, content: String): JsonObject =
+        withContext(Dispatchers.IO) {
+            val body = buildJsonObject { put("content", content) }
+            val request = Request.Builder()
+                .url(joinUrl(instance(), "/api/v1/chats/$chatId/messages/$messageId"))
+                .post(
+                    json.encodeToString(kotlinx.serialization.json.JsonObject.serializer(), body)
+                        .toRequestBody("application/json; charset=utf-8".toMediaType()),
+                )
+                .build()
+            client.newCall(request).await().decodeJson<JsonObject>(json)
+        }
+
+    /** Rate: POST /api/v1/evaluations/feedback {type:'rating', data:{…}} (web feedbackHandler). */
+    suspend fun rate(chatId: String, modelId: String?, messageId: String, rating: Int): Boolean =
+        withContext(Dispatchers.IO) {
+            try {
+                val payload = buildJsonObject {
+                    put("type", "rating")
+                    put("data", buildJsonObject {
+                        put("id", messageId)
+                        put("rating", rating)
+                        modelId?.let { put("model_id", it) }
+                        put("chat_id", chatId)
+                    })
+                }
+                val request = Request.Builder()
+                    .url(joinUrl(instance(), "/api/v1/evaluations/feedback"))
+                    .post(json.encodeToString(kotlinx.serialization.json.JsonElement.serializer(), payload)
+                        .toRequestBody("application/json; charset=utf-8".toMediaType()))
+                    .build()
+                client.newCall(request).await().use { it.isSuccessful }
+            } catch (_: Exception) {
+                false
+            }
+        }
 
     fun instance(): String =
         source.instanceUrl()

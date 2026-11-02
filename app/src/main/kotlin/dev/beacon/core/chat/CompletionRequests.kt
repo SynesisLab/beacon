@@ -26,6 +26,11 @@ data class CompletionRequest(
     val id: String,
     val parent_id: String? = null,
     val user_message: ProjectionMessage? = null,
+    /** Regenerate: the sibling assistant being replaced (Chat.svelte:4472-4477). */
+    val regeneration_message_id: String? = null,
+    val regeneration_prompt: String? = null,
+    /** Continue: append to this assistant turn (Chat.svelte:4478). */
+    val assistant_message_id: String? = null,
     val features: Features = Features(),
     val tool_ids: List<String> = emptyList(),
     val filter_ids: List<String> = emptyList(),

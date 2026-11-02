@@ -122,6 +122,33 @@ class ChatEngineTest {
         assertEquals("Final", assistant.markdown)
     }
 
+    @Test
+    fun regenerateCreatesSiblingBranch() = runBlocking {
+        // First a normal exchange…
+        server.enqueue(sse(FIRST_MESSAGE_TWO_TURNS))
+        val (engine, store) = newEngine()
+        engine.load(null)
+        engine.send("first question", "m1")
+        awaitIdle(engine)
+        // …then a regenerate — the sibling branch hangs off the same USER turn.
+        server.enqueue(sse(FIRST_SHORT))
+        engine.regenerate("m1")
+        val final = awaitIdle(engine)
+        assertEquals("short regen", final.messages.last { it.role == "assistant" }.markdown)
+        val assistants = store.messages.filter { it.role == "assistant" }
+        assertEquals(2, assistants.size) // the original + the sibling
+        // Tree fan-out: the user turn now has two assistant children.
+        val userNode = store.messages.single { it.role == "user" }
+        assertEquals(2, userNode.childrenIds.size)
+    }
+
+    private fun sse(body: String) =
+        MockResponse.Builder()
+            .code(200)
+            .addHeader("Content-Type", "text/event-stream; charset=utf-8")
+            .body(body)
+            .build()
+
     private companion object {
         val FIRST_MESSAGE = """
             data: {"type":"chat:list","data":{"chat_id":"chat-77","folder_id":null}}
@@ -148,6 +175,26 @@ class ChatEngineTest {
             data: [DONE]
 
         """.trimIndent() + "\n"
+
+        val FIRST_MESSAGE_TWO_TURNS = """
+            data: {"type":"chat:list","data":{"chat_id":"chat-88","folder_id":null}}
+
+            data: {"choices":[{"delta":{"content":"First answer"}}]}
+
+            data: {"choices":[{"finish_reason":"stop"}]}
+
+            data: [DONE]
+
+        """.trimIndent() + "\n"
+
+        val FIRST_SHORT = """
+            data: {"choices":[{"delta":{"content":"short regen"}}]}
+
+            data: {"choices":[{"finish_reason":"stop"}]}
+
+            data: [DONE]
+
+        """.trimIndent() + "\n"
     }
 }
 
@@ -161,6 +208,16 @@ private class InMemoryChatStore : ChatStore {
 
     override suspend fun insertNode(message: MessageEntity) {
         messages.add(message)
+        // Same fan-out contract as the Room store: parents learn their children.
+        message.parentId?.takeIf { it != message.messageId }?.let { parentId ->
+            messages.replaceAll {
+                if (it.messageId == parentId && !it.childrenIds.contains(message.messageId)) {
+                    it.copy(childrenIds = it.childrenIds + message.messageId)
+                } else {
+                    it
+                }
+            }
+        }
     }
 
     override suspend fun setCurrentMessage(chatId: String, messageId: String) {

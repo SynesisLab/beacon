@@ -1,0 +1,16 @@
+data: {"type":"status","data":{"content":"Searching the web…","done":false}}
+
+data: {"type":"source","data":{"source":{"name":"OWUI docs","url":"https://docs.example"}}}
+
+data: {"choices":[{"delta":{"content":"Answer with citations"}}]}
+
+data: {"type":"chat:completion","data":{"done":false,"output":[{"type":"message","id":"msg_1","status":"in_progress","role":"assistant","content":[{"type":"output_text","text":"Answer with citations"}]}]}}
+
+data: {"type":"chat:message:follow_ups","data":{"follow_ups":["What next?","Show me code"]}}
+
+data: {"type":"chat:title","data":"New chat"}
+
+data: {"type":"chat:tags","data":["tag-one","tag-two"]}
+
+data: [DONE]
+

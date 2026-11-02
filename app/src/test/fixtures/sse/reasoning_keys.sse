@@ -1,0 +1,10 @@
+data: {"choices":[{"delta":{"reasoning_content":"Thinking A"}}]}
+
+data: {"choices":[{"delta":{"reasoning":"Thinking B"}}]}
+
+data: {"choices":[{"delta":{"thinking":"Thinking C"}}]}
+
+data: {"choices":[{"delta":{"content":"Final answer"}}]}
+
+data: [DONE]
+

@@ -34,6 +34,21 @@ Reference clones verified against: `open-webui` (BSD-3-style) + `conduit` (GPL, 
 - Secret storage is a hand-rolled Keystore AES-GCM `SecureStore` (androidx.security-crypto is deprecated) — ADR-0003.
 - `trustUserCa` requires process restart to apply in M0 (client is fixed at graph-build) — ADR-0004.
 
+## Verification table (M1 — chat completions & streaming)
+
+| Call / shape | Verified behavior | Proof (open-webui clone) |
+| --- | --- | --- |
+| `POST /api/chat/completions` | streaming completion; body dict (client controls shape; server pops `model_item`, `background_tasks`, `params`) | `main.py:1146-1153` |
+| Client request body | `stream`, `model`, `messages`, `params{model_controls, stop}`, `files`, `filter_ids`, `tool_ids`, `skill_ids`, `terminal_id`, `tool_servers`, `features`, `variables`(+`chat_variables`), `model_item`, `session_id`, `chat_id`, `folder_id`, `id`, `message_ids`, `parent_id`, `user_message`, conditionals `regeneration_prompt`/`regeneration_message_id`/`assistant_message_id`, `background_tasks{title_generation, tags_generation, follow_up_generation}` | `src/lib/components/chat/Chat.svelte:4420-4495` |
+| Wire frame format | `data: {json}\n\n` (blank-line separated); mid-stream errors as ``\n\ndata: {"error": {"message": …}}\n\n`` then `data: [DONE]` | `middleware.py:6444-6445`, `:6527-6528` |
+| Streaming content-types | `text/event-stream` OR `application/x-ndjson` both carry the same `data:`-frame protocol | `middleware.py:6545-6549` |
+| Server-side fold (client must mirror) | `choices[].delta`: `content`; reasoning via `reasoning_content` \| `reasoning` \| `thinking` (all three); `finish_reason`; `usage`+`timings` snapshot; `response.*` events folded via `handle_responses_streaming_event` into `output[]` items (`reasoning`/`message` typed, immutable-list semantics) | `middleware.py:3441-3524` (reasoning keys at `:3474`), `utils/response.py:405+` |
+| Envelope event types (client switch) | `status`, `context_compaction`, `chat:active`, `response:completion`/`chat:completion`, `chat:tasks:cancel`, `chat:message:delta`/`message`, `chat:message`/`replace`, `chat:message:files`/`files`, `chat:message:tasks`, `chat:message:embeds`/`embeds`, `chat:message:error`, `chat:message:follow_ups`, `chat:outlet`, `chat:message:favorite`, `chat:title`, `chat:tags`, `source`/`citation` (+ `data.type == 'code_execution'` subcase), `confirmation`, `input`, `notification`, `typing`, `chat:reload`, `chat:list`, `chat:presence` | `src/lib/components/chat/Chat.svelte:1573-1710` |
+| Envelope payload shapes | status`{data:{content?,done?}}`; source`{data:<source>}`; follow_ups`{data:{follow_ups:[…]}}`; title`{data:"<title>"}`; tags`{data:[…]}`; chat:completion`{data:{done?, output?}}` | `middleware.py:1241`, `:3289`, `:3630-3641`, `:3694-3715`, `:3740-3747`, `:3336` |
+| Stop (user-level) | `POST /api/tasks/chat/{chat_id}/stop` — the *user-owned* cancellation; `/api/tasks/stop/{task_id}` is ADMIN-only + task-scoped | `src/lib/apis/index.ts:335-336`; `main.py:2180-2186` |
+| `/api/chat/completed` | still called by the web client; server marks it deprecated (outlet filters now run inline during completion) — call it, honor inline behavior later via config | `src/lib/apis/index.ts:231`; `main.py:2142-2160` |
+| Socket routing | `metadata.session_id` (socket.io id) rides into backend routing when the client is connected | `utils/chat.py:60,86,137,356` |
+
 ## Pending verification (needs a live dev instance)
 
 - Exact 401 body shape for expired JWTs (refresh path at M4).

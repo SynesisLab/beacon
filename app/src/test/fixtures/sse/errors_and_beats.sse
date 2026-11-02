@@ -1,0 +1,7 @@
+data: {"choices":[{"delta":{"content":"Partial before failure"}}]}
+
+
+data: {"error": {"message": "Chat completion stream failed"}}
+
+data: [DONE]
+

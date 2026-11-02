@@ -1,0 +1,14 @@
+data: {"type":"response.created","response":{}}
+
+data: {"type":"response.output_item.added","item":{"type":"reasoning","id":"r1","status":"in_progress","content":[]},"output_index":0}
+
+data: {"type":"response.reasoning_text.delta","delta":"plan"}
+
+data: {"type":"response.output_item.added","item":{"type":"message","id":"msg_1","role":"assistant","content":[]},"output_index":1}
+
+data: {"type":"response.output_text.delta","delta":"Answer"}
+
+data: {"type":"response.completed","response":{"output":[{"type":"reasoning","id":"r1","status":"completed","content":[{"type":"output_text","text":"plan"}]},{"type":"message","id":"msg_1","role":"assistant","content":[{"type":"output_text","text":"Answer"}]}],"usage":{"input_tokens":5,"output_tokens":2}}}
+
+data: [DONE]
+

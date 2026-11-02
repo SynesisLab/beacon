@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- App shortcuts (agent.md §9.3): New chat ships at M3; mic/camera land with
+     the voice stack. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="new_chat"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_new_chat"
+        android:shortcutShortLabel="@string/shortcut_new_chat">
+        <intent
+            android:action="dev.beacon.NEW_CHAT"
+            android:targetPackage="dev.beacon"
+            android:targetClass="dev.beacon.MainActivity" />
+    </shortcut>
+</shortcuts>

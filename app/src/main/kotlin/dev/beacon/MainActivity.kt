@@ -1,5 +1,6 @@
 package dev.beacon
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -7,6 +8,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.key
@@ -44,10 +46,33 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        handleShareIntent(intent)
         setContent {
             BeaconTheme {
                 BeaconNavHost()
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleShareIntent(intent)
+    }
+
+    /**
+     * §9.3 share-target: shared text → a new chat with the draft pre-filled.
+     * When no instance is onboarded yet, the share text is dropped (honest).
+     */
+    private fun handleShareIntent(intent: Intent?) {
+        if (intent?.action == android.content.Intent.ACTION_SEND) {
+            val text = intent.getStringExtra(android.content.Intent.EXTRA_TEXT)
+            if (!text.isNullOrBlank()) {
+                dev.beacon.feature.chat.ShareSeed.pending = text
+                dev.beacon.feature.chat.ShareSeed.requestCount.value++
+                intent.removeExtra(android.content.Intent.EXTRA_TEXT)
+            }
+        } else if (intent?.action == "dev.beacon.NEW_CHAT") {
+            dev.beacon.feature.chat.ShareSeed.requestCount.value++
         }
     }
 }
@@ -61,6 +86,14 @@ private fun BeaconNavHost() {
         null -> Surface(Modifier.fillMaxSize()) { } // DataStore hydration flash
         else -> key(snapshot.isOnboarded) {
             val nav = rememberNavController()
+            // §9.3 share-target / shortcut: jump to a fresh chat when requested.
+            LaunchedEffect(Unit) {
+                dev.beacon.feature.chat.ShareSeed.requestCount.collect { count ->
+                    if (count > 0 && snapshot.isOnboarded) {
+                        nav.navigate("chat/new") { launchSingleTop = true }
+                    }
+                }
+            }
             NavHost(
                 navController = nav,
                 startDestination = if (snapshot.isOnboarded) ROUTE_HOME else ROUTE_ONBOARDING,

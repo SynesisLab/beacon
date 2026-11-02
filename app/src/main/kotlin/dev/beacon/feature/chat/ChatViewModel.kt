@@ -102,6 +102,11 @@ class ChatViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
+            // §9.3 share-target: pre-fill the draft when shared into Beacon.
+            ShareSeed.pending?.let { seed ->
+                ShareSeed.pending = null
+                draft.value = seed
+            }
             engine.load(savedStateHandle.get<String>(KEY_CHAT)?.takeUnless { it == NEW_CHAT })
             runCatching {
                 modelsState.value = api.models().items
@@ -222,4 +227,10 @@ class ChatViewModel @Inject constructor(
         const val KEY_CHAT = "chatId"
         const val NEW_CHAT = "new"
     }
+}
+
+/** §9.3: the single-slot bridge between the Activity's share-intents and the chat screen. */
+object ShareSeed {
+    var pending: String? = null
+    val requestCount = MutableStateFlow(0)
 }

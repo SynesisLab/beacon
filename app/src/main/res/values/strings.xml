@@ -2,4 +2,5 @@
 <resources>
     <string name="app_name">Beacon</string>
     <string name="streaming_lease_title">Beacon is streaming a reply</string>
+    <string name="shortcut_new_chat">New chat</string>
 </resources>

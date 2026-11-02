@@ -68,22 +68,78 @@ import java.io.File
 @Composable
 fun FileViewerScreen(
     filesApi: FilesApi,
+    terminalsApi: dev.beacon.core.api.TerminalsApi? = null,
     fileId: String,
     name: String,
     mime: String,
+    terminalServerId: String? = null,
+    terminalPath: String? = null,
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
     val viewer = DisplayFile.viewerForMime(mime)
     var localFile by remember { mutableStateOf<File?>(null) }
+    var terminalText by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(fileId) {
+    LaunchedEffect(fileId, terminalServerId, terminalPath) {
         try {
-            localFile = filesApi.download(fileId, File(context.cacheDir, "files"))
+            localFile = when {
+                terminalServerId != null && terminalPath != null -> {
+                    val terminals = terminalsApi
+                        ?: error("Terminal support unavailable")
+                    // Terminal files read through the OWUI proxy; text inline,
+                    // images cached to disk for the image viewer.
+                    if (viewer == dev.beacon.core.render.FileViewer.Image) {
+                        val bytes = terminals.readBytes(terminalServerId, terminalPath)
+                        val file = File(File(context.cacheDir, "files"), "terminal-$terminalServerId")
+                        file.writeBytes(bytes?.first ?: ByteArray(0))
+                        file
+                    } else {
+                        terminalText = terminals.readText(terminalServerId, terminalPath)
+                        null
+                    }
+                }
+                else -> filesApi.download(fileId, File(context.cacheDir, "files"))
+            }
         } catch (e: Exception) {
             error = e.message ?: "Download failed"
         }
+    }
+
+    if (terminalServerId != null && localFile == null) {
+        // Pure-text terminal view (file viewers below handle binary/image cases)
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text(name.ifBlank { "Terminal file" }) },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                    },
+                )
+            },
+        ) { padding ->
+            val text = terminalText
+            val errorText = error
+            Box(Modifier.padding(padding).fillMaxSize()) {
+                when {
+                    errorText != null -> Text(
+                        errorText,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(16.dp),
+                    )
+                    text != null -> TextView(file = null, fallbackText = text)
+                    else -> androidx.compose.material3.CircularProgressIndicator(
+                        Modifier
+                            .size(24.dp)
+                            .align(Alignment.Center),
+                    )
+                }
+            }
+        }
+        return
     }
 
     Scaffold(
@@ -217,11 +273,11 @@ private fun PdfView(file: File, name: String) {
 }
 
 @Composable
-private fun TextView(file: File) {
-    val content = remember(file) {
+private fun TextView(file: File?, fallbackText: String? = null) {
+    val content = fallbackText ?: remember(file) {
         runCatching {
-            file.readLines().take(4000).joinToString("\n")
-        }.getOrDefault("(unreadable binary content)")
+            file?.readLines()?.take(4000)?.joinToString("\n")
+        }.getOrDefault(null) ?: "(unreadable binary content)"
     }
     Text(
         text = content,

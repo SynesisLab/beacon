@@ -39,7 +39,8 @@ fun PartsView(
     parts: List<dev.beacon.core.render.ChatPart>,
     modifier: Modifier = Modifier,
     onFollowUp: (String) -> Unit = {},
-    onOpenFile: (fileId: String, name: String, mime: String) -> Unit = { _, _, _ -> },
+    onOpenFile: (fileId: String, name: String, mime: String, terminalServerId: String?, terminalPath: String?) -> Unit =
+        { _, _, _, _, _ -> },
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         parts.forEach { part ->
@@ -63,7 +64,7 @@ fun PartsView(
 @Composable
 private fun FileChip(
     part: dev.beacon.core.render.ChatPart.File,
-    onOpenFile: (String, String, String) -> Unit,
+    onOpenFile: (fileId: String, name: String, mime: String, terminalServerId: String?, terminalPath: String?) -> Unit,
 ) {
     val isTerminal = part.fileId.isEmpty()
     Surface(
@@ -71,13 +72,15 @@ private fun FileChip(
         shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .then(
-                if (isTerminal) {
-                    Modifier
-                } else {
-                    Modifier.clickable { onOpenFile(part.fileId, part.name, part.mime) }
-                },
-            ),
+            .clickable {
+                onOpenFile(
+                    part.fileId,
+                    part.name,
+                    part.mime,
+                    part.terminalServerId,
+                    part.terminalPath,
+                )
+            },
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -98,7 +101,7 @@ private fun FileChip(
                 Text(part.name, style = MaterialTheme.typography.titleMedium, maxLines = 1)
                 Text(
                     if (isTerminal) {
-                        "Terminal file — inline terminal view is a stretch goal"
+                        "Terminal file"
                     } else {
                         part.mime
                     },
@@ -107,14 +110,12 @@ private fun FileChip(
                     maxLines = 1,
                 )
             }
-            if (!isTerminal) {
-                Text(
-                    "Open",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
-                )
-            }
+            Text(
+                "Open",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+            )
         }
     }
 }

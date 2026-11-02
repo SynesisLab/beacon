@@ -38,12 +38,15 @@ sealed interface ChatPart {
         val interactive: Boolean = true,
     ) : ChatPart
 
-    /** display_file / uploads / generated images (§7.3). */
+    /** display_file / uploads / generated images (§7.3); terminal-file fields promoted to M2. */
     data class File(
         val fileId: String,
         val name: String,
         val mime: String,
         val viewer: FileViewer,
+        /** Terminal ("Open Terminal") file — read via the OWUI proxy, not /files. */
+        val terminalServerId: String? = null,
+        val terminalPath: String? = null,
     ) : ChatPart
 
     /** Full source list when known; count-only pill otherwise (M2-1 envelope shape). */

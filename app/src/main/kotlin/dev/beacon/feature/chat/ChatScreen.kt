@@ -48,7 +48,7 @@ data class ChatActions(
     val onStop: () -> Unit,
     val onBack: () -> Unit,
     val onOpenModelPicker: () -> Unit,
-    val onOpenFile: (fileId: String, name: String, mime: String) -> Unit,
+    val onOpenFile: (fileId: String, name: String, mime: String, terminalServerId: String?, terminalPath: String?) -> Unit,
 )
 
 // Gentle radii with padding ≥ corner clearance — Surface clips to shape, so
@@ -222,7 +222,7 @@ private fun MessageBubble(
     message: ChatEngine.RenderMessage,
     streamingMessageId: String?,
     onFollowUp: (String) -> Unit,
-    onOpenFile: (fileId: String, name: String, mime: String) -> Unit,
+    onOpenFile: (fileId: String, name: String, mime: String, terminalServerId: String?, terminalPath: String?) -> Unit,
 ) {
     val streaming = message.id == streamingMessageId
     if (message.role == "user") {

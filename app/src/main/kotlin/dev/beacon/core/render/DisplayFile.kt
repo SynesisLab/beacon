@@ -45,14 +45,18 @@ object DisplayFile {
             ?: (obj["content_type"] as? JsonPrimitive)?.content
             ?: "application/octet-stream"
 
-        // Instance files: full native viewer. Terminal-server files: the terminal
-        // surface is a stretch goal (agent.md §1) — chip names the path honestly.
+        // Instance files: full native viewer. Terminal files: read via the OWUI
+        // terminal proxy (routers/terminals.py; inline viewing promoted into M2).
         val fileId = Regex("/api/v1/files/([^/]+)/content").find(path)?.groupValues?.get(1)
+        val terminalId = (obj["terminal_id"] as? JsonPrimitive)?.content
+            ?: (obj["terminal_selector"] as? JsonPrimitive)?.content
         return ChatPart.File(
             fileId = fileId ?: "",
             name = name,
             mime = mime,
-            viewer = if (fileId == null) FileViewer.Download else viewerForMime(mime),
+            viewer = viewerForMime(mime),
+            terminalServerId = terminalId?.takeIf { fileId == null },
+            terminalPath = path.takeIf { fileId == null },
         )
     }
 

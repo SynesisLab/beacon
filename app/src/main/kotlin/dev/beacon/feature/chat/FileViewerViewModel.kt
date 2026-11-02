@@ -5,8 +5,9 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.beacon.core.api.FilesApi
 import javax.inject.Inject
 
-/** Exposes the FilesApi to the file route via Hilt (composition can't inject directly). */
+/** Exposes the file/terminal APIs to the file route via Hilt. */
 @HiltViewModel
 class FileViewerViewModel @Inject constructor(
     val api: FilesApi,
+    val terminals: dev.beacon.core.api.TerminalsApi,
 ) : ViewModel()

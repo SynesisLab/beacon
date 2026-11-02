@@ -115,8 +115,15 @@ private fun BeaconNavHost() {
                             onStop = vm::stop,
                             onBack = { nav.popBackStack() },
                             onOpenModelPicker = { pickerOpen = true },
-                            onOpenFile = { fileId, name, mime ->
-                                nav.navigate("file/$fileId/${android.net.Uri.encode(name)}/${android.net.Uri.encode(mime)}")
+                            onOpenFile = { fileId, name, mime, terminalServer, terminalPath ->
+                                val base = "file/${android.net.Uri.encode(fileId)}/${android.net.Uri.encode(name)}/${android.net.Uri.encode(mime)}"
+                                val suffix = buildString {
+                                    if (terminalServer != null) append("?server=${android.net.Uri.encode(terminalServer)}")
+                                    if (terminalPath != null) append(
+                                        (if (terminalServer == null) "?" else "&") + "path=${android.net.Uri.encode(terminalPath)}",
+                                    )
+                                }
+                                nav.navigate(base + suffix)
                             },
                         ),
                         showModelPicker = pickerOpen,
@@ -136,19 +143,26 @@ private fun BeaconNavHost() {
                     )
                 }
                 composable(
-                    route = "file/{fileId}/{name}/{mime}",
+                    route = "file/{fileId}/{name}/{mime}?server={server}&path={path}",
                     arguments = listOf(
-                        navArgument("fileId") { type = NavType.StringType },
-                        navArgument("name") { type = NavType.StringType },
-                        navArgument("mime") { type = NavType.StringType },
+                        navArgument("fileId") { type = NavType.StringType; defaultValue = "" },
+                        navArgument("name") { type = NavType.StringType; defaultValue = "" },
+                        navArgument("mime") { type = NavType.StringType; defaultValue = "" },
+                        navArgument("server") { type = NavType.StringType; defaultValue = "" },
+                        navArgument("path") { type = NavType.StringType; defaultValue = "" },
                     ),
                 ) { entry ->
                     val fileVm: dev.beacon.feature.chat.FileViewerViewModel = hiltViewModel()
                     dev.beacon.feature.chat.FileViewerScreen(
                         filesApi = fileVm.api,
-                        fileId = entry.arguments?.getString("fileId").orEmpty(),
+                        terminalsApi = fileVm.terminals,
+                        fileId = android.net.Uri.decode(entry.arguments?.getString("fileId").orEmpty()),
                         name = android.net.Uri.decode(entry.arguments?.getString("name").orEmpty()),
                         mime = android.net.Uri.decode(entry.arguments?.getString("mime").orEmpty()),
+                        terminalServerId = entry.arguments?.getString("server")
+                            ?.takeIf { it.isNotBlank() },
+                        terminalPath = entry.arguments?.getString("path")
+                            ?.takeIf { it.isNotBlank() }?.let { android.net.Uri.decode(it) },
                         onBack = { nav.popBackStack() },
                     )
                 }

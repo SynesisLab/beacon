@@ -49,6 +49,47 @@ git clone --depth 1 https://github.com/open-webui/open-webui   # protocol ground
 6. **Security invariants:** credentials in Keystore only; `Authorization` never sent cross-origin from WebView; `SandboxLevel` elevation requires server-side provenance; single origin-checked JS bridge (§7.2, §11).
 7. Blocked >30 min on a protocol unknown → capture a real trace from a dev instance and extend fixtures. Evidence over speculation.
 
+## Feature coverage vs Open WebUI (audit 2026-11-02, user-directed)
+
+Evidence base: routers listed in the cloned source + `/api/config` feature gates +
+docs.openwebui.com/features. Anything here marked **MISSING** is intentionally deferred
+until its milestone — add the gate/route when the milestone lands.
+
+| OWUI feature (gate / route) | Beacon plan |
+| --- | --- |
+| Chats/crud/pins/archive/folders/search | M1 done / folders M4 |
+| Chat completions + SSE/tool-call/output parts | M1–M2 (M2-1 landed) |
+| display_file instance files → viewers | M2-3 (landed) |
+| **Terminal (`Open Terminal`) file inline view** (`terminals.py`; proxy `/api/v1/terminals/{id}/files/read`) | **Promoted into M2 (user request 2026-11-02; was a §1 stretch goal)** |
+| Terminal interactive sessions / commands | post-M5 (not planned — revisit) |
+| HtmlCard WebView pane + policy + bundles (mermaid/KaTeX/chart) | M2-2 (next) |
+| Composer feature toggles (web search / image gen / code interpreter) (`features.*` in the request) | **MISSING — add in M3** (request field exists; no UI) |
+| Message feedback/rating, continue | M3 (per agent.md §9.3) |
+| Attachments/upload queue, share-target | M3 |
+| Voice STT/TTS engines | M3 (agent.md §8) |
+| Branches: edit/regenerate/fork/clone | M3 (fork/clone = chats.py:1783/1905) |
+| Chat/share/export (share_id, md/json export) | **MISSING — add in M3** |
+| Context-usage display (`context_usage` in GET /{id}) | **MISSING — add in M3** (data verified in the response) |
+| Reconciler + flick-to-refetch | M3 |
+| Prompt-autocomplete task (`task.autocomplete.enable`) | **MISSING — add M4+** |
+| MFA sign-in flows (`mfa.py`; SigninResult MFA branch) | **MISSING — add M4** (M1 surfaces a typed message only) |
+| Socket.IO transports (taskSocket/chat-events/confirmations) | M4 |
+| Workspace screens (models/knowledge/prompts/tools/TOOL SERVERS/skills) — capability-gated | M4 (+ tool-servers listing) |
+| **Memories** (`memories.py`; `memories.enable`) — user memory view/edit | **MISSING — add M4** |
+| **Notes** (`notes.py`; enable_notes) | M4 ✓ |
+| **Channels** incl. `channels.encryption.enable` E2EE | M4 (E2EE: hide the flag where enabled? decide then) |
+| **Apps panel** (`apps.py`; `apps.enable`) | **MISSING — add M4+** |
+| **Calendar** (`calendar.py`; `calendar.enable`) | **MISSING — add M4+** |
+| **Automations** (`automations.py`; `automations.enable`) | **MISSING — add M4+** (server-side scheduled agent tasks — distinct from removed Hermes) |
+| **User notifications/targets** (`notifications.py`) | **MISSING — add M4+** |
+| Image generation (render + trigger) | M2 (render) / M3 (toggle) |
+| Realtime webrtc voice-call | P2 ✓ |
+| Evaluations/leaderboards (`evaluations.py`) | post-M5, only if requested |
+| Model editor/custom-model create (workspace) | M4+ (view-only first) |
+| Admin-surface (scim/groups/analytics/pipelines/retrieval config) | Out of scope (client, not console) |
+| Subagents gate (`enable_subagents`) | Watch M4 — likely part of workspace/automations |
+| User-webhooks gate (`ui.enable_user_webhooks`) | post-M5, only if requested |
+
 ## Gotchas (pre-distilled in agent.md §17 — do not re-discover these)
 
 - Empty SSE `data:` frames are **heartbeats** — never JSON-decode them; the frame scanner is byte-level.
@@ -58,3 +99,6 @@ git clone --depth 1 https://github.com/open-webui/open-webui   # protocol ground
 - Server STT upload ceiling ≈ 20 MiB / 10 min at 16 kHz WAV — cap recording client-side.
 - Servers <0.9 ran outlet filters twice — call `/api/chat/completed`, but honor inline-filter detection.
 - Streams that survive backgrounding need a foreground-service lease; otherwise reconcile on resume — never silently drop live text.
+- `function_call_output` may wrap results in content-parts arrays (`[{type:'input_text', text:"<result>"}]`) — unwrap before parsing tool results (seen on-device).
+- Timestamps from the server are epoch **seconds**; normalize to millis at every boundary (Chat sort bug 2026-11-02).
+- Surface clips to shape: bubble padding must ≥ corner radius or text clips at corners.

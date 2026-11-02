@@ -28,7 +28,13 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.RepeatMode
 
 /**
  * M1 transcript renderer (ADR-0009): segments streaming markdown into
@@ -167,7 +173,8 @@ internal fun inlineText(raw: String, caret: Boolean = false): AnnotatedString = 
     if (caret) append(STREAMING_CARET)
 }
 
-private const val STREAMING_CARET = "▍"
+/** The orange starburst glyph: Claude's thinking marker (interface copy, 2026-11-02). */
+private const val STREAMING_CARET = "✳"
 
 @Composable
 fun MiniMarkdown(
@@ -212,9 +219,31 @@ fun MiniMarkdown(
             }
         }
         if (blocks.isEmpty() && streaming) {
-            Text(STREAMING_CARET, style = MaterialTheme.typography.bodyLarge)
+            ThinkingBurst()
         }
     }
+}
+
+/** The pulsing orange starburst (screenshot-parity with Claude's thinking marker). */
+@Composable
+private fun ThinkingBurst() {
+    val transition = rememberInfiniteTransition(label = "burst")
+    val alpha by transition.animateFloat(
+        initialValue = 0.45f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            tween(850),
+            RepeatMode.Reverse,
+        ),
+        label = "burst-alpha",
+    )
+    Text(
+        text = STREAMING_CARET,
+        style = MaterialTheme.typography.titleLarge,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.graphicsLayer { this.alpha = alpha },
+        fontWeight = FontWeight.Bold,
+    )
 }
 
 @Composable

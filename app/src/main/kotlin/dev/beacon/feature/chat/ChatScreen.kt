@@ -76,15 +76,10 @@ data class ChatActions(
     val onRegenerate: () -> Unit = {},
 )
 
-// Gentle radii with padding ≥ corner clearance — Surface clips to shape, so
-// larger radii than the text padding eat into the first/last lines (user report).
-private val UserBubbleShape = RoundedCornerShape(
-    topStart = 18.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 6.dp,
-)
-private val AssistantBubbleShape = RoundedCornerShape(
-    topStart = 6.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 18.dp,
-)
-private val BubblePadding = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+// Interface reference (2026-11-02): the user = a soft warm-gray pill, LEFT-aligned;
+// the assistant = plain serif text directly on the background (no bubble outline).
+private val UserBubbleShape = RoundedCornerShape(12.dp)
+private val BubblePadding = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -212,6 +207,25 @@ fun ChatScreen(
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom),
             ) {
+                if (state.engine.messages.isEmpty()) {
+                    // Empty-state hero, in the model's voice (user request 2026-11-02).
+                    item(key = "empty_hero") {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.padding(vertical = 24.dp),
+                        ) {
+                            Text(
+                                text = "Hello, I'm ${state.modelLabel ?: "your model"}.",
+                                style = MaterialTheme.typography.headlineLarge,
+                            )
+                            Text(
+                                text = "Ask anything — everything runs on your server.",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
                 val messages = state.engine.messages.asReversed()
                 items(messages.size, key = { messages[it].id }) { index ->
                     MessageBubble(
@@ -306,12 +320,20 @@ fun ChatScreen(
                     modifier = Modifier.padding(horizontal = 14.dp),
                 )
             }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
+            // The composer bar (interface copy, 2026-11-02): one rounded container,
+            // attach left, draft middle, mic + dark send/stop circle right.
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(24.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
             ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp),
+                ) {
                 Surface(
                     shape = CircleShape,
                     color = MaterialTheme.colorScheme.surfaceVariant,
@@ -395,9 +417,10 @@ fun ChatScreen(
                         )
                     }
                 }
-            }
-        }
-    }
+            }   // inner Row
+        }   // composer container
+        }   // Column
+    }   // Scaffold content
 
     if (showModelPicker) {
         ModalBottomSheet(onDismissRequest = onDismissPicker) {
@@ -430,13 +453,14 @@ private fun MessageBubble(
 ) {
     val streaming = message.id == streamingMessageId
     if (message.role == "user") {
+        // Left-aligned warm-gray pill (interface copy, 2026-11-02).
         Box(Modifier.fillMaxWidth()) {
             Surface(
                 color = MaterialTheme.colorScheme.surfaceVariant,
                 shape = UserBubbleShape,
                 modifier = Modifier
                     .widthIn(max = 320.dp)
-                    .align(Alignment.CenterEnd),
+                    .align(Alignment.CenterStart),
             ) {
                 MiniMarkdown(
                     markdown = message.markdown,
@@ -446,12 +470,9 @@ private fun MessageBubble(
         }
     } else {
         Column(Modifier.fillMaxWidth()) {
-            Surface(
-                color = MaterialTheme.colorScheme.surface,
-                shape = AssistantBubbleShape,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
+            // Assistant text sits on the app background directly (Copernicus-voice,
+            // no chrome) — parts render inside.
+            Box(Modifier.fillMaxWidth()) {
                 if (message.parts.isEmpty()) {
                     // Persisted legacy rows / tests without a part pipeline.
                     MiniMarkdown(

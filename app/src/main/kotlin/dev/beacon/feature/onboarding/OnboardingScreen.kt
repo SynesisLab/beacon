@@ -89,14 +89,16 @@ private fun UrlStep(state: OnboardingViewModel.UiState, actions: OnboardingActio
             .verticalScroll(rememberScrollState())
             .semantics { testTag = "onboarding_url" }
             .padding(horizontal = Paddings.screenEdge.dp, vertical = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
+        androidx.compose.foundation.layout.Spacer(Modifier.fillMaxWidth().height(40.dp))
         Text("Beacon", style = MaterialTheme.typography.headlineSmall)
         Text(
             "Connect to your own Open WebUI instance. All intelligence stays on your server — Beacon is a client.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        androidx.compose.foundation.layout.Spacer(Modifier.fillMaxWidth().height(8.dp))
         OutlinedTextField(
             value = state.urlDraft,
             onValueChange = actions.setUrlDraft,
@@ -104,18 +106,23 @@ private fun UrlStep(state: OnboardingViewModel.UiState, actions: OnboardingActio
             placeholder = { Text("https://ai.example.com") },
             singleLine = true,
             isError = state.error != null,
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
             modifier = Modifier.fillMaxWidth(),
         )
         ErrorText(state.error)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(
-                onClick = actions.probeServer,
-                enabled = !state.probing && state.urlDraft.isNotBlank(),
-            ) { Text("Continue") }
-            if (state.probing) {
-                CircularProgressIndicator(modifier = Modifier.size(40.dp))
-            }
+        Button(
+            onClick = actions.probeServer,
+            enabled = !state.probing && state.urlDraft.isNotBlank(),
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Continue", style = MaterialTheme.typography.labelLarge)
         }
+        if (state.probing) {
+            androidx.compose.foundation.layout.Spacer(Modifier.height(6.dp))
+            CircularProgressIndicator(modifier = Modifier.size(28.dp))
+        }
+        androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
     }
 }
 

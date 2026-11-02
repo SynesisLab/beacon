@@ -19,6 +19,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
@@ -28,6 +30,7 @@ import dev.beacon.core.data.AuthMethod
 import dev.beacon.ui.theme.Paddings
 
 /** M0 settings: server + auth summary, sign-out/clear. Headers/TLS editing widens in M4. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     state: SettingsViewModel.UiState,
@@ -37,14 +40,32 @@ fun SettingsScreen(
 ) {
     var confirming by rememberSaveable { mutableStateOf(false) }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .semantics { testTag = "settings" }
-            .padding(horizontal = Paddings.screenEdge.dp, vertical = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
+    androidx.compose.material3.Scaffold(
+        // Scaffold + bar so the content respects the system insets — the earlier
+        // bare Column rendered under the status bar (user report 2026-11-02).
+        topBar = {
+            androidx.compose.material3.TopAppBar(
+                title = { Text("Settings") },
+                navigationIcon = {
+                    androidx.compose.material3.IconButton(onClick = onClose) {
+                        androidx.compose.material3.Icon(
+                            androidx.compose.material.icons.Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                        )
+                    }
+                },
+            )
+        },
+        modifier = modifier.semantics { testTag = "settings" },
+    ) { padding ->
+        Column(
+            modifier = modifier
+                .padding(padding)
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = Paddings.screenEdge.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
         Text("Settings", style = MaterialTheme.typography.headlineSmall)
 
         SettingSection("Server") {
@@ -84,7 +105,8 @@ fun SettingsScreen(
         ) { Text("Sign out and clear keys") }
 
         OutlinedButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text("Done") }
-    }
+        }
+    } // Scaffold content
 
     if (confirming) {
         AlertDialog(

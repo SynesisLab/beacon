@@ -15,12 +15,21 @@ object DisplayFile {
     fun parse(output: kotlinx.serialization.json.JsonElement?, json: Json): ChatPart.File? {
         if (output == null) return null
         return try {
-            val asString = (output as? JsonPrimitive)?.takeIf { it.isString }?.content
-            val obj = when {
-                asString != null -> json.parseToJsonElement(asString) as? JsonObject
-                output is JsonObject -> output
+            // Shapes seen in the wild (docs/protocol-notes.md):
+            // 1. the display_file object itself (server-converted `type:'file'` output items);
+            // 2. a JSON string of it (raw tool result);
+            // 3. an ARRAY of content parts [{type:'input_text', text:"<json string>"}]
+            //    — the OpenAI content-parts wrapper (verified on-device 2026-11-02).
+            val extracted: String? = when {
+                output is kotlinx.serialization.json.JsonArray -> output.toList()
+                    .joinToString("") { part ->
+                        ((part as? JsonObject)?.get("text") as? JsonPrimitive)?.content.orEmpty()
+                    }
+                (output as? JsonPrimitive)?.isString == true -> output.content
+                output is JsonObject -> return fromObject(output)
                 else -> null
-            } ?: return null
+            }
+            val obj = json.parseToJsonElement(extracted ?: return null) as? JsonObject ?: return null
             fromObject(obj)
         } catch (_: Exception) {
             null
@@ -31,16 +40,19 @@ object DisplayFile {
         if ((obj["type"] as? JsonPrimitive)?.content != "file") return null
         if ((obj["exists"] as? JsonPrimitive)?.content == "false") return null
         val path = (obj["path"] as? JsonPrimitive)?.content ?: return null
-        val fileId = Regex("/api/v1/files/([^/]+)/content").find(path)?.groupValues?.get(1) ?: return null
-        val name = (obj["name"] as? JsonPrimitive)?.content ?: fileId
+        val name = (obj["name"] as? JsonPrimitive)?.content ?: path.substringAfterLast('/')
         val mime = (obj["mime_type"] as? JsonPrimitive)?.content
             ?: (obj["content_type"] as? JsonPrimitive)?.content
             ?: "application/octet-stream"
+
+        // Instance files: full native viewer. Terminal-server files: the terminal
+        // surface is a stretch goal (agent.md §1) — chip names the path honestly.
+        val fileId = Regex("/api/v1/files/([^/]+)/content").find(path)?.groupValues?.get(1)
         return ChatPart.File(
-            fileId = fileId,
+            fileId = fileId ?: "",
             name = name,
             mime = mime,
-            viewer = viewerForMime(mime),
+            viewer = if (fileId == null) FileViewer.Download else viewerForMime(mime),
         )
     }
 

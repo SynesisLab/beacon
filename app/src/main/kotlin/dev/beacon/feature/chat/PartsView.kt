@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -64,12 +65,19 @@ private fun FileChip(
     part: dev.beacon.core.render.ChatPart.File,
     onOpenFile: (String, String, String) -> Unit,
 ) {
+    val isTerminal = part.fileId.isEmpty()
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant,
         shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onOpenFile(part.fileId, part.name, part.mime) },
+            .then(
+                if (isTerminal) {
+                    Modifier
+                } else {
+                    Modifier.clickable { onOpenFile(part.fileId, part.name, part.mime) }
+                },
+            ),
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -89,18 +97,24 @@ private fun FileChip(
             Column(Modifier.weight(1f)) {
                 Text(part.name, style = MaterialTheme.typography.titleMedium, maxLines = 1)
                 Text(
-                    part.mime,
+                    if (isTerminal) {
+                        "Terminal file — inline terminal view is a stretch goal"
+                    } else {
+                        part.mime
+                    },
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                 )
             }
-            Text(
-                "Open",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
-            )
+            if (!isTerminal) {
+                Text(
+                    "Open",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                )
+            }
         }
     }
 }
@@ -112,7 +126,7 @@ private fun StatusPill(part: dev.beacon.core.render.ChatPart.Status) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        CircularProgressIndicator(Modifier.height(14.dp))
+        CircularProgressIndicator(Modifier.size(14.dp))
         Text(
             part.text,
             style = MaterialTheme.typography.labelLarge,
@@ -146,7 +160,7 @@ private fun ReasoningCard(part: dev.beacon.core.render.ChatPart.Reasoning) {
                     modifier = Modifier.weight(1f),
                 )
                 if (part.streaming) {
-                    CircularProgressIndicator(Modifier.height(12.dp))
+                    CircularProgressIndicator(Modifier.size(12.dp))
                     Box(Modifier.height(4.dp))
                 }
                 Icon(

@@ -51,12 +51,15 @@ data class ChatActions(
     val onOpenFile: (fileId: String, name: String, mime: String) -> Unit,
 )
 
+// Gentle radii with padding ≥ corner clearance — Surface clips to shape, so
+// larger radii than the text padding eat into the first/last lines (user report).
 private val UserBubbleShape = RoundedCornerShape(
-    topStart = 24.dp, topEnd = 24.dp, bottomStart = 24.dp, bottomEnd = 6.dp,
+    topStart = 18.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 6.dp,
 )
 private val AssistantBubbleShape = RoundedCornerShape(
-    topStart = 6.dp, topEnd = 24.dp, bottomStart = 24.dp, bottomEnd = 24.dp,
+    topStart = 6.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 18.dp,
 )
+private val BubblePadding = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -86,8 +89,16 @@ fun ChatScreen(
                     }
                 },
                 actions = {
-                    Button(onClick = actions.onOpenModelPicker) {
-                        Text(state.selectedModelId ?: "Model")
+                    // Model chip: current model NAME (chat pick → user → server default),
+                    // truncated to keep the bar calm.
+                    Button(
+                        onClick = actions.onOpenModelPicker,
+                        shape = RoundedCornerShape(50),
+                    ) {
+                        Text(
+                            state.modelLabel ?: "Model",
+                            maxLines = 1,
+                        )
                     }
                 },
             )
@@ -225,7 +236,7 @@ private fun MessageBubble(
             ) {
                 MiniMarkdown(
                     markdown = message.markdown,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    modifier = BubblePadding,
                 )
             }
         }

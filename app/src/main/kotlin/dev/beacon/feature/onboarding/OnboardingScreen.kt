@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -112,7 +113,7 @@ private fun UrlStep(state: OnboardingViewModel.UiState, actions: OnboardingActio
                 enabled = !state.probing && state.urlDraft.isNotBlank(),
             ) { Text("Continue") }
             if (state.probing) {
-                CircularProgressIndicator(modifier = Modifier.height(40.dp))
+                CircularProgressIndicator(modifier = Modifier.size(40.dp))
             }
         }
     }
@@ -191,7 +192,7 @@ private fun AuthStep(state: OnboardingViewModel.UiState, actions: OnboardingActi
                 enabled = !state.connecting,
             ) { Text("Connect") }
             if (state.connecting) {
-                CircularProgressIndicator(modifier = Modifier.height(40.dp))
+                CircularProgressIndicator(modifier = Modifier.size(40.dp))
             }
         }
     }

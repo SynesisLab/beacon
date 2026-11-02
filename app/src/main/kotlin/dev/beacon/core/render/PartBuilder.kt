@@ -84,6 +84,11 @@ object PartBuilder {
                         add(ChatPart.Markdown(text, streaming = item.statusInProgress()))
                     }
                 }
+                "file" -> {
+                    // Server-converted display_file items (ToolOutputFile on the web,
+                    // middleware.py:325-345 for terminal / builtin.py for instance files).
+                    displayFile.fromObject(item)?.let { add(it) }
+                }
                 "function_call" -> {
                     val callId = (item["call_id"] as? JsonPrimitive)?.content
                         ?: (item["id"] as? JsonPrimitive)?.content

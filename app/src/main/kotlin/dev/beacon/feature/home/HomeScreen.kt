@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
@@ -114,7 +115,7 @@ fun HomeScreen(
             if (state.chats.isEmpty() && !state.loading) {
                 EmptyListHint()
             }
-            LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+            LazyColumn(state = listState, modifier = Modifier.fillMaxSize().weight(1f, fill = false)) {
                 items(state.chats.size, key = { state.chats[it].chatId }) { index ->
                     val chat = state.chats[index]
                     ListItem(
@@ -140,7 +141,7 @@ fun HomeScreen(
                         .fillMaxWidth()
                         .padding(12.dp),
                 ) {
-                    CircularProgressIndicator(Modifier.height(24.dp))
+                    CircularProgressIndicator(Modifier.size(24.dp))
                 }
             }
         }

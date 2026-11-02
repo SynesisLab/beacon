@@ -1,0 +1,257 @@
+package dev.beacon.core.render
+
+import java.net.URLDecoder
+
+/**
+ * The markdown → [ChatPart] segmenter (agent.md §7.1; concept-port of Conduit's
+ * markdown pipeline, original code). Runs on the CONTENT accumulation (text-mode
+ * messages).
+ *
+ * Handled segment types, evidence-verified (docs/protocol-notes.md M2):
+ * - fenced ```html blocks → [ChatPart.HtmlCard] (artifact title via a
+ *   "title:"-comment or a title-tag; partial open fences render live above the
+ *   size threshold §7.1);
+ * - ```mermaid fences → a mermaid HtmlCard (shell: pre.mermaid, securityLevel loose);
+ * - ```chart fences (JSON config) → a chart.js canvas HtmlCard;
+ * - math ($…$ / $$…$$) → KaTeX span wrappers for the shell;
+ * - '<details type="tool_calls" …>' blocks → [ChatPart.ToolCall] (attributes are
+ *   URI-encoded, verified against the web's decodeString = decodeURIComponent;
+ *   the embeds attribute carries URI-encoded HTML embed lists).
+ *
+ * NOTE: the details/think markup below is assembled from string fragments on
+ * purpose — raw block-level HTML tags inside these literals kept tripping tooling.
+ */
+object Segmenter {
+    private val htmlFence = Regex("^\\s*```\\s*(html|web|frontend)\\s*$", RegexOption.IGNORE_CASE)
+    private val mermaidFence = Regex("^\\s*```\\s*mermaid\\s*$", RegexOption.IGNORE_CASE)
+    private val chartFence = Regex("^\\s*```\\s*(chart|chartjs)\\s*$", RegexOption.IGNORE_CASE)
+    private val anyFence = Regex("^\\s*(`{3,}|~{3,})\\s*([a-zA-Z0-9_+-]*)\\s*$")
+    private val detailsBlock = Regex(
+        "<" + "details\\b([^>]*)>([\\s\\S]*?)</" + "details>",
+        setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE),
+    )
+    private val displayMath = Regex("\\$\\$([^$\n]{1,800}?)\\$\\$")
+    private val inlineMath = Regex("(?<![\\\\\\w$])\\$([^$\\n$]{1,400}?)\\$(?![\\w$])")
+    private val titleComment = Regex("<!--\\s*title:\\s*(.+?)\\s*-->", RegexOption.IGNORE_CASE)
+    private val titleTag = Regex("<" + "title[^>]*>(.*?)</" + "title>", RegexOption.IGNORE_CASE)
+    private val rawHtmlBlob = Regex("<" + "div\\b[^>]*>[\\S\\n]{200,}", RegexOption.IGNORE_CASE)
+
+    const val LIVE_PREVIEW_MIN_CHARS = 200
+
+    fun build(contentMd: String, streaming: Boolean): List<ChatPart> {
+        if (contentMd.isBlank()) {
+            return if (streaming) listOf(ChatPart.Markdown("", streaming = true)) else emptyList()
+        }
+        val parts = ArrayList<ChatPart>(4)
+
+        // Tool-call details blocks lift out first (chip + any embedded UI results).
+        var remainder = contentMd
+        detailsBlock.findAll(contentMd).forEach { match ->
+            partsFromToolDetails(match).forEach { parts.add(it) }
+            remainder = remainder.replace(match.value, "")
+        }
+
+        // Raw HTML blobs (unfenced div trees) become cards (agent.md §7.1).
+        rawHtmlBlob.findAll(remainder).forEach { match ->
+            parts.add(
+                ChatPart.HtmlCard(
+                    id = "blob-" + match.value.hashCode().toUInt().toString(16),
+                    html = match.value,
+                    title = titleTag.find(match.value)?.groupValues?.get(1)?.trim(),
+                    sandboxLevel = SandboxLevel.UI,
+                    minHeightDp = 120,
+                ),
+            )
+            remainder = remainder.replace(match.value, "")
+        }
+
+        partLines(remainder, streaming).forEach { parts.add(it) }
+        if (streaming && parts.isEmpty()) {
+            parts.add(ChatPart.Markdown("", streaming = true))
+        }
+        return parts
+    }
+
+    /** Line-walk: fences (html/mermaid/chart = cards; code stays markdown) + paragraphs. */
+    private fun partLines(md: String, masterStreaming: Boolean): List<ChatPart> {
+        if (md.isBlank()) return emptyList()
+        val parts = ArrayList<ChatPart>(2)
+        val paragraph = StringBuilder()
+        var openFenceType: String? = null
+        val fenceBody = StringBuilder()
+
+        fun flushParagraph() {
+            val text = paragraph.toString().trim('\n')
+            if (text.isNotBlank()) parts.add(mathWrapped(text, masterStreaming))
+            paragraph.setLength(0)
+        }
+
+        md.split('\n').forEach line@{ line ->
+            val fenceMatch = anyFence.find(line)
+            if (fenceMatch != null && openFenceType == null) {
+                val lang = fenceMatch.groupValues[2].lowercase()
+                openFenceType = when {
+                    lang == "html" || lang == "web" || lang == "frontend" -> "html"
+                    lang == "mermaid" -> "mermaid"
+                    lang == "chart" || lang == "chartjs" -> "chart"
+                    else -> "code"
+                }
+                if (openFenceType == "code") {
+                    paragraph.append(line).append('\n')
+                    openFenceType = "code-open"
+                    return@line
+                }
+                flushParagraph()
+                return@line
+            }
+            if (openFenceType != null) {
+                if (fenceMatch != null) {
+                    if (openFenceType == "code-open") {
+                        paragraph.append(line).append('\n')
+                        openFenceType = null
+                        return@line
+                    }
+                    val body = fenceBody.toString().trim('\n')
+                    when (openFenceType) {
+                        "html" -> parts.add(htmlCard(body))
+                        "mermaid" -> parts.add(mermaidCard(body))
+                        "chart" -> parts.add(chartCard(body))
+                    }
+                    fenceBody.setLength(0)
+                    openFenceType = null
+                    return@line
+                }
+                fenceBody.append(line).append('\n')
+                return@line
+            }
+            if (line.isBlank()) {
+                flushParagraph()
+                return@line
+            }
+            paragraph.append(line).append('\n')
+        }
+
+        // Open card fence mid-stream: live preview above the threshold (§7.1);
+        // open code fences stay in the paragraph.
+        if (openFenceType != null && openFenceType != "code-open" && fenceBody.length >= LIVE_PREVIEW_MIN_CHARS) {
+            val body = fenceBody.toString().trim('\n')
+            when (openFenceType) {
+                "html" -> parts.add(htmlCard(body, streaming = true))
+                "mermaid" -> parts.add(mermaidCard(body))
+                "chart" -> parts.add(chartCard(body))
+            }
+        }
+        flushParagraph()
+        return parts
+    }
+
+    /** Wraps KaTeX math into shell-render spans; text otherwise intact. */
+    private fun mathWrapped(text: String, streaming: Boolean): ChatPart {
+        var wrapped = displayMath.replace(text) { m ->
+            "<span class=\"beacon-katex\" data-block=\"display\">" + m.groupValues[1] + "</span>"
+        }
+        wrapped = inlineMath.replace(wrapped) { m ->
+            "<span class=\"beacon-katex\" data-block=\"inline\">" + m.groupValues[1] + "</span>"
+        }
+        return ChatPart.Markdown(wrapped, streaming = streaming)
+    }
+
+    private fun htmlCard(html: String, streaming: Boolean = false): ChatPart = ChatPart.HtmlCard(
+        id = "card-" + html.hashCode().toUInt().toString(16),
+        html = html,
+        srcUrl = null,
+        title = titleComment.find(html)?.groupValues?.get(1)
+            ?: titleTag.find(html)?.groupValues?.get(1)?.trim(),
+        sandboxLevel = SandboxLevel.UI,
+        minHeightDp = 120,
+        interactive = !streaming,
+    )
+
+    private fun mermaidCard(code: String): ChatPart = ChatPart.HtmlCard(
+        id = "mermaid-" + code.hashCode().toUInt().toString(16),
+        html = "<pre class=\"mermaid\">" + code + "</pre>",
+        title = null,
+        sandboxLevel = SandboxLevel.UI,
+        minHeightDp = 140,
+    )
+
+    private fun chartCard(jsonConfig: String): ChatPart = ChatPart.HtmlCard(
+        id = "chart-" + jsonConfig.hashCode().toUInt().toString(16),
+        html = chartWrapperHtml(jsonConfig),
+        title = null,
+        sandboxLevel = SandboxLevel.UI,
+        minHeightDp = 220,
+    )
+
+    internal fun chartWrapperHtml(jsonConfig: String): String =
+        "<div class=\"beacon-chart\"><canvas></canvas></div>\n" +
+            "<script>try { new Chart(document.querySelector('.beacon-chart canvas'), " +
+            jsonConfig + "); } catch (e) { document.querySelector('.beacon-chart').textContent = 'chart.js error: ' + e; }</script>"
+
+    /** '<' + "think">…< + "/think"> blocks → reasoning body (stored messages). */
+    fun reasoningFromThinkBlocks(md: String): String? {
+        val match = Regex("<" + "think" + ">([\\s\\S]*?)</" + "think" + ">").find(md) ?: return null
+        return match.groupValues[1].trim().takeIf { it.isNotEmpty() }
+    }
+
+    /** '<details type="tool_calls" …>' block → ToolCall chip + HtmlCards for its embeds. */
+    private fun partsFromToolDetails(match: MatchResult): List<ChatPart> {
+        val attrs = attrMap(match.groupValues[1])
+        val body = match.groupValues[2]
+        val type = attrs["type"]?.lowercase()
+        if (type != "tool_calls" && type != "tool_call") return emptyList()
+
+        val out = ArrayList<ChatPart>(2)
+        val name = attrs["title"]?.substringBefore('(')?.trim() ?: "tool"
+        val callId = attrs["id"] ?: attrs["call_id"]
+        val status = if (body.isBlank()) ToolStatus.Running else ToolStatus.Done
+        out.add(
+            ChatPart.ToolCall(
+                callId = callId,
+                name = name,
+                args = body.trim(),
+                status = status,
+                result = null,
+            ),
+        )
+        attrs["embeds"]?.let { encoded ->
+            decodeHtmlList(encoded).forEach { html ->
+                out.add(
+                    ChatPart.HtmlCard(
+                        id = "embed-" + html.hashCode().toUInt().toString(16),
+                        html = html,
+                        title = titleTag.find(html)?.groupValues?.get(1)?.trim(),
+                        // Embedded UI results are server-provenanced (tool-emitted, §11) —
+                        // the web allows same-origin only when trusted; Beacon: MEDIA floor.
+                        sandboxLevel = SandboxLevel.MEDIA,
+                        minHeightDp = 160,
+                    ),
+                )
+            }
+        }
+        return out
+    }
+
+    /** embeds attribute: URI-encoded JSON string list of HTML documents. */
+    private fun decodeHtmlList(encoded: String): List<String> = try {
+        val decoded = URLDecoder.decode(encoded, "UTF-8")
+        val arr = kotlinx.serialization.json.Json.parseToJsonElement(decoded)
+            as? kotlinx.serialization.json.JsonArray
+        arr?.mapNotNull { element ->
+            (element as? kotlinx.serialization.json.JsonPrimitive)
+                ?.takeIf { it.isString }
+                ?.content
+        }?.filter { it.contains('<') } ?: emptyList()
+    } catch (_: Exception) {
+        emptyList()
+    }
+
+    /** The details-attribute grammar: key="value" pairs with URI-decoded values. */
+    private fun attrMap(raw: String): Map<String, String> {
+        val attrs = HashMap<String, String>()
+        Regex("([a-zA-Z_:.-]+)\\s*=\\s*\"([^\"]*)\"").findAll(raw).forEach { m ->
+            attrs[m.groupValues[1].lowercase()] = URLDecoder.decode(m.groupValues[2], "UTF-8")
+        }
+        return attrs
+    }
+}

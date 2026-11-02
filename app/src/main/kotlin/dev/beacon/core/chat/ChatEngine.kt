@@ -93,6 +93,7 @@ class ChatEngine(
     private var outputAdopted = false
     private var outputSeen = false
     private var outItems: List<JsonElement> = emptyList()
+    private var embedsHtml: List<String> = emptyList()
     private var lastRoomWrite = 0L
     private var activeModelId: String? = null
     private var projectionSnapshot: List<ProjectionMessage> = emptyList()
@@ -157,6 +158,7 @@ class ChatEngine(
                             outputSeen = outputSeen,
                             sourceCount = next.sourceCount,
                             followUps = next.followUps,
+                            embeds = embedsHtml,
                             streaming = true,
                         ),
                     ),
@@ -261,6 +263,9 @@ class ChatEngine(
         assistantContent = StringBuilder()
         assistantReasoning = StringBuilder()
         outputAdopted = false
+        outputSeen = false
+        outItems = emptyList()
+        embedsHtml = emptyList()
         lastRoomWrite = now
         scanner = SseFrameScanner()
 
@@ -364,6 +369,10 @@ class ChatEngine(
             is StreamEvent.TitleUpdate -> chatId?.let { store.setChatTitle(it, event.title) }
             is StreamEvent.TagsUpdate -> chatId?.let { store.setChatTags(it, event.tags) }
             is StreamEvent.ChatListDiscovered -> adoptLearnedChat(event.chatId, assistantMessageId)
+            is StreamEvent.Embeds -> {
+                embedsHtml = event.htmlList
+                foldPartsFor(assistantMessageId) { it }
+            }
             is StreamEvent.UsageUpdate -> patch { copy(usage = event.usage) }
             is StreamEvent.ModelSnapshot, is StreamEvent.Deferred -> Unit
             is StreamEvent.ContentSnapshot -> assistantContent = StringBuilder(event.content.orEmpty())

@@ -35,6 +35,9 @@ class ChatViewModel @Inject constructor(
         val models: List<OwuiModel> = emptyList(),
         val selectedModelId: String? = null,
         val draft: String = "",
+        // HtmlCard panes share the app client (same-origin auth, §11).
+        val httpClient: okhttp3.OkHttpClient? = null,
+        val instanceUrl: String? = null,
     ) {
         /** Display label: the model's NAME when known, else its id. */
         val modelLabel: String?
@@ -46,9 +49,11 @@ class ChatViewModel @Inject constructor(
     private val selected = MutableStateFlow<String?>(session.settingsSnapshot().selectedModelId)
     private val draft = MutableStateFlow("")
     private var serverDefault: String? = null
+    private val httpClient = api.publicClient()
+    private val instanceUrl = session.instanceUrlSnapshot()
 
     val ui: StateFlow<UiState> = combine(engine.state, modelsState, selected, draft) { e, m, sel, d ->
-        UiState(e, m, sel, d)
+        UiState(e, m, sel, d, httpClient, instanceUrl)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState(engine = engine.state.value))
 
     init {

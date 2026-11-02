@@ -28,6 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import okhttp3.OkHttpClient
 
 /**
  * Renders the engine's part list inside a bubble (agent.md §4 contract).
@@ -41,6 +42,8 @@ fun PartsView(
     onFollowUp: (String) -> Unit = {},
     onOpenFile: (fileId: String, name: String, mime: String, terminalServerId: String?, terminalPath: String?) -> Unit =
         { _, _, _, _, _ -> },
+    httpClient: OkHttpClient? = null,
+    instanceUrl: String? = null,
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         parts.forEach { part ->
@@ -52,9 +55,14 @@ fun PartsView(
                 is dev.beacon.core.render.ChatPart.ToolCall -> ToolCallCard(part)
                 is dev.beacon.core.render.ChatPart.Citations -> CitationsPill(part)
                 is dev.beacon.core.render.ChatPart.FollowUps -> FollowUpRow(part, onFollowUp)
-                is dev.beacon.core.render.ChatPart.HtmlCard -> HtmlCardPlaceholder(part)
+                is dev.beacon.core.render.ChatPart.HtmlCard ->
+                    when {
+                        httpClient != null && (part.html != null || part.srcUrl != null) ->
+                            HtmlCardPane(part, httpClient, instanceUrl)
+                        else -> HtmlCardPlaceholder(part)
+                    }
                 is dev.beacon.core.render.ChatPart.File -> FileChip(part, onOpenFile)
-                is dev.beacon.core.render.ChatPart.GeneratedImage -> Unit // M2-2 (generation rendering)
+                is dev.beacon.core.render.ChatPart.GeneratedImage -> Unit // M2: generation rendering next
             }
         }
     }

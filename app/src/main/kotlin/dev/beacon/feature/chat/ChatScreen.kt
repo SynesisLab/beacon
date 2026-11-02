@@ -149,6 +149,8 @@ fun ChatScreen(
                         streamingMessageId = state.engine.streamingMessageId,
                         onFollowUp = actions.onDraft,
                         onOpenFile = actions.onOpenFile,
+                        httpClient = state.httpClient,
+                        instanceUrl = state.instanceUrl,
                     )
                 }
             }
@@ -223,6 +225,8 @@ private fun MessageBubble(
     streamingMessageId: String?,
     onFollowUp: (String) -> Unit,
     onOpenFile: (fileId: String, name: String, mime: String, terminalServerId: String?, terminalPath: String?) -> Unit,
+    httpClient: okhttp3.OkHttpClient?,
+    instanceUrl: String?,
 ) {
     val streaming = message.id == streamingMessageId
     if (message.role == "user") {
@@ -261,6 +265,8 @@ private fun MessageBubble(
                         onFollowUp = onFollowUp,
                         onOpenFile = onOpenFile,
                         modifier = Modifier,
+                        httpClient = httpClient,
+                        instanceUrl = instanceUrl,
                     )
                 }
             }

@@ -37,6 +37,9 @@ sealed interface StreamEvent {
      */
     data class ChatListDiscovered(val chatId: String, val folderId: String?) : StreamEvent
 
+    /** message.embeds — raw inline HTML tool-embed documents (middleware.py:730-840). */
+    data class Embeds(val htmlList: List<String>) : StreamEvent
+
     /** choices[].finish_reason — distinguishes a natural stop from a client abort (§6.3). */
     data class FinishReason(val value: String) : StreamEvent
 
@@ -130,6 +133,11 @@ class OwuiStreamParser(
             "chat:title" -> {
                 val title = (obj["data"] as? JsonPrimitive)?.content
                 return if (title != null) listOf(StreamEvent.TitleUpdate(title)) else emptyList()
+            }
+            "chat:message:embeds", "embeds" -> {
+                // message.embeds: array of raw HTML / URL strings (ResponseMessage.svelte:755)
+                val list = ((obj["data"] as? JsonObject)?.get("embeds") as? JsonArray)?.stringList().orEmpty()
+                return if (list.isNotEmpty()) listOf(StreamEvent.Embeds(list)) else emptyList()
             }
             "chat:list" -> {
                 val body = obj["data"] as? JsonObject

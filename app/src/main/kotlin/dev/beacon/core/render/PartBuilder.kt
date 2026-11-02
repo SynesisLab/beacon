@@ -28,6 +28,8 @@ data class FoldedMessage(
     val statusDone: Boolean = true,
     val sourceCount: Int = 0,
     val followUps: List<String> = emptyList(),
+    /** message.embeds — inline HTML tool documents (middleware.py:752-840). */
+    val embeds: List<String> = emptyList(),
     val streaming: Boolean = false,
 )
 
@@ -47,10 +49,25 @@ object PartBuilder {
             }
             val rendered = m.contentMd.trim('\n')
             if (rendered.isNotBlank()) {
-                add(ChatPart.Markdown(rendered, streaming = m.streaming))
+                // The segmenter splits cards/mermaid/chart/tool-details out of the
+                // markdown (agent.md §7.1).
+                Segmenter.build(rendered, m.streaming).forEach { add(it) }
             } else if (m.streaming) {
                 add(ChatPart.Markdown("", streaming = true))
             }
+        }
+
+        m.embeds.forEach { html ->
+            add(
+                ChatPart.HtmlCard(
+                    id = "embed-" + html.hashCode().toUInt().toString(16),
+                    html = html,
+                    title = null,
+                    // Tool-provided embeds are server-provenanced (§11) → MEDIA floor.
+                    sandboxLevel = SandboxLevel.MEDIA,
+                    minHeightDp = 160,
+                ),
+            )
         }
 
         if (m.sourceCount > 0) {

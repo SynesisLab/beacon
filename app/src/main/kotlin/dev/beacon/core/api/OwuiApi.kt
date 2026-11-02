@@ -122,6 +122,9 @@ class OwuiApi @Inject constructor(
         source.instanceUrl()
             ?: throw OwuiApiException(0, null, "No connected instance")
 
+    /** The one client (WebView panes reuse its same-origin auth interceptor, §11). */
+    fun publicClient(): OkHttpClient = client
+
     @kotlinx.serialization.Serializable
     private data class SignInBody(val email: String, val password: String)
 }

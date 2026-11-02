@@ -1,0 +1,74 @@
+<!doctype html>
+<!--
+  Beacon HtmlCard shell (agent.md §7.2). Loaded with base
+  file:///android_asset/vendor/shell.html; the card HTML replaces the token
+  below via loadDataWithBaseURL string substitution. All network subresources
+  are intercepted by the host (same-origin-only Authorization attach — the
+  WebView client in HtmlCardPane.kt). Dark mode: prefers-color-scheme.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self' data: blob: https://beacon-asset.invalid; img-src 'self' data: blob: https:; script-src 'self' data: blob:; style-src 'self' 'unsafe-inline' data:">
+<title>Beacon card</title>
+<link rel="stylesheet" href="katex/0.19.1/katex.min.css">
+<script src="mermaid/12.1.0/mermaid.min.js"></script>
+<script src="chartjs/4.6.1/chart.umd.min.js"></script>
+<script src="katex/0.19.1/katex.min.js"></script>
+<style>
+  :root { color-scheme: light dark; }
+  html, body {
+    margin: 0; padding: 8px;
+    font-family: -apple-system, Roboto, "Segoe UI", sans-serif;
+    background: #FAF9F5; color: #3D3929;
+  }
+  @media (prefers-color-scheme: dark) {
+    html, body { background: #30302E; color: #F5F4EE; }
+  }
+  pre.mermaid, .beacon-mermaid { background: transparent; }
+</style>
+</head>
+<body>
+<div id="beacon-root">__BEACON_CARD_HTML__</div>
+<script>
+(function () {
+  function report() {
+    var h = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight);
+    if (window.Beacon && Beacon.height) Beacon.height(h);
+  }
+
+  function renderVendors() {
+    try {
+      if (window.mermaid) {
+        mermaid.initialize({ startOnLoad: false, theme: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'default' });
+        mermaid.run({ querySelector: 'pre.mermaid, .beacon-mermaid, pre code.language-mermaid, div.beacon-mermaid' }).catch(function () {});
+      }
+    } catch (e) {}
+    try {
+      document.querySelectorAll('code.language-mermaid, .beacon-mermaid').forEach(function (el) {});
+      if (window.Chart) {
+        document.querySelectorAll('.beacon-chart canvas, canvas.beacon-chart').forEach(function (canvas) { report(); });
+      }
+    } catch (e) {}
+    try {
+      if (window.katex) {
+        document.querySelectorAll('[data-katex], .beacon-katex').forEach(function (el) {
+          var src = el.dataset.tex || el.textContent || '';
+          el.innerHTML = '';
+          katex.render(src, el, { displayMode: el.dataset.block !== 'inline', throwOnError: false });
+        });
+      }
+    } catch (e) {}
+    report();
+  }
+
+  window.addEventListener('load', renderVendors);
+  new MutationObserver(report).observe(document.documentElement, { childList: true, subtree: true });
+  window.addEventListener('resize', report);
+  renderVendors();
+})();
+</script>
+</body>
+</html>

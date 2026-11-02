@@ -91,9 +91,32 @@ data class ModelsPage(
     val total: Int = 0,
 )
 
-/** ModelModel (models/models.py:247+) — client reads id/name; meta/info stay server-side in M0. */
+/** ModelModel (models/models.py:247+); meta.description verified (:144-146). */
 @Serializable
 data class OwuiModel(
     val id: String,
     val name: String,
+    val info: OwuiModelInfo? = null,
+) {
+    val description: String? get() = info?.meta?.description
+}
+
+@Serializable
+data class OwuiModelInfo(
+    val meta: OwuiModelMeta? = null,
+)
+
+@Serializable
+data class OwuiModelMeta(
+    val description: String? = null,
+)
+
+/** GET /api/v1/auths/ — session user (auths.py:178; SessionUserInfoResponse). */
+@Serializable
+data class SessionUser(
+    val id: String? = null,
+    val name: String? = null,
+    val email: String? = null,
+    val role: String? = null,
+    val profile_image_url: String? = null,
 )

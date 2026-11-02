@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -74,6 +76,8 @@ data class ChatActions(
     /** §8.4 read-aloud for an assistant bubble. */
     val onReadAloud: (messageId: String, text: String) -> Unit = { _, _ -> },
     val onRegenerate: () -> Unit = {},
+    val onRate: (messageId: String, rating: Int) -> Unit = { _, _ -> },
+    val onShare: (messageId: String, text: String) -> Unit = { _, _ -> },
 )
 
 // Interface reference (2026-11-02): the user = a soft warm-gray pill, LEFT-aligned;
@@ -135,7 +139,7 @@ fun ChatScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (state.engine.chatId == null) "New chat" else "Chat") },
+                title = { Text(state.engine.title ?: "New chat") },
                 navigationIcon = {
                     IconButton(onClick = actions.onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -235,6 +239,10 @@ fun ChatScreen(
                         onOpenFile = actions.onOpenFile,
                         httpClient = state.httpClient,
                         instanceUrl = state.instanceUrl,
+                        onRegenerate = actions.onRegenerate,
+                        onReadAloud = actions.onReadAloud,
+                        onRate = actions.onRate,
+                        onShare = actions.onShare,
                     )
                 }
             }
@@ -320,6 +328,15 @@ fun ChatScreen(
                     modifier = Modifier.padding(horizontal = 14.dp),
                 )
             }
+            // Muted honesty line above the composer (interface copy).
+            Text(
+                "AI can make mistakes. Your server does the thinking.",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 2.dp),
+            )
             // The composer bar (interface copy, 2026-11-02): one rounded container,
             // attach left, draft middle, mic + dark send/stop circle right.
             Surface(
@@ -423,17 +440,45 @@ fun ChatScreen(
     }   // Scaffold content
 
     if (showModelPicker) {
+        // "Select model" sheet (interface copy, 2026-11-02): name + description
+        // rows, the chosen one checked.
         ModalBottomSheet(onDismissRequest = onDismissPicker) {
-            LazyColumn(Modifier.padding(16.dp)) {
-                items(state.models.size) { index ->
-                    val model = state.models[index]
-                    Button(
-                        onClick = { onPickModel(model.id) },
-                        shape = RoundedCornerShape(20.dp),
-                        modifier = Modifier
-                            .padding(vertical = 4.dp)
-                            .fillMaxWidth(),
-                    ) { Text(model.name) }
+            Column(Modifier.padding(horizontal = 16.dp)) {
+                Text(
+                    "Select model",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+                LazyColumn {
+                    items(state.models.size) { index ->
+                        val model = state.models[index]
+                        val chosen = model.id == state.selectedModelId
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onPickModel(model.id) },
+                        ) {
+                            Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
+                                Text(model.name, style = MaterialTheme.typography.titleMedium)
+                                model.description?.let {
+                                    Text(
+                                        it,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                    )
+                                }
+                            }
+                            if (chosen) {
+                                Icon(
+                                    Icons.Filled.Check,
+                                    contentDescription = "Selected",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -450,6 +495,8 @@ private fun MessageBubble(
     instanceUrl: String?,
     onRegenerate: () -> Unit = {},
     onReadAloud: (messageId: String, text: String) -> Unit = { _, _ -> },
+    onRate: (messageId: String, rating: Int) -> Unit = { _, _ -> },
+    onShare: (messageId: String, text: String) -> Unit = { _, _ -> },
 ) {
     val streaming = message.id == streamingMessageId
     if (message.role == "user") {
@@ -492,18 +539,31 @@ private fun MessageBubble(
                 }
             }
 
-            // Assistant bubble footer: copy / regenerate / read-aloud (§9.3, §8.4).
+            // Assistant content footer (interface copy): icon actions — copy /
+            // share / read-aloud / 👍 / 👎 / regenerate (§9.3, §8.4).
             if (!streaming) {
-                Row(horizontalArrangement = Arrangement.spacedBy(0.dp)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    modifier = Modifier.padding(top = 2.dp),
+                ) {
                     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
-                    TextButton(
-                        onClick = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(message.markdown)) },
-                    ) { Text("Copy", style = MaterialTheme.typography.labelLarge) }
-                    TextButton(onClick = onRegenerate) {
-                        Text("Retry", style = MaterialTheme.typography.labelLarge)
+                    IconButton(onClick = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(message.markdown)) }) {
+                        Icon(androidx.compose.ui.res.painterResource(dev.beacon.R.drawable.ic_copy), "Copy")
                     }
-                    TextButton(onClick = { onReadAloud(message.id, message.markdown) }) {
-                        Text("🔊", style = MaterialTheme.typography.labelLarge)
+                    IconButton(onClick = { onShare(message.id, message.markdown) }) {
+                        Icon(androidx.compose.ui.res.painterResource(dev.beacon.R.drawable.ic_share), "Share")
+                    }
+                    IconButton(onClick = { onReadAloud(message.id, message.markdown) }) {
+                        Icon(androidx.compose.ui.res.painterResource(dev.beacon.R.drawable.ic_speaker), "Read aloud")
+                    }
+                    IconButton(onClick = { onRate(message.id, 1) }) {
+                        Icon(androidx.compose.ui.res.painterResource(dev.beacon.R.drawable.ic_thumb_up), "Good response")
+                    }
+                    IconButton(onClick = { onRate(message.id, -1) }) {
+                        Icon(androidx.compose.ui.res.painterResource(dev.beacon.R.drawable.ic_thumb_down), "Bad response")
+                    }
+                    IconButton(onClick = onRegenerate) {
+                        Icon(androidx.compose.ui.res.painterResource(dev.beacon.R.drawable.ic_regenerate), "Regenerate")
                     }
                 }
             }

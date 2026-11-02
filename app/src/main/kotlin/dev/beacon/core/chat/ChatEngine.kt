@@ -73,6 +73,7 @@ class ChatEngine(
 
     data class ChatUiModel(
         val chatId: String? = null,
+        val title: String? = null,
         val messages: List<RenderMessage> = emptyList(),
         val streamingMessageId: String? = null,
         val statusText: String? = null,
@@ -108,8 +109,11 @@ class ChatEngine(
             return
         }
         try {
-            if (store.refreshServerChat(existingChatId)) {
+            val payload = store.fetchServerTree(existingChatId)
+            if (payload != null) {
+                store.upsertServerChat(payload)
                 paintFromStore(existingChatId)
+                _state.value = _state.value.copy(title = payload.title)
             } else {
                 _state.value = ChatUiModel(chatId = existingChatId, error = "Instance unreachable")
             }

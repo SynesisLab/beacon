@@ -19,6 +19,8 @@ data class ServerSettings(
     val serverVersion: String? = null,
     val selectedModelId: String? = null,
     val signedInEmail: String? = null,
+    /** Display name for the home greeting (GET /api/v1/auths/). */
+    val userName: String? = null,
 ) {
     val isOnboarded: Boolean get() = serverUrl.isNotBlank() && authMethod != AuthMethod.None
 }

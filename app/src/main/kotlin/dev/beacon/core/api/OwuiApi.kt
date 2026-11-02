@@ -7,6 +7,7 @@ import dev.beacon.core.api.dto.VersionInfo
 import dev.beacon.core.data.SessionStore
 import dev.beacon.core.network.await
 import dev.beacon.core.network.decodeJson
+import dev.beacon.core.api.dto.SessionUser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -69,6 +70,12 @@ class OwuiApi @Inject constructor(
                 .build()
             client.newCall(request).await().decodeJson<SignInData>(json)
         }
+
+    /** The current user (GET /api/v1/auths/ — verified auths.py:178). */
+    suspend fun sessionUser(): SessionUser = withContext(Dispatchers.IO) {
+        val request = Request.Builder().url(joinUrl(instance(), "/api/v1/auths/")).get().build()
+        client.newCall(request).await().decodeJson<SessionUser>(json)
+    }
 
     suspend fun models(): ModelsPage = withContext(Dispatchers.IO) {
         val request = Request.Builder()

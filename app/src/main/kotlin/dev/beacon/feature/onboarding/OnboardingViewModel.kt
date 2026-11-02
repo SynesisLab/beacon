@@ -93,6 +93,7 @@ class OnboardingViewModel @Inject constructor(
             _state.value = _state.value.copy(connecting = true, error = null)
             try {
                 session.adoptCredentials(AuthMethod.ApiKey, key)
+                adoptUserName()
                 val page = api.models()
                 _state.value = UiState(step = Step.Models, models = page.items)
             } catch (e: Exception) {
@@ -139,6 +140,7 @@ class OnboardingViewModel @Inject constructor(
 
                 session.update { it.copy(signedInEmail = result.email ?: email) }
                 session.adoptCredentials(AuthMethod.Password, result.token)
+                adoptUserName()
                 val page = api.models()
                 _state.value = UiState(step = Step.Models, models = page.items)
             } catch (e: Exception) {
@@ -157,6 +159,14 @@ class OnboardingViewModel @Inject constructor(
             session.update { it.copy(selectedModelId = chosen) }
             _state.value = _state.value.copy(finishing = false)
             onFinished()
+        }
+    }
+
+    /** Greeting name (GET /api/v1/auths/); failure is non-fatal. */
+    private suspend fun adoptUserName() {
+        runCatching {
+            val user = api.sessionUser()
+            session.update { it.copy(userName = user.name, signedInEmail = user.email ?: it.signedInEmail) }
         }
     }
 

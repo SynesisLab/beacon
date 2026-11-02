@@ -26,6 +26,7 @@ data class CompletionRequest(
     val id: String,
     val parent_id: String? = null,
     val user_message: ProjectionMessage? = null,
+    val files: List<FileAttachment> = emptyList(),
     /** Regenerate: the sibling assistant being replaced (Chat.svelte:4472-4477). */
     val regeneration_message_id: String? = null,
     val regeneration_prompt: String? = null,
@@ -36,6 +37,14 @@ data class CompletionRequest(
     val filter_ids: List<String> = emptyList(),
     val skill_ids: List<String> = emptyList(),
     val background_tasks: BackgroundTasks = BackgroundTasks(),
+)
+
+/** File attachments ride the request's `files` (verified: Chat.svelte's body w/ {id, type:'file', name}). */
+@Serializable
+data class FileAttachment(
+    val id: String,
+    val type: String = "file",
+    val name: String,
 )
 
 @Serializable

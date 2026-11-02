@@ -172,9 +172,9 @@ class ChatEngine(
         }) }
 
     /** Intent: send [text] with [modelId]; creates the chat server-side when fresh. */
-    fun send(text: String, modelId: String) {
+    fun send(text: String, modelId: String, files: List<FileAttachment> = emptyList()) {
         if (text.isBlank() || _state.value.busy) return
-        launchStream { sendParams(text, modelId, regenerate = false) }
+        launchStream { sendParams(text, modelId).copy(files = files) }
     }
 
     /** §4: regenerate = a sibling branch under the same parent (new assistant id). */
@@ -287,6 +287,7 @@ class ChatEngine(
     private data class SendPlan(
         val text: String,
         val modelId: String,
+        val files: List<dev.beacon.core.chat.FileAttachment> = emptyList(),
         val regenerate: Boolean = false,
         /** edit-and-retry: the sibling branch replaces this user turn's content. */
         val replaceUserMessageId: String? = null,
@@ -294,8 +295,12 @@ class ChatEngine(
         val continueAssistantId: String? = null,
     )
 
-    private suspend fun sendParams(text: String, modelId: String, regenerate: Boolean, replaceUserMessageId: String? = null): SendPlan =
-        SendPlan(text, modelId, regenerate, replaceUserMessageId)
+    private suspend fun sendParams(
+        text: String,
+        modelId: String,
+        regenerate: Boolean = false,
+        replaceUserMessageId: String? = null,
+    ): SendPlan = SendPlan(text, modelId, emptyList(), regenerate, replaceUserMessageId)
 
     private suspend fun continueParams(modelId: String): SendPlan = SendPlan(
         text = "",
@@ -394,6 +399,7 @@ class ChatEngine(
                 plan.regenerate -> null
                 else -> ProjectionMessage.user(plan.text)
             },
+            files = plan.files,
             regeneration_message_id = if (plan.regenerate) previousAssistantId else null,
             regeneration_prompt = null,
             assistant_message_id = plan.continueAssistantId,

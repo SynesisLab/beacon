@@ -107,6 +107,21 @@ private fun BeaconNavHost() {
                 ) {
                     val vm: ChatViewModel = hiltViewModel()
                     var pickerOpen by rememberSaveable { mutableStateOf(false) }
+                    val context = androidx.compose.ui.platform.LocalContext.current
+
+                    // M3-d: the doc picker covers all types (incl. images).
+                    val docPicker = androidx.activity.compose.rememberLauncherForActivityResult(
+                        androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+                    ) { uri ->
+                        if (uri != null) {
+                            vm.attach(
+                                name = dev.beacon.core.data.contentQueryName(context, uri),
+                                mime = "",
+                                uri = uri,
+                            )
+                        }
+                    }
+
                     ChatScreen(
                         state = vm.ui.collectAsStateWithLifecycle().value,
                         actions = ChatActions(
@@ -115,6 +130,10 @@ private fun BeaconNavHost() {
                             onStop = vm::stop,
                             onBack = { nav.popBackStack() },
                             onOpenModelPicker = { pickerOpen = true },
+                            onAttach = {
+                                docPicker.launch(arrayOf("*/*"))
+                            },
+                            onRemoveAttachment = vm::removeAttachment,
                             onFlickRefetch = vm::flickRefetch,
                             onAppResume = vm::onAppResume,
                             onClearUpdatedPill = vm::clearUpdatedPill,

@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -58,6 +59,9 @@ data class ChatActions(
     val onFlickRefetch: () -> Unit = {},
     val onAppResume: () -> Unit = {},
     val onClearUpdatedPill: () -> Unit = {},
+    /** M3-d: attach (docs/photos via the pickers) / remove a pending chip. */
+    val onAttach: () -> Unit = {},
+    val onRemoveAttachment: (ChatViewModel.Attachment) -> Unit = {},
 )
 
 // Gentle radii with padding ≥ corner clearance — Surface clips to shape, so
@@ -223,12 +227,55 @@ fun ChatScreen(
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Latest ⇅") }
             }
+            // M3-d: pending attachments (chips) + the attach affordance.
+            if (state.attachments.isNotEmpty()) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp),
+                ) {
+                    state.attachments.take(3).forEach { entry ->
+                        androidx.compose.material3.InputChip(
+                            selected = true,
+                            onClick = { actions.onRemoveAttachment(entry) },
+                            label = { Text(entry.name, maxLines = 1) },
+                        )
+                    }
+                    if (state.attachments.size > 3) {
+                        Text("+${state.attachments.size - 3}")
+                    }
+                }
+            }
+            state.attachmentError?.let { err ->
+                Text(
+                    err,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(horizontal = 14.dp),
+                )
+            }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp, vertical = 10.dp),
             ) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier
+                        .padding(end = 4.dp)
+                        .size(40.dp),
+                ) {
+                    IconButton(onClick = actions.onAttach, enabled = !state.uploading) {
+                        Icon(
+                            Icons.Filled.Add,
+                            contentDescription = "Attach",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
                 OutlinedTextField(
                     value = state.draft,
                     onValueChange = actions.onDraft,

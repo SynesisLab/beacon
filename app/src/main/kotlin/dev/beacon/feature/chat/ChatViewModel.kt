@@ -152,6 +152,9 @@ class ChatViewModel @Inject constructor(
                 // don't declare their own defaultFeatureIds (same precedence
                 // as the server-side merge, utils/models.py:373-388).
                 globalDefaultFeatureIds = api.globalDefaultFeatureIds().orEmpty()
+                // The caller's ui.* tool modes (users.py:466-483): the
+                // 'always' settings drive the quick-pill defaults.
+                userSettingsSnapshot = api.userSettings()
                 applyModelDefaults(selected.value)
             }
             selected.value = selected.value ?: serverDefault
@@ -334,28 +337,72 @@ class ChatViewModel @Inject constructor(
     /** The admin's global defaultFeatureIds (configs/models/defaults). */
     private var globalDefaultFeatureIds: List<String> = emptyList()
 
+    /** The raw users/user/settings object (diag + on/off reads). */
+    private var userSettingsSnapshot: kotlinx.serialization.json.JsonObject? = null
+
+    private fun alwaysOn(value: kotlinx.serialization.json.JsonElement?): Boolean =
+        when (value) {
+            is kotlinx.serialization.json.JsonPrimitive -> when {
+                !value.isString ->
+                    // boolean (content "true"/"false") or numeric 1/0
+                    value.content.lowercase() == "true" || value.content == "1"
+                else -> value.content.lowercase() in setOf("always", "enabled", "on", "true", "1")
+            }
+            else -> false
+        }
+
+    private fun alwaysOnFeature(settings: kotlinx.serialization.json.JsonObject?, feature: String): Boolean {
+        val ui = settings?.get("ui") as? kotlinx.serialization.json.JsonObject ?: return false
+        val legacyKey = when (feature) {
+            "web_search" -> "webSearchEnabled"
+            "image_generation" -> "imageGenerationEnabled"
+            else -> feature
+        }
+        return when (feature) {
+            "web_search" -> ui["webSearch"]
+            "image_generation" -> ui["imageGeneration"]
+            else -> null
+        }?.let { alwaysOn(it) } == true ||
+            alwaysOn(ui[legacyKey])
+    }
+
     private fun applyModelDefaults(modelId: String?) {
         if (modelId == null || defaultsAppliedFor == modelId) return
         val model = modelsState.value.firstOrNull { it.id == modelId } ?: return
         val gate = configFeaturesFlow.value
-        // Per-model declares its OWN → wins; otherwise the admin defaults
-        // apply (the server-side merge writes BOTH shapes into info.meta —
-        // utils/models.py:373-388 — this client check covers either server).
+        // The feature truth chain (web parity + Conduit's quick-pill semantics):
+        // 1) the caller's ui.<feature> 'always'-mode (users/user/settings),
+        // 2) the model's merged defaultFeatureIds — own first, then the admin
+        //    global (utils/models.py:373-388 merge covers either server),
+        // 3) the model's declared capabilities (Anthony's editor flags),
+        // ALL gate-checked by /api/config's same-flag.
         val own = model.info?.meta?.defaultFeatureIds
         val ids = own ?: globalDefaultFeatureIds
+        val caps = model.info?.meta?.capabilities ?: model.meta?.capabilities
+        val gateOn = { feature: String ->
+            gate?.let { f -> when (feature) {
+                "web_search" -> f.enable_web_search
+                "image_generation" -> f.enable_image_generation
+                "code_interpreter" -> f.enable_code_interpreter
+                else -> false
+            } } == true
+        }
+        val capable = { feature: String -> when (feature) {
+            "web_search" -> caps?.web_search
+            "image_generation" -> caps?.image_generation
+            "code_interpreter" -> caps?.code_interpreter
+            else -> false
+        } == true }
         val on = { feature: String ->
-            ids.contains(feature) &&
-                gate?.let { f -> when (feature) {
-                    "web_search" -> f.enable_web_search
-                    "image_generation" -> f.enable_image_generation
-                    "code_interpreter" -> f.enable_code_interpreter
-                    else -> false
-                } } == true
+            (alwaysOnFeature(userSettingsSnapshot, feature) || ids.contains(feature) || capable(feature)) &&
+                gateOn(feature)
         }
         android.util.Log.d(
             "BeaconDefaults",
             "model=$modelId own=$own global=$globalDefaultFeatureIds " +
-                "gate(webSearch=${gate?.enable_web_search},image=${gate?.enable_image_generation})",
+                "caps=$caps ui=${userSettingsSnapshot?.get("ui")} " +
+                "gate(webSearch=${gate?.enable_web_search},image=${gate?.enable_image_generation}," +
+                "code=${gate?.enable_code_interpreter})",
         )
         toggles.value = Toggles(
             webSearch = on("web_search") || toggles.value.webSearch,

@@ -106,20 +106,24 @@ data class ModelsPage(
     val total: Int = 0,
 )
 
-/** ModelModel (models/models.py:247+); meta.description verified (:144-146). */
+/** ModelModel (models/models.py:199-217): the /api/v1/models/list item keeps
+ *  meta at the TOP LEVEL (the DB row's meta JSON — ModelMeta), while the
+ *  chat-registry /api/models shape nests it under info.meta. Both tolerated;
+ *  description verified models/models.py:144-146. */
 @Serializable
 data class OwuiModel(
     val id: String,
     val name: String,
     val info: OwuiModelInfo? = null,
+    val meta: OwuiModelMeta? = null,
 ) {
-    val description: String? get() = info?.meta?.description
+    val description: String? get() = info?.meta?.description ?: meta?.description
 
     /** The server-configured default features for this model
      *  (Chat.svelte:1114-1118: a feature starts ON when every selected model
      *  lists it in defaultFeatureIds; admin checks in utils/automations.py:186). */
     val default_feature_ids: List<String>
-        get() = info?.meta?.defaultFeatureIds ?: emptyList()
+        get() = info?.meta?.defaultFeatureIds ?: meta?.defaultFeatureIds ?: emptyList()
 }
 
 @Serializable

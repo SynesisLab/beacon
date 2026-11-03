@@ -3,6 +3,7 @@ package dev.beacon.core.api
 import dev.beacon.core.api.dto.AppConfig
 import dev.beacon.core.api.dto.ModelsPage
 import dev.beacon.core.api.dto.MfaSetupData
+import dev.beacon.core.api.dto.OwuiModel
 import dev.beacon.core.api.dto.SignInData
 import dev.beacon.core.api.dto.VersionInfo
 import dev.beacon.core.data.SessionStore
@@ -149,6 +150,25 @@ class OwuiApi @Inject constructor(
         }
     }
 
+    /** GET /api/v1/users/user/settings → the caller's whole settings object
+     *  (users.py:466-483): {ui: …}. The merged shape (raw=false) folds the
+     *  admin's ui.default_interface_settings in. Old servers / no settings →
+     *  null. */
+    suspend fun userSettings(): JsonObject? = withContext(Dispatchers.IO) {
+        try {
+            val request = Request.Builder()
+                .url(joinUrl(instance(), "/api/v1/users/user/settings"))
+                .get().build()
+            val response = client.newCall(request).await()
+            if (!response.isSuccessful) return@withContext null
+            val text = response.body?.string() ?: return@withContext null
+            response.close()
+            json.parseToJsonElement(text) as? JsonObject
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     /** The current user (GET /api/v1/auths/ — verified auths.py:178). */
     suspend fun sessionUser(): SessionUser = withContext(Dispatchers.IO) {
         val request = Request.Builder().url(joinUrl(instance(), "/api/v1/auths/")).get().build()
@@ -161,6 +181,14 @@ class OwuiApi @Inject constructor(
             .get()
             .build()
         val page = client.newCall(request).await().decodeJson<ModelsPage>(json)
+        // Live-payload evidence (device loop 2026-11-03): the first item's
+        // shape decides where defaultFeatureIds/capabilities actually ride.
+        (page.items.firstOrNull())
+            ?.let { m ->
+                val raw = json.encodeToString(kotlinx.serialization.json.JsonElement.serializer(),
+                    json.encodeToJsonElement(OwuiModel.serializer(), m))
+                android.util.Log.d("BeaconDefaults", "models/list first item: ${raw.take(400)}")
+            }
         page.copy(items = page.items.distinctBy { it.id })
     }
 

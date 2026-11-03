@@ -140,7 +140,7 @@ The M4 "memories" item lands gated by `enable_memories`
 | USER read route | `GET /api/v1/configs/models/defaults` → `{DEFAULT_MODEL_METADATA}` — `get_verified_user`, NOT admin-gated | routers/configs.py:780-784 |
 | Server-side merge | the global defaults merge into EVERY listed model's `info.meta` where the key is absent (per-model wins); capabilities merge is dict-union with per-model precedence | utils/models.py:369-388 |
 | Chip semantics (web) | the composer chips start ON when the selected models' merged meta lists the feature id | Chat.svelte:1118 |
-| Beacon wiring | per-model `info.meta.defaultFeatureIds` else the global `/configs/models/defaults` fetch; both under the /api/config gates | feature/chat ChatViewModel |
+| Feature defaults (2026-11-03, models-defaults chain) | per the composer's truth chain — the caller's `ui.webSearch`/`ui.imageGeneration` tool-modes (`GET /api/v1/users/user/settings`, users.py:466-483; values that read as always-on: `always/enabled/on/true/1`/true/1 — Conduit chat_feature_defaults.dart:25-52 semantics, original code), the model's merged `defaultFeatureIds` (own meta → the USER-readable global `GET /api/v1/configs/models/defaults` when absent, configs.py:780-784), and the model's capabilities (top-level `meta` on /list items — ModelModel.meta, models/models.py:199-217); all gated by `/api/config` same-flags | users.py:466-483; configs.py:780-784; models.py:199-217,224-229; Chat.svelte:1118 |
 
 Beacon protocol deltas (2026-11-03 device-verified round-trips): note read/write via
 `data.pages[].content.{json,html,md}` (models/notes.py:156-220, :748-772, :357-367,

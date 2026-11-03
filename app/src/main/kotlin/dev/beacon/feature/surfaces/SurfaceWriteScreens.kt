@@ -140,6 +140,24 @@ class SurfaceWriteViewModel @Inject constructor(
         async { apis.pinNote(noteId) }.invokeOnCompletion { onDone() }
     }
 
+    // ── memories ─────────────────────────────────────────────────────────────
+
+    fun createMemory(content: String, onDone: () -> Unit) {
+        async { apis.addMemory(content) }.invokeOnCompletion { onDone() }
+    }
+
+    fun updateMemory(id: String, content: String, onDone: () -> Unit) {
+        async { apis.updateMemory(id, content) }.invokeOnCompletion { onDone() }
+    }
+
+    fun deleteMemory(id: String, onDone: () -> Unit) {
+        async { apis.deleteMemory(id) }.invokeOnCompletion { onDone() }
+    }
+
+    fun clearMemories(onDone: () -> Unit) {
+        async { apis.deleteAllMemories() }.invokeOnCompletion { onDone() }
+    }
+
     // ── channels ─────────────────────────────────────────────────────────────
 
     fun channelMessages(channelId: String) {
@@ -392,24 +410,191 @@ private fun NoteRowMenu(pinned: Boolean, onPin: () -> Unit, onDelete: () -> Unit
 }
 
 /**
- * notes.py:553-554 stores created_at/updated_at as epoch NANoseconds
- * (`int(time.time_ns())`; the model comment "timestamp in epoch" at :445 is
- * stale). Older builds may hold seconds — normalize by magnitude to millis
- * (agent.md §17 timestamp gotcha).
+ * OWUI surfaces disagree on timestamp units: notes store epoch NANoseconds
+ * (`int(time.time_ns())`, models/notes.py:553-554) while memories store epoch
+ * SECONDS (`int(time.time())`, models/memories.py:61) — normalize by magnitude
+ * to millis (agent.md §17 timestamp gotcha).
  */
-internal fun noteUpdatedAtMs(updated_at: Long?): Long? {
-    val t = updated_at ?: return null
+internal fun epochToMillis(t: Long?): Long? {
+    val v = t ?: return null
+    if (v <= 0L) return null
     return when {
-        t >= 100_000_000_000_000_000L -> t / 1_000_000 // ns → ms
-        t >= 100_000_000_000L -> t                     // already ms
-        else -> t * 1_000                              // seconds → ms (legacy)
+        v >= 100_000_000_000_000_000L -> v / 1_000_000 // ns → ms
+        v >= 100_000_000_000L -> v                     // already ms
+        else -> v * 1_000                              // seconds → ms
     }
 }
 
 private fun updatedAtLabel(updated_at: Long?): String? {
-    val ms = noteUpdatedAtMs(updated_at) ?: return null
+    val ms = epochToMillis(updated_at) ?: return null
     return java.time.format.DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.MEDIUM)
         .format(java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault()))
+}
+
+/** The M4 Memories surface (memories.py) — Claude-app "Memory/About" analog:
+ *  rows of what the server remembers about the user, with add/edit/delete +
+ *  a "Clear all" topbar action (wipe = DELETE /delete/user, memories.py:514). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MemoriesScreen(
+    writeModel: SurfaceWriteViewModel,
+    loaderState: LoaderState,
+    onBack: () -> Unit,
+    onChanged: () -> Unit = {},
+) {
+    var editing by remember { mutableStateOf<dev.beacon.core.api.MemoryRow?>(null) }
+    var creating by remember { mutableStateOf(false) }
+    var confirmWipe by remember { mutableStateOf(false) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Memories", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
+                actions = {
+                    TextButton(
+                        onClick = { confirmWipe = true },
+                        enabled = loaderState.memories.isNotEmpty(),
+                    ) { Text("Clear") }
+                },
+            )
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { creating = true }) {
+                Icon(Icons.Filled.Add, contentDescription = "New memory")
+            }
+        },
+    ) { padding ->
+        Column(Modifier.padding(padding).fillMaxSize().fillMaxWidth()) {
+            if (loaderState.memories.isEmpty() && !loaderState.loading) {
+                HintRow("No memories yet — the server remembers what you tell it. Add one with +.")
+            }
+            LazyColumn {
+                items(loaderState.memories, key = { it.id }) { memory ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { editing = memory }
+                            .padding(horizontal = 20.dp, vertical = 14.dp),
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                memory.content,
+                                style = MaterialTheme.typography.bodyLarge,
+                                maxLines = 4,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            )
+                            val date = updatedAtLabel(memory.updated_at)
+                            val meta = listOfNotNull(
+                                memory.path,
+                                if (memory.type == "user") "About you" else null,
+                                date,
+                            ).joinToString(" · ")
+                            if (meta.isNotEmpty()) {
+                                Text(
+                                    meta,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        MemoryRowMenu(
+                            onEdit = { editing = memory },
+                            onDelete = { writeModel.deleteMemory(memory.id) { onChanged() } },
+                        )
+                    }
+                    HorizontalDivider()
+                }
+            }
+        }
+    }
+
+    if (creating || editing != null) {
+        MemoryDialog(
+            title = if (creating) "New memory" else "Edit memory",
+            initial = editing?.content.orEmpty(),
+            onDismiss = { creating = false; editing = null },
+        ) { content ->
+            if (content.isNotBlank()) {
+                if (creating) {
+                    writeModel.createMemory(content) { onChanged() }
+                } else {
+                    editing?.let { writeModel.updateMemory(it.id, content) { onChanged() } }
+                }
+            }
+            creating = false
+            editing = null
+        }
+    }
+    if (confirmWipe) {
+        ConfirmDialog(
+            title = "Clear memories?",
+            text = "Every memory on this server for your account is deleted. This cannot be undone.",
+            confirmLabel = "Clear",
+            onDismiss = { confirmWipe = false },
+            onConfirm = {
+                writeModel.clearMemories { onChanged() }
+                confirmWipe = false
+            },
+        )
+    }
+}
+
+@Composable
+private fun MemoryRowMenu(onEdit: () -> Unit, onDelete: () -> Unit) {
+    androidx.compose.foundation.layout.Box {
+        var open by remember { mutableStateOf(false) }
+        IconButton(onClick = { open = true }) { Text("⋯") }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(text = { Text("Edit") }, onClick = { open = false; onEdit() })
+            DropdownMenuItem(text = { Text("Delete") }, onClick = { open = false; onDelete() })
+        }
+    }
+}
+
+@Composable
+private fun MemoryDialog(
+    title: String,
+    initial: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var value by remember(initial) { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            OutlinedTextField(
+                value = value,
+                onValueChange = { value = it },
+                label = { Text("Remember that…") },
+                minLines = 3,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(value) }, enabled = value.isNotBlank()) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun ConfirmDialog(
+    title: String,
+    text: String,
+    confirmLabel: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+        text = { Text(text) },
+        confirmButton = { TextButton(onClick = onConfirm) { Text(confirmLabel) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

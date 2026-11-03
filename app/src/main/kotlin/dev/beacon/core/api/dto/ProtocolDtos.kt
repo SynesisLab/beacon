@@ -47,6 +47,7 @@ data class Features(
     val enable_folders: Boolean? = null,
     val enable_channels: Boolean? = null,
     val enable_notes: Boolean? = null,
+    val enable_memories: Boolean? = null,
     val enable_web_search: Boolean? = null,
     val enable_image_generation: Boolean? = null,
     val enable_title_generation: Boolean? = null,

@@ -101,6 +101,7 @@ fun ChatsDrawer(
         DrawerRow("+ New chat", onClick = { onNewChat(); onClose() })
         GatedRow("Folders", gates.foldersGate, onClick = { onOpenSurface("folders"); onClose() })
         GatedRow("Notes", gates.notesGate, onClick = { onOpenSurface("notes"); onClose() })
+        GatedRow("Memories", gates.memoriesGate, onClick = { onOpenSurface("memories"); onClose() })
         GatedRow("Channels", gates.channelsGate, onClick = { onOpenSurface("channels"); onClose() })
         GatedRow("Workspace", gates.workspaceGate, onClick = { onOpenSurface("workspace"); onClose() })
         DrawerRow("Files", onClick = { onOpenSurface("files"); onClose() }) // artifacts' slot (user request)

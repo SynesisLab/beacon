@@ -78,6 +78,21 @@ Reference clones verified against: `open-webui` (BSD-3-style) + `conduit` (GPL, 
 | Pending shape | pending = function_call items with no function_call_output, not `approved:true`, status in `{pending,queued,requires_approval}` (in_progress = running) | tool_approval.py:23-31, :105-117 |
 | Approval gate | the server asks for approval only when chat params `tool_approval_mode == 'ask'` (default `full` = run everything) | middleware.py:3136, :3341-3344, :5737-5744 |
 
+## Memories surface (2026-11-03, memories.py)
+
+| Call | Behavior | Proof |
+| --- | --- | --- |
+| `GET /api/v1/memories/` | `list[MemoryModel{id, user_id, type, path, content, meta, updated_at, created_at}]`; 404 when `memories.enable` off | routers/memories.py:31-42, :33-39, :55-63 |
+| `POST /add` | `{content, type:'user'\|'context'=context, path?}` → MemoryModel; embedded 1-5s (managed sessions) | memories.py:71-74, :177-199 |
+| `POST /{id}/update` | `{content?, type?, path?}`; none set → 400 | memories.py:546-571 |
+| `DELETE /{id}` → bool | single-memory delete; the VECTOR row also goes | memories.py:610-631 |
+| `DELETE /delete/user` → bool | wipes ALL the user's memories + the collection | memories.py:514-538 |
+| timestamps | epoch SECONDS (`int(time.time())` — unlike the notes' nanoseconds; `epochToMillis` handles both by magnitude) | models/memories.py:61 |
+| gate | `enable_memories` rides `/api/config` features = `memories.enable` | main.py:2486 |
+
+The M4 "memories" item lands gated by `enable_memories`
+(`MainActivity.kt` SurfaceRoute "memories"; drawer GatedRow).
+
 Beacon protocol deltas (2026-11-03 device-verified round-trips): note read/write via
 `data.pages[].content.{json,html,md}` (models/notes.py:156-220, :748-772, :357-367,
 NoteForm rejects pages at :474); files list carries meta.content_type (files.py:54).

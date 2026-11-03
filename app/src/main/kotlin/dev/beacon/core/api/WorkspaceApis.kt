@@ -33,6 +33,17 @@ data class FolderRow(val id: String, val name: String, val parent_id: String? = 
 @Serializable
 data class NoteRow(val id: String, val title: String, val is_pinned: Boolean? = null, val updated_at: Long? = null)
 
+/** memories.py:31-42 MemoryModel (user_id/meta unused by the surface). */
+@Serializable
+data class MemoryRow(
+    val id: String,
+    val content: String,
+    val type: String = "context",
+    val path: String? = null,
+    val updated_at: Long? = null,
+    val created_at: Long? = null,
+)
+
 @Serializable
 data class ChannelRow(val id: String, val name: String, val description: String? = null, val is_private: Boolean? = null)
 
@@ -197,6 +208,56 @@ class WorkspaceApis @Inject constructor(
             Request.Builder().url(joinUrl(requireInstance(), "/api/v1/notes/$noteId/pin"))
                 .post(ByteArray(0).toRequestBody(null))
                 .build(),
+        ).await().use { it.isSuccessful }
+    }
+
+    // ── memories (routers/memories.py; gate memories.enable → 404 when off;
+    //    timestamps are epoch SECONDS, models/memories.py:61) ──
+
+    private fun postJson(path: String, body: JsonObject) = Request.Builder()
+        .url(joinUrl(requireInstance(), path))
+        .post(json.encodeToString(JsonObject.serializer(), body)
+            .toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull()))
+        .build()
+
+    /** GET /api/v1/memories/ → list[MemoryModel] (memories.py:55-63). */
+    suspend fun memories(): List<MemoryRow> = withContext(Dispatchers.IO) {
+        client.newCall(get("/api/v1/memories/")).await()
+            .decodeJson(ListSerializer(MemoryRow.serializer()), json)
+    }
+
+    /** POST /add {content, type:user|context, path?} → MemoryModel
+     *  (AddMemoryForm memories.py:71-74; route :177-199). */
+    suspend fun addMemory(content: String, type: String = "context"): Boolean =
+        withContext(Dispatchers.IO) {
+            client.newCall(postJson("/api/v1/memories/add", buildJsonObject {
+                put("content", content)
+                put("type", type)
+            })).await().use { it.isSuccessful }
+        }
+
+    /** POST /{id}/update {content?, type?, path?} → MemoryModel (memories.py:546-571). */
+    suspend fun updateMemory(id: String, content: String): Boolean =
+        withContext(Dispatchers.IO) {
+            client.newCall(postJson("/api/v1/memories/$id/update", buildJsonObject {
+                put("content", content)
+            })).await().use { it.isSuccessful }
+        }
+
+    /** DELETE /{id} → bool (memories.py:610-631). */
+    suspend fun deleteMemory(id: String): Boolean = withContext(Dispatchers.IO) {
+        client.newCall(
+            Request.Builder().url(joinUrl(requireInstance(), "/api/v1/memories/$id"))
+                .delete().build(),
+        ).await().use { it.isSuccessful }
+    }
+
+    /** DELETE /delete/user → bool — wipes EVERY memory of the user
+     *  (memories.py:514-538). */
+    suspend fun deleteAllMemories(): Boolean = withContext(Dispatchers.IO) {
+        client.newCall(
+            Request.Builder().url(joinUrl(requireInstance(), "/api/v1/memories/delete/user"))
+                .delete().build(),
         ).await().use { it.isSuccessful }
     }
 

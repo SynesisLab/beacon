@@ -7,6 +7,7 @@ import dev.beacon.core.api.ChannelRow
 import dev.beacon.core.api.FolderRow
 import dev.beacon.core.api.FileRow
 import dev.beacon.core.api.KnowledgeRow
+import dev.beacon.core.api.MemoryRow
 import dev.beacon.core.api.NoteRow
 import dev.beacon.core.api.OwuiApi
 import dev.beacon.core.api.PromptRow
@@ -48,6 +49,7 @@ data class LoaderState(
     val error: String? = null,
     val folders: List<FolderRow> = emptyList(),
     val notes: List<NoteRow> = emptyList(),
+    val memories: List<MemoryRow> = emptyList(),
     val channels: List<ChannelRow> = emptyList(),
     val files: List<FileRow> = emptyList(),
     val prompts: List<PromptRow> = emptyList(),
@@ -57,6 +59,7 @@ data class LoaderState(
     val accountEmail: String? = null,
     val foldersGate: Boolean = false,
     val notesGate: Boolean = false,
+    val memoriesGate: Boolean = false,
     val channelsGate: Boolean = false,
     val workspaceGate: Boolean = false,
 )
@@ -103,6 +106,7 @@ class WorkspaceApisLoader @Inject constructor(
                     _state.value = _state.value.copy(
                         foldersGate = features?.enable_folders == true,
                         notesGate = features?.enable_notes == true,
+                        memoriesGate = features?.enable_memories == true,
                         channelsGate = features?.enable_channels == true,
                         workspaceGate = features?.enable_tools == true || features?.enable_functions == true,
                     )
@@ -113,12 +117,13 @@ class WorkspaceApisLoader @Inject constructor(
             val results = kotlinx.coroutines.coroutineScope {
                 val f = async { safeSlot { apis.folders() } }
                 val n = async { safeSlot { apis.notes() } }
+                val me = async { safeSlot { apis.memories() } }
                 val c = async { safeSlot { apis.channels() } }
                 val fl = async { safeSlot { apis.files() } }
                 val p = async { safeSlot { apis.prompts() } }
                 val t = async { safeSlot { apis.tools() } }
                 val k = async { safeSlot { apis.knowledge() } }
-                val all = awaitAll(f, n, c, fl, p, t, k)
+                val all = awaitAll(f, n, me, c, fl, p, t, k)
                 @Suppress("UNCHECKED_CAST")
                 all as List<List<Any>?>
             }
@@ -127,11 +132,12 @@ class WorkspaceApisLoader @Inject constructor(
                 loading = false,
                 folders = (results[0] as List<FolderRow>?) ?: _state.value.folders,
                 notes = (results[1] as List<NoteRow>?) ?: _state.value.notes,
-                channels = (results[2] as List<ChannelRow>?) ?: _state.value.channels,
-                files = (results[3] as List<FileRow>?) ?: _state.value.files,
-                prompts = (results[4] as List<PromptRow>?) ?: _state.value.prompts,
-                tools = (results[5] as List<ToolRow>?) ?: _state.value.tools,
-                knowledge = (results[6] as List<KnowledgeRow>?) ?: _state.value.knowledge,
+                memories = (results[2] as List<MemoryRow>?) ?: _state.value.memories,
+                channels = (results[3] as List<ChannelRow>?) ?: _state.value.channels,
+                files = (results[4] as List<FileRow>?) ?: _state.value.files,
+                prompts = (results[5] as List<PromptRow>?) ?: _state.value.prompts,
+                tools = (results[6] as List<ToolRow>?) ?: _state.value.tools,
+                knowledge = (results[7] as List<KnowledgeRow>?) ?: _state.value.knowledge,
                 error = if (timedOut > 0) {
                     "One or more surfaces timed out — pull down to reload."
                 } else {

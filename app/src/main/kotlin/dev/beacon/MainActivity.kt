@@ -339,6 +339,12 @@ private fun SurfaceRoute(
             onNewNote = { nav.navigate("note/new") },
             onChanged = { vm.refresh() },
         )
+        "memories" -> dev.beacon.feature.surfaces.MemoriesScreen(
+            writeModel = writeVm,
+            loaderState = state,
+            onBack = onBack,
+            onChanged = { vm.refresh() },
+        )
         "channels" -> dev.beacon.feature.surfaces.ListSurfaceScreen(
             title = "Channels",
             items = state.channels,

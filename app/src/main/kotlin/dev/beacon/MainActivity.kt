@@ -447,7 +447,9 @@ private fun BeaconChatSurface(
     androidx.compose.material3.ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
-            androidx.compose.material3.ModalDrawerSheet {
+            androidx.compose.material3.ModalDrawerSheet(
+                drawerContainerColor = dev.beacon.ui.theme.DrawerPaper,
+            ) {
                 ChatsDrawer(
                     listViewModel = drawerVm,
                     surfaces = surfacesVm,

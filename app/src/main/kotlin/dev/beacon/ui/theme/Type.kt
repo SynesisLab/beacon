@@ -12,7 +12,8 @@ import androidx.compose.ui.unit.sp
  * GPL-clean); the app chrome (chips, labels, composer) stays sans. The code = mono.
  */
 val BeaconTypography = Typography(
-    // The hero greeting (the "Hello, I'm Beacon." moment)
+    // The hero greeting — Claude's measured ~50sp band on the Pixel reads as a
+    // display-class serif; keep cap-height readable at Beacon's copy length.
     headlineLarge = TextStyle(
         fontFamily = FontFamily.Serif,
         fontWeight = FontWeight.Medium,

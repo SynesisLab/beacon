@@ -32,7 +32,7 @@ private val DarkScheme = darkColorScheme(
 )
 
 private val LightScheme = lightColorScheme(
-    primary = CoralDeep,
+    primary = Coral,
     onPrimary = Color.White,
     primaryContainer = Color(0xFFFFEDE4),
     onPrimaryContainer = Ink,
@@ -42,13 +42,13 @@ private val LightScheme = lightColorScheme(
     onTertiary = Color.White,
     tertiaryContainer = InfoBlueContainer,
     onTertiaryContainer = Color(0xFF0F1B3D),
-    background = Cream,
+    background = Paper,
     onBackground = Ink,
     surface = LightSurface,
     onSurface = Ink,
     surfaceVariant = LightSurfaceVariant,
     onSurfaceVariant = MutedInk,
-    outline = Color(0xFFD6D3CB),
+    outline = Color(0xFFDEDCD7),
 )
 
 /**

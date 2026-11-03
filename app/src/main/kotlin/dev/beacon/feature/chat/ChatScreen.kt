@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.geometry.CornerRadius
@@ -245,36 +247,39 @@ fun ChatScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom),
             ) {
                 if (state.engine.messages.isEmpty()) {
-                    // Empty-state hero, in the model's voice (user request 2026-11-02);
-                    // temp mode swaps to the Incognito-style honesty panel.
+                    // Empty-state hero (Claude parity, pixel-measured 2026-11-03):
+                    // a BIG pulsing starburst OVER a display-class serif line,
+                    // centered; the sub-line drops to the page bottom.
                     item(key = "empty_hero") {
                         Column(
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.padding(vertical = 24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(18.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 40.dp),
                         ) {
                             if (state.tempMode) {
-                                Text(
-                                    text = "✳",
-                                    style = MaterialTheme.typography.headlineLarge,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
+                                ThinkingBurst(size = 64)
                                 Text(
                                     text = "Temporary chat",
-                                    style = MaterialTheme.typography.headlineSmall,
+                                    style = MaterialTheme.typography.headlineLarge,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                                 )
                                 Text(
                                     text = "This chat stays out of your history and search, and nothing is saved to your server.",
-                                    style = MaterialTheme.typography.bodyLarge,
+                                    style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                                 )
                             } else {
+                                ThinkingBurst(size = 64)
                                 Text(
                                     text = "Hello, I'm ${state.modelLabel ?: "your model"}.",
                                     style = MaterialTheme.typography.headlineLarge,
                                 )
                                 Text(
                                     text = "Ask anything — everything runs on your server.",
-                                    style = MaterialTheme.typography.bodyLarge,
+                                    style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
@@ -473,13 +478,32 @@ fun ChatScreen(
                         }
                     }
                 }
-                OutlinedTextField(
+                // Claude-composer parity (measured 2026-11-03): NO outlined
+                // field/frame — the text sits directly in the card with a
+                // placeholder hint (h=144px vs my outlined 201px: the outline
+                // + label chip ate ~120dp of width and inflated the height).
+                BasicTextField(
                     value = state.draft,
                     onValueChange = actions.onDraft,
-                    label = { Text("Message") },
-                    shape = RoundedCornerShape(24.dp),
+                    textStyle = dev.beacon.ui.theme.BeaconTypography.bodyLarge.copy(
+                        color = MaterialTheme.colorScheme.onSurface,
+                    ),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(
+                        MaterialTheme.colorScheme.primary,
+                    ),
+                    decorationBox = { inner ->
+                        if (state.draft.isEmpty()) {
+                            Text(
+                                "Message",
+                                style = dev.beacon.ui.theme.BeaconTypography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        inner()
+                    },
                     modifier = Modifier
                         .weight(1f)
+                        .heightIn(min = 46.dp)
                         .semantics { testTag = "composer" },
                 )
                 Surface(
@@ -634,31 +658,55 @@ private fun MessageBubble(
                 }
             }
 
-            // Assistant content footer (interface copy): icon actions — copy /
-            // share / read-aloud / 👍 / 👎 / regenerate (§9.3, §8.4).
+            // Assistant content footer (Claude parity 2026-11-03): the same six
+            // actions, muted-gray icons, generous pitch (~29dp measured).
             if (!streaming) {
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    modifier = Modifier.padding(top = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
+                    val iconTint = dev.beacon.ui.theme.IconInk
                     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
                     IconButton(onClick = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(message.markdown)) }) {
-                        Icon(androidx.compose.ui.res.painterResource(dev.beacon.R.drawable.ic_copy), "Copy")
+                        Icon(
+                            androidx.compose.ui.res.painterResource(dev.beacon.R.drawable.ic_copy),
+                            "Copy",
+                            tint = iconTint,
+                        )
                     }
                     IconButton(onClick = { onShare(message.id, message.markdown) }) {
-                        Icon(androidx.compose.ui.res.painterResource(dev.beacon.R.drawable.ic_share), "Share")
+                        Icon(
+                            androidx.compose.ui.res.painterResource(dev.beacon.R.drawable.ic_share),
+                            "Share",
+                            tint = iconTint,
+                        )
                     }
                     IconButton(onClick = { onReadAloud(message.id, message.markdown) }) {
-                        Icon(androidx.compose.ui.res.painterResource(dev.beacon.R.drawable.ic_speaker), "Read aloud")
+                        Icon(
+                            androidx.compose.ui.res.painterResource(dev.beacon.R.drawable.ic_speaker),
+                            "Read aloud",
+                            tint = iconTint,
+                        )
                     }
                     IconButton(onClick = { onRate(message.id, 1) }) {
-                        Icon(androidx.compose.ui.res.painterResource(dev.beacon.R.drawable.ic_thumb_up), "Good response")
+                        Icon(
+                            androidx.compose.ui.res.painterResource(dev.beacon.R.drawable.ic_thumb_up),
+                            "Good response",
+                            tint = iconTint,
+                        )
                     }
                     IconButton(onClick = { onRate(message.id, -1) }) {
-                        Icon(androidx.compose.ui.res.painterResource(dev.beacon.R.drawable.ic_thumb_down), "Bad response")
+                        Icon(
+                            androidx.compose.ui.res.painterResource(dev.beacon.R.drawable.ic_thumb_down),
+                            "Bad response",
+                            tint = iconTint,
+                        )
                     }
                     IconButton(onClick = onRegenerate) {
-                        Icon(androidx.compose.ui.res.painterResource(dev.beacon.R.drawable.ic_regenerate), "Regenerate")
+                        Icon(
+                            androidx.compose.ui.res.painterResource(dev.beacon.R.drawable.ic_regenerate),
+                            "Regenerate",
+                            tint = iconTint,
+                        )
                     }
                 }
             }

@@ -41,6 +41,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.ui.unit.sp
 
 /**
  * M1 transcript renderer (ADR-0009): segments streaming markdown into
@@ -304,9 +305,9 @@ fun MiniMarkdown(
     }
 }
 
-/** The pulsing orange starburst (screenshot-parity with Claude's thinking marker). */
+/** The pulsing orange starburst (Claude's marker; scaleable — the hero runs big). */
 @Composable
-private fun ThinkingBurst() {
+fun ThinkingBurst(size: Int = 28) {
     val transition = rememberInfiniteTransition(label = "burst")
     val alpha by transition.animateFloat(
         initialValue = 0.45f,
@@ -319,7 +320,8 @@ private fun ThinkingBurst() {
     )
     Text(
         text = STREAMING_CARET,
-        style = MaterialTheme.typography.titleLarge,
+        style = MaterialTheme.typography.displayLarge,
+        fontSize = size.sp,
         color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.graphicsLayer { this.alpha = alpha },
         fontWeight = FontWeight.Bold,

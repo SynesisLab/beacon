@@ -91,12 +91,13 @@ fun FileViewerScreen(
                     // Terminal files read through the OWUI proxy; text inline,
                     // images cached to disk for the image viewer.
                     if (viewer == dev.beacon.core.render.FileViewer.Image) {
-                        val bytes = terminals.readBytes(terminalServerId, terminalPath)
+                        val raw = terminals.read(terminalServerId, terminalPath)
+                        val bytes = (raw as? dev.beacon.core.api.TsRead.Raw)?.bytes ?: ByteArray(0)
                         val file = File(File(context.cacheDir, "files"), "terminal-$terminalServerId")
-                        file.writeBytes(bytes?.first ?: ByteArray(0))
+                        file.writeBytes(bytes)
                         file
                     } else {
-                        terminalText = terminals.readText(terminalServerId, terminalPath)
+                        terminalText = (terminals.read(terminalServerId, terminalPath) as? dev.beacon.core.api.TsRead.Text)?.text
                         null
                     }
                 }

@@ -76,6 +76,7 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.compose.material3.window)
     implementation(libs.compose.material.icons)
+    implementation(libs.compose.material.icons.ext)
     implementation(libs.compose.foundation)
     implementation(libs.activity.compose)
     implementation(libs.navigation.compose)

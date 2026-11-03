@@ -59,6 +59,7 @@ fun ChatsDrawer(
     onNewChat: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenSurface: (String) -> Unit,
+    onOpenTerminal: () -> Unit,
     onClose: () -> Unit,
 ) {
     val state by listViewModel.ui.collectAsStateWithLifecycle()
@@ -103,6 +104,7 @@ fun ChatsDrawer(
         GatedRow("Channels", gates.channelsGate, onClick = { onOpenSurface("channels"); onClose() })
         GatedRow("Workspace", gates.workspaceGate, onClick = { onOpenSurface("workspace"); onClose() })
         DrawerRow("Files", onClick = { onOpenSurface("files"); onClose() }) // artifacts' slot (user request)
+        DrawerRow("Terminal", onClick = { onOpenTerminal(); onClose() })
         DrawerRow("Settings", onClick = { onOpenSettings(); onClose() })
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
         Text(

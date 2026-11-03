@@ -1,101 +1,162 @@
 package dev.beacon.core.api
 
+import android.net.Uri
 import dev.beacon.core.network.await
 import dev.beacon.core.network.decodeJson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.Response
-import java.net.URLEncoder
+import okhttp3.RequestBody.Companion.toRequestBody
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Terminal servers (agent.md §1: terminal feature — inline FILE viewing promoted
- * into M2 by user request).
- *
- * Verified contract (open-webui routers/terminals.py):
- * - `GET /api/v1/terminals/` (user-scoped) → connections Beacon may use
- *   `{id, url, name, contexts, config}` — no secret ever leaves the server;
- * - file access is proxied: `GET /api/v1/terminals/{server_id}/files/read?path=…`
- *   (the OWUI backend holds the API key; the client authenticates as the user).
- */
 @Serializable
-data class TerminalServer(
-    val id: String = "",
-    val url: String = "",
-    val name: String = "",
-)
+data class TerminalServer(val id: String, val url: String = "", val name: String = "")
 
+@Serializable
+data class TsFileEntry(
+    val name: String,
+    val path: String,
+    @kotlinx.serialization.json.JsonNames("isDirectory") val is_dir: Boolean = false,
+    val size: Long? = null,
+    val modified_at: Long? = null,
+) {
+    val isDirectory: Boolean get() = is_dir
+}
+
+@Serializable
+data class TsPort(val port: Int, val pid: Int? = null, val process: String? = null)
+
+/** A read: decoded text ({content: …}) or raw bytes with a mime type. */
+sealed interface TsRead {
+    data class Text(val text: String) : TsRead
+    data class Raw(val bytes: ByteArray, val mime: String) : TsRead
+}
+
+/** Terminal-server FILES surface — Conduit parity, ORIGINAL implementation
+ *  (GPL: behavior read as spec, code ours). Calls ride the OWUI proxy
+ *  /api/v1/terminals/{server}/… (routers/terminals.py:112+). */
 @Singleton
 class TerminalsApi @Inject constructor(
     private val client: OkHttpClient,
     private val json: Json,
     private val source: InstanceSource,
 ) {
+    private val jsonBody = "application/json; charset=utf-8".toMediaTypeOrNull()
+
+    private fun url(serverId: String, path: String, query: String = ""): Request.Builder {
+        val base = source.instanceUrl() ?: throw OwuiApiException(0, null, "No connected instance")
+        return Request.Builder().url(joinUrl(base, "/api/v1/terminals/$serverId/$path$query"))
+    }
+
     suspend fun servers(): List<TerminalServer> = withContext(Dispatchers.IO) {
-        val request = Request.Builder()
-            .url(joinUrl(requireInstance(), "/api/v1/terminals/"))
-            .get()
-            .build()
-        val response = client.newCall(request).await()
-        if (!response.isSuccessful) {
-            return@withContext emptyList() // gate: terminal not exposed/directly admin-only
-        }
-        val list = response.decodeJson(kotlinx.serialization.builtins.ListSerializer(TerminalServer.serializer()), json)
-        list.filter { it.enabledByConfig() }
+        client.newCall(url("", "").build()).await().decodeJson(
+            ListSerializer(TerminalServer.serializer()), json,
+        )
     }
 
-    /** GET /files/read?path=… → {content} for text payloads (JSON body). */
-    suspend fun readText(serverId: String, path: String): String? = withContext(Dispatchers.IO) {
-        val response = proxied(serverId, path)
-        try {
-            if (!response.isSuccessful) return@withContext null
-            val contentType = response.header(CONTENT_TYPE).orEmpty()
-            if (contentType.startsWith("image/") || contentType.startsWith("application/octet")) {
-                null // binary: caller should use readBytes
+    suspend fun cwd(serverId: String): String? = withContext(Dispatchers.IO) {
+        client.newCall(url(serverId, "files/cwd").get().build()).await().use { r ->
+            if (!r.isSuccessful) return@withContext null
+            (json.parseToJsonElement(r.body?.string().orEmpty()) as? JsonObject)
+                ?.get("cwd")?.let { (it as? JsonPrimitive)?.content }
+        }
+    }
+
+    suspend fun setCwd(serverId: String, path: String) = withContext(Dispatchers.IO) {
+        client.newCall(
+            url(serverId, "files/cwd")
+                .post(json.encodeToString(JsonObject.serializer(), buildJsonObject { put("path", path) }).toRequestBody(jsonBody))
+                .build(),
+        ).await().use { }
+    }
+
+    suspend fun list(serverId: String, directory: String): List<TsFileEntry> = withContext(Dispatchers.IO) {
+        client.newCall(url(serverId, "files/list", "?directory=" + Uri.encode(directory)).get().build())
+            .await().use { r ->
+                if (!r.isSuccessful) return@withContext emptyList()
+                val obj = json.parseToJsonElement(r.body?.string().orEmpty()) as? JsonObject
+                    ?: return@withContext emptyList()
+                val items = (obj["items"] ?: obj["entries"]) as? kotlinx.serialization.json.JsonArray
+                    ?: return@withContext emptyList()
+                json.decodeFromJsonElement(ListSerializer(TsFileEntry.serializer()), items)
             }
-            val jsonBody = response.body?.string() ?: return@withContext null
-            (json.parseToJsonElement(jsonBody) as? JsonObject)?.get("content")
-                ?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
-        } finally {
-            response.close()
+    }
+
+    suspend fun read(serverId: String, path: String): TsRead? = withContext(Dispatchers.IO) {
+        client.newCall(url(serverId, "files/read", "?path=" + Uri.encode(path)).get().build()).await().use { r ->
+            if (!r.isSuccessful) return@withContext null
+            val mime = r.header("Content-Type") ?: "application/octet-stream"
+            if (mime.contains("application/json")) {
+                val obj = json.parseToJsonElement(r.body?.string().orEmpty()) as? JsonObject
+                TsRead.Text(obj?.get("content")?.let { (it as? JsonPrimitive)?.content }.orEmpty())
+            } else {
+                TsRead.Raw(r.body?.bytes() ?: ByteArray(0), mime)
+            }
         }
     }
 
-    /** Bytes for image previews (content-type-driven). */
-    suspend fun readBytes(serverId: String, path: String): Pair<ByteArray, String>? = withContext(Dispatchers.IO) {
-        val response = proxied(serverId, path)
-        if (!response.isSuccessful) {
-            response.close()
-            return@withContext null
+    suspend fun view(serverId: String, path: String): Pair<String, TsRead>? = withContext(Dispatchers.IO) {
+        client.newCall(url(serverId, "files/view", "?path=" + Uri.encode(path)).get().build()).await().use { r ->
+            if (!r.isSuccessful) return@withContext null
+            val name = Regex("filename=\"?([^\";]+)\"?").find(r.header("Content-Disposition").orEmpty())
+                ?.groupValues?.get(1) ?: path.substringAfterLast('/')
+            name to TsRead.Raw(r.body?.bytes() ?: ByteArray(0), r.header("Content-Type") ?: "application/octet-stream")
         }
-        val mime = response.header(CONTENT_TYPE) ?: "application/octet-stream"
-        val bytes = response.body?.bytes()
-        response.close()
-        bytes?.takeIf { it.isNotEmpty() }?.let { Pair(it, mime) }
     }
 
-    private fun proxied(serverId: String, path: String): Response {
-        val encoded = URLEncoder.encode(path, "UTF-8")
-        val request = Request.Builder()
-            .url(joinUrl(requireInstance(), "/api/v1/terminals/$serverId/files/read?path=$encoded"))
-            .get()
-            .build()
-        return client.newCall(request).execute()
+    suspend fun upload(serverId: String, directory: String, fileName: String, bytes: ByteArray): Boolean =
+        withContext(Dispatchers.IO) {
+            val multipart = okhttp3.MultipartBody.Builder().setType(okhttp3.MultipartBody.FORM)
+                .addFormDataPart(
+                    "file", fileName,
+                    okhttp3.RequestBody.create("application/octet-stream".toMediaTypeOrNull(), bytes),
+                ).build()
+            client.newCall(url(serverId, "files/upload").post(multipart).header("X-Directory", directory).build())
+                .await().use { it.isSuccessful }
+        }
+
+    suspend fun mkdir(serverId: String, path: String): Boolean = withContext(Dispatchers.IO) {
+        client.newCall(
+            url(serverId, "files/mkdir")
+                .post(json.encodeToString(JsonObject.serializer(), buildJsonObject { put("path", path) }).toRequestBody(jsonBody))
+                .build(),
+        ).await().use { it.isSuccessful }
     }
 
-    private fun TerminalServer.enabledByConfig() = true
+    suspend fun delete(serverId: String, path: String): Boolean = withContext(Dispatchers.IO) {
+        client.newCall(url(serverId, "files/delete", "?path=" + Uri.encode(path)).delete().build())
+            .await().use { it.isSuccessful }
+    }
 
-    private fun requireInstance(): String =
-        source.instanceUrl()
-            ?: throw OwuiApiException(0, null, "No connected instance")
+    suspend fun move(serverId: String, source: String, destination: String): Boolean = withContext(Dispatchers.IO) {
+        client.newCall(
+            url(serverId, "files/move")
+                .post(json.encodeToString(
+                    JsonObject.serializer(),
+                    buildJsonObject { put("source", source); put("destination", destination) },
+                ).toRequestBody(jsonBody))
+                .build(),
+        ).await().use { it.isSuccessful }
+    }
 
-    companion object {
-        private const val CONTENT_TYPE = "Content-Type"
+    suspend fun ports(serverId: String): List<TsPort> = withContext(Dispatchers.IO) {
+        client.newCall(url(serverId, "ports").get().build()).await().use { r ->
+            if (!r.isSuccessful) return@withContext emptyList()
+            val obj = json.parseToJsonElement(r.body?.string().orEmpty()) as? JsonObject
+                ?: return@withContext emptyList()
+            val items = obj["ports"] as? kotlinx.serialization.json.JsonArray
+                ?: return@withContext emptyList()
+            json.decodeFromJsonElement(ListSerializer(TsPort.serializer()), items)
+        }
     }
 }

@@ -268,6 +268,32 @@ private fun BeaconNavHost(permanentSidebar: Boolean) {
                         onBack = { nav.popBackStack() },
                     )
                 }
+                composable(route = "terminal") { _ ->
+                    val vm: dev.beacon.feature.terminal.TerminalViewModel = hiltViewModel()
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    val save = androidx.activity.compose.rememberLauncherForActivityResult(
+                        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/octet-stream"),
+                    ) { uri ->
+                        vm.pendingDownload?.let { (bytes, _) ->
+                            uri?.let {
+                                runCatching {
+                                    context.contentResolver.openOutputStream(it)?.use { out ->
+                                        bytes.inputStream().copyTo(out)
+                                    }
+                                }
+                            }
+                            vm.pendingDownload = null
+                        }
+                    }
+                    dev.beacon.feature.terminal.TerminalScreen(
+                        vm = vm,
+                        onBack = { nav.popBackStack() },
+                        onSaveDownload = { bytes, name ->
+                            vm.pendingDownload = bytes to name
+                            save.launch(name)
+                        },
+                    )
+                }
             }
         }
     }
@@ -463,6 +489,7 @@ private fun BeaconChatSurface(
                         }
                     },
                     onOpenSettings = { nav.navigate(ROUTE_SETTINGS) },
+                    onOpenTerminal = { nav.navigate("terminal") },
                     onOpenSurface = { key -> nav.navigate("surface/$key") },
                     onClose = { drawerScope.launch { drawerState.close() } },
                 )

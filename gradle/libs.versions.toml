@@ -51,6 +51,7 @@ compose-foundation = { group = "androidx.compose.foundation", name = "foundation
 compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
 compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 compose-material-icons = { group = "androidx.compose.material", name = "material-icons-core" }
+compose-material-icons-ext = { group = "androidx.compose.material", name = "material-icons-extended" }
 # AndroidX
 activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigationCompose" }

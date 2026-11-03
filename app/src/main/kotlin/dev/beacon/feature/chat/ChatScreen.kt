@@ -513,7 +513,9 @@ fun ChatScreen(
                                 Icon(
                                     Icons.Filled.Check,
                                     contentDescription = "Selected",
-                                    tint = MaterialTheme.colorScheme.primary,
+                                    // The model-sheet check is BLUE in the reference
+                                    // (Claude's informational accent) → tertiary.
+                                    tint = MaterialTheme.colorScheme.tertiary,
                                 )
                             }
                         }

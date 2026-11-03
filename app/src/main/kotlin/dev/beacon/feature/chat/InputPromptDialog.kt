@@ -47,7 +47,7 @@ fun InputPromptDialog(
 ) {
     val answers = remember(prompt) { mutableStateMapOf<String, String>() }
     var openIndex by remember(prompt) { mutableStateOf(0) }
-    // The server holds its own timeout; drop the dialog when the task moves on.
+    // The server holds its own timeout; drop the dialog when it passes.
     LaunchedEffect(prompt) {
         delay(prompt.timeoutMs.takeIf { it > 0 } ?: 120_000L)
         onCancel()

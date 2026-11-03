@@ -109,7 +109,12 @@ class ChatEngine(
         val questions: List<InputQuestion>,
         val allowOther: Boolean,
         val timeoutMs: Long,
-        val envelope: dev.beacon.core.network.socket.SocketEnvelope,
+        /** Non-null when delivered as a live socket CALL (ack answer path). */
+        val envelope: dev.beacon.core.network.socket.SocketEnvelope? = null,
+        /** The pending ask_user to resolve (the tool-call output path). */
+        val chatId: String? = null,
+        val messageId: String? = null,
+        val callId: String? = null,
     )
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -604,26 +609,119 @@ class ChatEngine(
         )
     }
 
-    /** Intent: answer the open ask_user ({answers: {id: label}} → the model continues). */
+    /**
+     * Interactive tool call in the CURRENT assistant's output: the model
+     * called `ask_user` and the turn paused (the server holds the function_call
+     * pending, tool_approval.py:23-31). The dialog renders from the call's
+     * ARGUMENTS (questions/options/allow_other, tools/builtin.py:543-660) and
+     * answers via POST /api/v1/chats/{id}/messages/{message_id}/resolve — the
+     * server appends the function_call_output and RE-RUNS chat_completion, so
+     * the resumed stream drains through the normal transport paths.
+     */
+    private fun maybeSurfacePendingInput(output: List<JsonElement>) {
+        val messageId = _state.value.streamingMessageId ?: return
+        for (item in output) {
+            val call = item as? JsonObject ?: continue
+            val status = (call["status"] as? JsonPrimitive)?.content
+            if ((call["type"] as? JsonPrimitive)?.content != "function_call") continue
+            if (status !in listOf("pending", "queued", "requires_approval")) {
+                // Already resolved (output carries the function_call_output elsewhere).
+                continue
+            }
+            if ((call["name"] as? JsonPrimitive)?.content != "ask_user") continue
+            val callId = ((call["call_id"] as? JsonPrimitive)?.content
+                ?: (call["id"] as? JsonPrimitive)?.content) ?: continue
+            val args = (call["arguments"] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() } ?: continue
+            val parsed = runCatching { json.parseToJsonElement(args) }.getOrNull()
+            val questions = (parsed as? JsonObject)?.get("questions") as? JsonArray
+            if (questions == null) continue
+            val questionsParsed = questions.mapNotNull { raw ->
+                val q = raw as? JsonObject ?: return@mapNotNull null
+                val qId = (q["id"] as? JsonPrimitive)?.content ?: return@mapNotNull null
+                InputQuestion(
+                    id = qId,
+                    header = (q["header"] as? JsonPrimitive)?.content ?: "Question",
+                    question = (q["question"] as? JsonPrimitive)?.content ?: "",
+                    options = (q["options"] as? JsonArray).orEmpty().mapNotNull { optionRaw ->
+                        val option = optionRaw as? JsonObject ?: return@mapNotNull null
+                        InputOption(
+                            (option["label"] as? JsonPrimitive)?.content ?: return@mapNotNull null,
+                            (option["description"] as? JsonPrimitive)?.content ?: "",
+                        )
+                    },
+                    allowOther = (q["allow_other"] as? JsonPrimitive)?.jsonBool() ?: true,
+                )
+            }
+            if (questionsParsed.isEmpty()) continue
+            // The pending interaction needs the RESOLVE leg: the chat id must
+            // be real (the resolve route reads the stored message; a temp
+            // chat's ask_user can't be answered — tool_approval.py:74).
+            val chatId = _state.value.chatId
+            if (chatId == null) continue
+            _inputPrompt.value = InputRequest(
+                questions = questionsParsed,
+                allowOther = ((parsed as JsonObject)["allow_other"] as? JsonPrimitive)?.jsonBool() ?: true,
+                timeoutMs = ((parsed)["timeout_ms"] as? JsonPrimitive)?.content?.toLongOrNull() ?: 120_000L,
+                chatId = chatId,
+                messageId = messageId,
+                callId = callId,
+                envelope = null,
+            )
+            return
+        }
+    }
+
+    /** Intent: answer the open ask_user — via the resolve route (HTTP), or the
+     *  live socket ack when the server delivered the interactive call. */
     fun answerInput(answers: Map<String, String>) {
         val prompt = _inputPrompt.value ?: return
         _inputPrompt.value = null
-        scope.launch {
-            runCatching {
-                prompt.envelope.reply(buildJsonObject {
-                    put("answers", buildJsonObject {
-                        answers.forEach { (id, label) -> put(id, kotlinx.serialization.json.JsonPrimitive(label)) }
-                    })
+        val liveAck = prompt.envelope?.reply(
+            buildJsonObject {
+                put("answers", buildJsonObject {
+                    answers.forEach { (id, label) -> put(id, kotlinx.serialization.json.JsonPrimitive(label)) }
                 })
+            },
+        ) == true
+        val chatId = prompt.chatId ?: _state.value.chatId ?: return
+        val messageId = prompt.messageId ?: _state.value.streamingMessageId ?: return
+        scope.launch {
+            // The live ack and the HTTP resolve are the same resolution from
+            // the server's view; send the HTTP one whenever the chat is
+            // saved (the resume = a normal completion drain, §6.1).
+            taskTerminated = false
+            activeAssistantId = messageId
+            val resolveCall = try {
+                api.resolveToolCall(chatId, messageId, prompt.callId.orEmpty(), "answer", answers)
+            } catch (e: Exception) {
+                patch { copy(error = describe(e)) }
+                return@launch
+            }
+            try {
+                var payload: JsonObject? = null
+                drain(resolveCall, messageId, onTaskPayload = { payload = it })
+                if (payload != null) drainTaskSocket(payload, messageId)
+                finalizeAssistant(messageId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                patch { copy(error = describe(e)) }
             }
         }
     }
 
-    /** Intent: dismiss/cancel the open ask_user ({status:'cancelled'}). */
+    /** Intent: cancel the open ask_user ({status:'cancelled'} = a timed-out resolve). */
     fun cancelInput() {
         val prompt = _inputPrompt.value ?: return
         _inputPrompt.value = null
-        scope.launch { runCatching { prompt.envelope.cancelReply() } }
+        val chatId = prompt.chatId ?: _state.value.chatId ?: return
+        val messageId = prompt.messageId ?: return
+        prompt.envelope?.cancelReply()
+        scope.launch {
+            runCatching {
+                api.resolveToolCall(chatId, messageId, prompt.callId.orEmpty(), "answer", timedOut = true).execute().use { }
+            }
+        }
     }
 
     /**
@@ -744,6 +842,7 @@ class ChatEngine(
             is StreamEvent.OutputSnapshot -> {
                 outItems = event.items
                 reasoningActive = false // content stage reached (§: spinner off)
+                maybeSurfacePendingInput(event.items)
                 if (!outputAdopted) {
                     val displayed = displayTextFromOutput(event.items)
                     if (displayed != null && assistantContent.isBlank()) {

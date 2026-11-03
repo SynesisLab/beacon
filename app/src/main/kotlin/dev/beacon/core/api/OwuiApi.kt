@@ -171,6 +171,41 @@ class OwuiApi @Inject constructor(
         source.instanceUrl()
             ?: throw OwuiApiException(0, null, "No connected instance")
 
+    /**
+     * ResolveToolCallForm {call_id, action: approve|reject|answer, answers?,
+     * timed_out?} (utils/tool_approval.py:16-20). For the model's ask_user:
+     * action='answer' + {questionId: label}; the server appends the
+     * function_call_output and RESUMES the completion — this call returns
+     * whatever chat_completion returns (an SSE stream or the {task_ids}
+     * JSON), so the CALLER drains it like a normal send.
+     */
+    fun resolveToolCall(
+        chatId: String,
+        messageId: String,
+        callId: String,
+        action: String,
+        answers: Map<String, String>? = null,
+        timedOut: Boolean = false,
+    ): Call {
+        val payload = buildJsonObject {
+            put("call_id", kotlinx.serialization.json.JsonPrimitive(callId))
+            put("action", kotlinx.serialization.json.JsonPrimitive(action))
+            answers?.let { map ->
+                put("answers", buildJsonObject {
+                    map.forEach { (id, label) -> put(id, kotlinx.serialization.json.JsonPrimitive(label)) }
+                })
+            }
+            if (timedOut) put("timed_out", kotlinx.serialization.json.JsonPrimitive(true))
+        }
+        return client.newCall(
+            Request.Builder()
+                .url(joinUrl(instance(), "/api/v1/chats/$chatId/messages/$messageId/resolve"))
+                .post(json.encodeToString(kotlinx.serialization.json.JsonElement.serializer(), payload)
+                    .toRequestBody("application/json; charset=utf-8".toMediaType()))
+                .build(),
+        )
+    }
+
     /** The one client (WebView panes reuse its same-origin auth interceptor, §11). */
     fun publicClient(): OkHttpClient = client
 

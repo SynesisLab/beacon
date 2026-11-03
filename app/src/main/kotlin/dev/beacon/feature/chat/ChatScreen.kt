@@ -492,14 +492,24 @@ fun ChatScreen(
                         MaterialTheme.colorScheme.primary,
                     ),
                     decorationBox = { inner ->
-                        if (state.draft.isEmpty()) {
-                            Text(
-                                "Message",
-                                style = dev.beacon.ui.theme.BeaconTypography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                        // Hint UNDER the text, one shared line box → the hint
+                        // sits on the cursor row, centered like Claude's.
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 6.dp)
+                                .heightIn(min = 46.dp),
+                            contentAlignment = Alignment.CenterStart,
+                        ) {
+                            if (state.draft.isEmpty()) {
+                                Text(
+                                    "Message",
+                                    style = dev.beacon.ui.theme.BeaconTypography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            inner()
                         }
-                        inner()
                     },
                     modifier = Modifier
                         .weight(1f)

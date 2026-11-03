@@ -48,6 +48,11 @@ data class OnboardingActions(
     val setEmailDraft: (String) -> Unit,
     val setPasswordDraft: (String) -> Unit,
     val submitPassword: () -> Unit,
+    val setMfaCodeDraft: (String) -> Unit,
+    val setMfaRecoveryMode: (Boolean) -> Unit,
+    val submitMfaCode: () -> Unit,
+    val submitMfaEnrollConfirm: () -> Unit,
+    val continueAfterRecoveryCodes: () -> Unit,
     val chooseModel: (String) -> Unit,
     val finish: () -> Unit,
 )
@@ -77,6 +82,9 @@ fun OnboardingScreen(
     when (state.step) {
         OnboardingViewModel.Step.Url -> UrlStep(state, actions, modifier)
         OnboardingViewModel.Step.Auth -> AuthStep(state, actions, modifier)
+        OnboardingViewModel.Step.MfaVerify -> MfaVerifyStep(state, actions, modifier)
+        OnboardingViewModel.Step.MfaEnroll -> MfaEnrollStep(state, actions, modifier)
+        OnboardingViewModel.Step.MfaRecovery -> MfaRecoveryStep(state, actions, modifier)
         OnboardingViewModel.Step.Models -> ModelsStep(state, actions, modifier)
     }
 }
@@ -202,6 +210,158 @@ private fun AuthStep(state: OnboardingViewModel.UiState, actions: OnboardingActi
                 CircularProgressIndicator(modifier = Modifier.size(40.dp))
             }
         }
+    }
+}
+
+/** MFA verify (mfa.py:147): the TOTP (or recovery code) entry after a
+ *  password sign-in that returned {next_step: 'verify'}. */
+@Composable
+private fun MfaVerifyStep(state: OnboardingViewModel.UiState, actions: OnboardingActions, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .semantics { testTag = "onboarding_mfa_verify" }
+            .padding(horizontal = Paddings.screenEdge.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        androidx.compose.foundation.layout.Spacer(Modifier.fillMaxWidth().height(40.dp))
+        Text("Two-factor sign-in", style = MaterialTheme.typography.headlineSmall)
+        Text(
+            if (state.mfaRecoveryMode) {
+                "Enter one of your one-time recovery codes."
+            } else {
+                "Enter the code from your authenticator app."
+            },
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedTextField(
+            value = state.mfaCodeDraft,
+            onValueChange = actions.setMfaCodeDraft,
+            label = { Text(if (state.mfaRecoveryMode) "Recovery code" else "Code") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(
+                keyboardType = if (state.mfaRecoveryMode) KeyboardType.Password else KeyboardType.NumberPassword,
+            ),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        ErrorText(state.error)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Button(onClick = actions.submitMfaCode, enabled = !state.connecting) {
+                Text("Verify", style = MaterialTheme.typography.labelLarge)
+            }
+            if (state.connecting) {
+                CircularProgressIndicator(modifier = Modifier.size(28.dp))
+            }
+        }
+        androidx.compose.material3.TextButton(onClick = { actions.setMfaRecoveryMode(!state.mfaRecoveryMode) }) {
+            Text(if (state.mfaRecoveryMode) "Use the authenticator app instead" else "Use a recovery code instead")
+        }
+        androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+    }
+}
+
+/** First-time enrollment (mfa.py:129-148): QR/manual key + the confirm code.
+ *  The qr_code payload is an svg+xml base64 data URI (utils/mfa.py:259-266) —
+ *  painted by a tiny JS-off local WebView; the manual key is always shown too. */
+@Composable
+private fun MfaEnrollStep(state: OnboardingViewModel.UiState, actions: OnboardingActions, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .semantics { testTag = "onboarding_mfa_enroll" }
+            .padding(horizontal = Paddings.screenEdge.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text("Set up two-factor sign-in", style = MaterialTheme.typography.headlineSmall)
+        Text(
+            "Scan the code with an authenticator app (or paste the key), then enter the code it shows.",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        val qr = state.qrCode
+        if (qr != null) {
+            androidx.compose.ui.viewinterop.AndroidView(
+                modifier = Modifier.fillMaxWidth().height(230.dp),
+                factory = { ctx ->
+                    android.webkit.WebView(ctx).apply {
+                        settings.javaScriptEnabled = false // data: SVG never runs code (§11)
+                    }
+                },
+                update = { view -> runCatching { view.loadData(qr, "image/svg+xml", "utf-8") } },
+            )
+        }
+        state.manualKey?.let { key ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Manual key", style = MaterialTheme.typography.labelLarge)
+                    Text(
+                        key,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        maxLines = 2,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+        OutlinedTextField(
+            value = state.mfaCodeDraft,
+            onValueChange = actions.setMfaCodeDraft,
+            label = { Text("6-digit code") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        ErrorText(state.error)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Button(onClick = actions.submitMfaEnrollConfirm, enabled = !state.connecting) {
+                Text("Confirm", style = MaterialTheme.typography.labelLarge)
+            }
+            if (state.connecting) {
+                CircularProgressIndicator(modifier = Modifier.size(28.dp))
+            }
+        }
+    }
+}
+
+/** The one-time recovery codes issued at enroll (MfaEnrollmentResponse). */
+@Composable
+private fun MfaRecoveryStep(state: OnboardingViewModel.UiState, actions: OnboardingActions, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .semantics { testTag = "onboarding_mfa_recovery" }
+            .padding(horizontal = Paddings.screenEdge.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text("Save your recovery codes", style = MaterialTheme.typography.headlineSmall)
+        Text(
+            "Each code works once in place of the authenticator code. Keep them somewhere safe.",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        androidx.compose.material3.Surface(
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                state.recoveryCodes.forEach { code ->
+                    Text(
+                        code,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    )
+                }
+            }
+        }
+        Button(
+            onClick = actions.continueAfterRecoveryCodes,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Continue") }
     }
 }
 

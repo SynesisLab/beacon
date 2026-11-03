@@ -29,6 +29,12 @@ class OnboardingViewModel @Inject constructor(
     sealed interface Step {
         data object Url : Step
         data object Auth : Step
+        /** M4 MFA: TOTP/recovery-code challenge (mfa.py:147 verify). */
+        data object MfaVerify : Step
+        /** M4 MFA: first-Time enrollment — QR/manual key + confirm (mfa.py:129-148). */
+        data object MfaEnroll : Step
+        /** M4 MFA: the one-time recovery codes issued at enroll (mfa.py:146). */
+        data object MfaRecovery : Step
         data object Models : Step
     }
 
@@ -45,6 +51,13 @@ class OnboardingViewModel @Inject constructor(
         val models: List<OwuiModel> = emptyList(),
         val chosenModelId: String? = null,
         val finishing: Boolean = false,
+        // MFA challenge state (sign-in = password → challenge → verify/enroll).
+        val challengeToken: String? = null,
+        val mfaCodeDraft: String = "",
+        val mfaRecoveryMode: Boolean = false,
+        val manualKey: String? = null,
+        val qrCode: String? = null,
+        val recoveryCodes: List<String> = emptyList(),
     )
 
     private val _state = MutableStateFlow(UiState())
@@ -58,6 +71,11 @@ class OnboardingViewModel @Inject constructor(
     fun setEmailDraft(value: String) = mutate { copy(emailDraft = value, error = null) }
     fun setPasswordDraft(value: String) = mutate { copy(passwordDraft = value, error = null) }
     fun setAuthMode(mode: AuthMethod) = mutate { copy(authMode = mode, error = null) }
+    fun setMfaCodeDraft(value: String) = mutate { copy(mfaCodeDraft = value, error = null) }
+    fun setMfaRecoveryMode(on: Boolean) = mutate { copy(mfaRecoveryMode = on, error = null) }
+
+    /** The recovery-codes screen's Continue → model pick. */
+    fun continueAfterRecoveryCodes() = mutate { copy(step = Step.Models) }
 
     /** Step 1: resolve + prove the instance lives at the given URL. */
     fun probeServer() {
@@ -117,17 +135,40 @@ class OnboardingViewModel @Inject constructor(
             try {
                 val result = api.signIn(url, email, password)
                 when {
-                    result.isMfaChallenge -> {
-                        _state.value = _state.value.copy(
-                            connecting = false,
-                            error = "This account requires multi-factor sign-in — not supported yet in Beacon (M4).",
-                        )
-                        return@launch
-                    }
-                    result.isPendingUser -> {
+                    result.next_step == "pending" -> {
                         _state.value = _state.value.copy(
                             connecting = false,
                             error = "Your account is pending activation by an admin.",
+                        )
+                        return@launch
+                    }
+                    // M4 MFA (mfa.py): the challenge token rides to verify/enroll.
+                    result.next_step == "verify" -> {
+                        _state.value = _state.value.copy(
+                            connecting = false,
+                            step = Step.MfaVerify,
+                            challengeToken = result.challenge_token,
+                            mfaCodeDraft = "",
+                            mfaRecoveryMode = false,
+                        )
+                        return@launch
+                    }
+                    result.next_step == "enroll" -> {
+                        _state.value = _state.value.copy(
+                            connecting = false,
+                            step = Step.MfaEnroll,
+                            challengeToken = result.challenge_token,
+                            manualKey = null,
+                            qrCode = null,
+                        )
+                        fetchMfaSetup(url, result.challenge_token)
+                        return@launch
+                    }
+                    result.next_step == "recover" -> {
+                        _state.value = _state.value.copy(
+                            connecting = false,
+                            error = "Your account needs an MFA recovery token — " +
+                                "regenerate it in your instance's admin panel, then finish the reset in the web UI once.",
                         )
                         return@launch
                     }
@@ -143,6 +184,100 @@ class OnboardingViewModel @Inject constructor(
                 adoptUserName()
                 val page = api.models()
                 _state.value = UiState(step = Step.Models, models = page.items)
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(connecting = false, error = describe(e))
+            }
+        }
+    }
+
+    /** GET the QR/manual key for the enroll step (mfa.py:129-134). */
+    private fun fetchMfaSetup(url: String, challengeToken: String?) {
+        viewModelScope.launch {
+            try {
+                val setup = api.startMfaEnroll(url, challengeToken.orEmpty())
+                _state.value = _state.value.copy(manualKey = setup.manual_key, qrCode = setup.qr_code)
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(error = describe(e))
+            }
+        }
+    }
+
+    /** The verify/enroll-confirm steps share the success pipeline. */
+    private fun adoptMfaResult(result: dev.beacon.core.api.dto.SignInData) {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(connecting = true, error = null)
+            try {
+                if (result.token == null) {
+                    _state.value = _state.value.copy(connecting = false, error = "Multi-factor step failed (no token)")
+                    return@launch
+                }
+                session.update { it.copy(signedInEmail = result.email ?: it.signedInEmail) }
+                session.adoptCredentials(AuthMethod.Password, result.token)
+                adoptUserName()
+                val page = api.models()
+                if (!result.recovery_codes.isNullOrEmpty()) {
+                    // Enroll path: show the one-time codes BEFORE leaving onboarding.
+                    _state.value = _state.value.copy(
+                        connecting = false,
+                        step = Step.MfaRecovery,
+                        models = page.items,
+                        recoveryCodes = result.recovery_codes,
+                    )
+                } else {
+                    _state.value = _state.value.copy(
+                        connecting = false,
+                        step = Step.Models,
+                        models = page.items,
+                    )
+                }
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(connecting = false, error = describe(e))
+            }
+        }
+    }
+
+    fun submitMfaCode() {
+        val code = _state.value.mfaCodeDraft.trim()
+        val challenge = _state.value.challengeToken
+        if (code.isEmpty()) {
+            mutate { copy(error = "Enter the code from your authenticator app") }
+            return
+        }
+        if (challenge == null) {
+            mutate { copy(step = Step.Auth, error = "Challenge expired — sign in again") }
+            return
+        }
+        val url = normalizeInstanceUrl(_state.value.urlDraft)
+        viewModelScope.launch {
+            _state.value = _state.value.copy(connecting = true, error = null)
+            try {
+                val result = api.verifyMfa(url, challenge, code, recovery = _state.value.mfaRecoveryMode)
+                _state.value = _state.value.copy(connecting = false)
+                adoptMfaResult(result)
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(connecting = false, error = describe(e))
+            }
+        }
+    }
+
+    fun submitMfaEnrollConfirm() {
+        val code = _state.value.mfaCodeDraft.trim()
+        val challenge = _state.value.challengeToken
+        if (code.isEmpty()) {
+            mutate { copy(error = "Enter the code your authenticator shows for this key") }
+            return
+        }
+        if (challenge == null) {
+            mutate { copy(step = Step.Auth, error = "Challenge expired — sign in again") }
+            return
+        }
+        val url = normalizeInstanceUrl(_state.value.urlDraft)
+        viewModelScope.launch {
+            _state.value = _state.value.copy(connecting = true, error = null)
+            try {
+                val result = api.confirmMfaEnroll(url, challenge, code)
+                _state.value = _state.value.copy(connecting = false)
+                adoptMfaResult(result)
             } catch (e: Exception) {
                 _state.value = _state.value.copy(connecting = false, error = describe(e))
             }

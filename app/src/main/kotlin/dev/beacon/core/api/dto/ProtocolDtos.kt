@@ -81,12 +81,23 @@ data class SignInData(
     val role: String? = null,
     val profile_image_url: String? = null,
     val expires_at: Long? = null,
+    /** enroll/confirm only: the one-time recovery codes (MfaEnrollmentResponse). */
+    val recovery_codes: List<String>? = null,
 ) {
     /** Non-null for success (ServerUserResponse flavor); MFA/pending responses have no token. */
     val isTokenSignIn: Boolean get() = token != null
     val isMfaChallenge: Boolean get() = next_step != null && next_step != "pending"
     val isPendingUser: Boolean get() = next_step == "pending"
 }
+
+/** POST mfa/enroll/start → {manual_key, qr_code} (MfaSetupResponse,
+ *  models/auths.py:137-139); qr_code = a data:image/svg+xml;base64 URI
+ *  (utils/mfa.py:259-266). */
+@Serializable
+data class MfaSetupData(
+    val manual_key: String,
+    val qr_code: String? = null,
+)
 
 /** GET /api/v1/models/list → routers/models.py:227-241 ({items, total}). */
 @Serializable

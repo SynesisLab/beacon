@@ -2,6 +2,7 @@ package dev.beacon.core.api
 
 import dev.beacon.core.api.dto.AppConfig
 import dev.beacon.core.api.dto.ModelsPage
+import dev.beacon.core.api.dto.MfaSetupData
 import dev.beacon.core.api.dto.SignInData
 import dev.beacon.core.api.dto.VersionInfo
 import dev.beacon.core.data.SessionStore
@@ -70,6 +71,64 @@ class OwuiApi @Inject constructor(
                 .build()
             client.newCall(request).await().decodeJson<SignInData>(json)
         }
+
+    /**
+     * MFA challenge steps (routers/mfa.py mounted at /api/v1/auths/mfa,
+     * main.py:890). The challenge_token rides the FORM as a plain string —
+     * the web's mfa_challenge cookie is not required for API clients
+     * (MfaChallengeForm auths.py:150-152; verify/confirm take MfaVerifyForm
+     * :155-157).
+     */
+    private suspend fun mfaPost(
+        instanceUrl: String,
+        path: String,
+        payload: kotlinx.serialization.json.JsonObject,
+    ) = Request.Builder()
+        .url(joinUrl(instanceUrl, "/api/v1/auths/mfa$path"))
+        .post(json.encodeToString(kotlinx.serialization.json.JsonObject.serializer(), payload)
+            .toRequestBody("application/json; charset=utf-8".toMediaType()))
+        .build()
+
+    /** POST /verify {challenge_token, code, recovery} → SessionUserResponse
+     *  (mfa.py:147). recovery=true consumes a one-time recovery code. */
+    suspend fun verifyMfa(
+        instanceUrl: String,
+        challengeToken: String,
+        code: String,
+        recovery: Boolean = false,
+    ): SignInData = withContext(Dispatchers.IO) {
+        client.newCall(mfaPost(instanceUrl, "/verify", buildJsonObject {
+            put("challenge_token", kotlinx.serialization.json.JsonPrimitive(challengeToken))
+            put("code", kotlinx.serialization.json.JsonPrimitive(code))
+            put("recovery", kotlinx.serialization.json.JsonPrimitive(recovery))
+        })).await().decodeJson<SignInData>(json)
+    }
+
+    /** POST /enroll/start {challenge_token} → {manual_key, qr_code}
+     *  (mfa.py:129-134; setup_details utils/mfa.py:259-266 — the qr_code is
+     *  an svg+xml base64 data URI). */
+    suspend fun startMfaEnroll(instanceUrl: String, challengeToken: String): MfaSetupData =
+        withContext(Dispatchers.IO) {
+            client.newCall(mfaPost(instanceUrl, "/enroll/start", buildJsonObject {
+                put("challenge_token", kotlinx.serialization.json.JsonPrimitive(challengeToken))
+            })).await().decodeJson<MfaSetupData>(json)
+        }
+
+    /** POST /enroll/confirm {challenge_token, code, recovery} →
+     *  SessionUserResponse + recovery_codes (MfaEnrollmentResponse
+     *  auths.py:146-148; route mfa.py:134-135). */
+    suspend fun confirmMfaEnroll(
+        instanceUrl: String,
+        challengeToken: String,
+        code: String,
+        recovery: Boolean = false,
+    ): SignInData = withContext(Dispatchers.IO) {
+        client.newCall(mfaPost(instanceUrl, "/enroll/confirm", buildJsonObject {
+            put("challenge_token", kotlinx.serialization.json.JsonPrimitive(challengeToken))
+            put("code", kotlinx.serialization.json.JsonPrimitive(code))
+            put("recovery", kotlinx.serialization.json.JsonPrimitive(recovery))
+        })).await().decodeJson<SignInData>(json)
+    }
 
     /** The current user (GET /api/v1/auths/ — verified auths.py:178). */
     suspend fun sessionUser(): SessionUser = withContext(Dispatchers.IO) {

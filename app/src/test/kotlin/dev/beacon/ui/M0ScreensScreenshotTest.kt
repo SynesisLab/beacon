@@ -88,6 +88,8 @@ class M0ScreensScreenshotTest {
     private val onboardingActions = OnboardingActions(
         setUrlDraft = {}, probeServer = {}, setAuthMode = {}, setApiKeyDraft = {},
         submitApiKey = {}, setEmailDraft = {}, setPasswordDraft = {}, submitPassword = {},
+        setMfaCodeDraft = {}, setMfaRecoveryMode = {}, submitMfaCode = {},
+        submitMfaEnrollConfirm = {}, continueAfterRecoveryCodes = {},
         chooseModel = {}, finish = {},
     )
     private val chatActionsAll = ChatActions(

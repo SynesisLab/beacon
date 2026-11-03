@@ -93,6 +93,16 @@ Reference clones verified against: `open-webui` (BSD-3-style) + `conduit` (GPL, 
 The M4 "memories" item lands gated by `enable_memories`
 (`MainActivity.kt` SurfaceRoute "memories"; drawer GatedRow).
 
+## MFA sign-in (2026-11-03, mfa.py @ /api/v1/auths/mfa — main.py:890)
+
+| Step | Behavior | Proof |
+| --- | --- | --- |
+| Sign-in challenge | `SigninResult` = SessionUserResponse \| `{next_step: enroll\|verify\|recover, challenge_token, expires_in}` \| `{next_step: 'pending'}` when MFA enabled; the challenge_token rides the FORM for API clients — the `mfa_challenge` cookie is the web-only leg | models/auths.py:121-128, :137-148, :150-171; utils/auth.py:665-691 |
+| Verify | `POST /verify {challenge_token, code, recovery}` → SessionUserResponse (a later unverified call would 401 "Authenticator verification is required"); `recovery:true` consumes a one-time code | mfa.py:147-148; utils/auth.py:717-718; consume_factor mfa.py:283-285 |
+| Enroll | `/enroll/start {challenge_token}` → `{manual_key, qr_code}` where qr_code = `data:image/svg+xml;base64,` (SvgPathImage); `/enroll/confirm {challenge_token, code, recovery}` → SessionUserResponse + `recovery_codes` | mfa.py:129-148; utils/mfa.py:259-281; auths.py:146-148 |
+| Recover | `/recover {challenge_token, reset_token}` needs the ADMIN-issued reset token — Beacon keeps a typed message directing to the web UI | mfa.py:186-190; MfaRecoveryForm auths.py:166-168 |
+| Rate limit | POST endpoints have an IP limiter (100/900s) — retries are user-visible, not silent | mfa.py:31, :41-48 |
+
 Beacon protocol deltas (2026-11-03 device-verified round-trips): note read/write via
 `data.pages[].content.{json,html,md}` (models/notes.py:156-220, :748-772, :357-367,
 NoteForm rejects pages at :474); files list carries meta.content_type (files.py:54).

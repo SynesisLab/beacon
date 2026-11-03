@@ -37,7 +37,11 @@ data class NoteRow(val id: String, val title: String, val is_pinned: Boolean? = 
 data class ChannelRow(val id: String, val name: String, val description: String? = null, val is_private: Boolean? = null)
 
 @Serializable
-data class FileRow(val id: String, val filename: String, val created_at: Long? = null)
+data class FileRow(val id: String, val filename: String, val created_at: Long? = null, val meta: FileMetaDto? = null)
+
+/** files.py:52-57 FileMeta {name, content_type, size}. */
+@Serializable
+data class FileMetaDto(val content_type: String? = null, val size: Long? = null)
 
 @Serializable
 data class PromptRow(val id: String? = null, val command: String, val name: String, val content: String? = null)
@@ -122,11 +126,13 @@ class WorkspaceApis @Inject constructor(
             .decodeJson(ListSerializer(ChatPayload.serializer()), json)
     }
 
-    /** POST /api/v1/notes/create {title, data{json: tiptap doc}} (notes.py:237). */
+    /** POST /api/v1/notes/create {title, data{content{json,html,md}}} (notes.py:237).
+     *  NOTE: NoteForm REJECTS `pages` in data (models/notes.py:474) — create with
+     *  a legacy `content` block; the server normalizes it into the main page. */
     suspend fun createNote(title: String, plainContent: String): String? = withContext(Dispatchers.IO) {
         val body = buildJsonObject {
             put("title", title)
-            put("data", NoteDoc.doc(plainContent))
+            put("data", buildJsonObject { put("content", NoteDoc.contentBlock(plainContent)) })
         }
         client.newCall(
             Request.Builder().url(joinUrl(requireInstance(), "/api/v1/notes/create"))
@@ -144,12 +150,15 @@ class WorkspaceApis @Inject constructor(
         }
     }
 
-    /** POST /api/v1/notes/{id}/update (notes.py:529); content replaces the doc. */
+    /** POST /api/v1/notes/{id}/update (notes.py:529). The server MERGES incoming
+     *  `content` into the MAIN page (models/notes.py:748 rejects `pages` in data;
+     *  :761-768 routes content through update_page_content → subpages survive).
+     *  md+html must be STRINGS (models/notes.py:357-362); json rides along (:363). */
     suspend fun updateNote(noteId: String, title: String?, plainContent: String): Boolean =
         withContext(Dispatchers.IO) {
             val body = buildJsonObject {
-                title?.let { put("title", it) }
-                put("data", NoteDoc.doc(plainContent))
+                title?.takeIf { it.isNotBlank() }?.let { put("title", it) }
+                put("data", buildJsonObject { put("content", NoteDoc.contentBlock(plainContent)) })
             }
             client.newCall(
                 Request.Builder().url(joinUrl(requireInstance(), "/api/v1/notes/$noteId/update"))
@@ -159,7 +168,8 @@ class WorkspaceApis @Inject constructor(
             ).await().use { it.isSuccessful }
         }
 
-    /** GET /api/v1/notes/{id} — the full note (decode the doc to plain text). */
+    /** GET /api/v1/notes/{id} — the full note; reads MAIN page markdown with a
+     *  legacy-content fallback (title, plain text). */
     suspend fun note(noteId: String): Pair<String, String>? = withContext(Dispatchers.IO) {
         client.newCall(get("/api/v1/notes/$noteId")).await().use { response ->
             if (!response.isSuccessful) return@withContext null
@@ -167,7 +177,7 @@ class WorkspaceApis @Inject constructor(
             val obj = json.parseToJsonElement(text) as? kotlinx.serialization.json.JsonObject
                 ?: return@withContext null
             val title = (obj["title"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: ""
-            val content = obj["data"]?.let { NoteDoc.plainText(it) } ?: ""
+            val content = NoteDoc.dataText(obj["data"])
             title to content
         }
     }
@@ -205,23 +215,72 @@ class WorkspaceApis @Inject constructor(
         source.instanceUrl() ?: throw OwuiApiException(0, null, "No connected instance")
 }
 
-/** Open WebUI notes store TipTap JSON docs under `data.json` — a minimal round-trip. */
+/**
+ * Open WebUI notes store content under `data.pages[].content.{json,html,md}`
+ * (models/notes.py:156-220; legacy notes keep `data.content`). `md` is the
+ * markdown source of truth for a plain-text editor; `json` is the TipTap doc
+ * the web editor hydrates from; `html` is the derived render. Beacons writes
+ * all three (update_page_content requires md+html as strings, notes.py:357-362).
+ */
 object NoteDoc {
-    /** Builds a single-paragraph/plain-text doc (the minimal valid TipTap shape). */
-    fun doc(plain: String): kotlinx.serialization.json.JsonObject = buildJsonObject {
-        put("json", buildJsonObject {
-            put("type", "doc")
-            put("content", kotlinx.serialization.json.JsonArray(listOf(buildJsonObject {
-                put("type", "paragraph")
-                put("content", kotlinx.serialization.json.JsonArray(listOf(buildJsonObject {
-                    put("type", "text")
-                    put("text", plain)
-                })))
-            })))
-        })
+    const val EMPTY = ""
+
+    /** The {json, html, md} content block for a plain-text edit. */
+    fun contentBlock(plain: String): kotlinx.serialization.json.JsonObject = buildJsonObject {
+        put("json", doc(plain))
+        put("html", htmlOf(plain))
+        put("md", kotlinx.serialization.json.JsonPrimitive(plain))
     }
 
-    /** Walks the doc's content nodes and joins plain text. */
+    fun htmlOf(plain: String): String {
+        val paragraphs = plain.replace("\r\n", "\n").split("\n\n")
+            .filter { it.isNotBlank() }
+            .ifEmpty { listOf("") }
+        return paragraphs.joinToString("") { para ->
+            val escaped = para.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            "<p>${escaped.replace("\n", "<br>")}</p>"
+        }
+    }
+
+    /** Builds a single-paragraph/plain-text TipTap doc (the minimal valid shape). */
+    fun doc(plain: String): kotlinx.serialization.json.JsonObject = buildJsonObject {
+        put("type", "doc")
+        put("content", kotlinx.serialization.json.JsonArray(listOf(buildJsonObject {
+            put("type", "paragraph")
+            put("content", kotlinx.serialization.json.JsonArray(listOf(buildJsonObject {
+                put("type", "text")
+                put("text", plain)
+            })))
+        })))
+    }
+
+    /** Whole-data reader: pages[..main..] → legacy content → legacy {json}. */
+    fun dataText(element: kotlinx.serialization.json.JsonElement?): String {
+        val data = element as? kotlinx.serialization.json.JsonObject ?: return EMPTY
+        val pages = data["pages"] as? kotlinx.serialization.json.JsonArray
+        if (pages != null) {
+            val main = pages.firstOrNull { page ->
+                (page as? kotlinx.serialization.json.JsonObject)
+                    ?.get("id")?.let { p -> (p as? kotlinx.serialization.json.JsonPrimitive)?.content } == "main"
+            } ?: pages.firstOrNull()
+            val block = (main as? kotlinx.serialization.json.JsonObject)?.get("content")
+                as? kotlinx.serialization.json.JsonObject
+            if (block != null) return blockText(block)
+        }
+        val content = data["content"] as? kotlinx.serialization.json.JsonObject
+        if (content != null) return blockText(content)
+        return plainText(data)
+    }
+
+    /** Reads one content block: markdown first, a TipTap-walk fallback. */
+    fun blockText(block: kotlinx.serialization.json.JsonObject): String {
+        val md = (block["md"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
+        if (md.isNotBlank()) return md
+        val json = block["json"] as? kotlinx.serialization.json.JsonObject ?: return ""
+        return extract(json)
+    }
+
+    /** Legacy whole-data reader (notes whose data IS a TipTap doc). */
     fun plainText(element: kotlinx.serialization.json.JsonElement): String = try {
         val jsonDoc = element as? kotlinx.serialization.json.JsonObject
         val doc = jsonDoc?.get("json")

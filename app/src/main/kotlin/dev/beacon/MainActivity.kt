@@ -192,7 +192,7 @@ private fun BeaconNavHost(permanentSidebar: Boolean) {
                     )
                 }
                 composable(
-                    route = "folder/{id}/chats",
+                    route = "folder/{id}/{name}/chats",
                     arguments = listOf(navArgument("id") { type = NavType.StringType }),
                 ) { entry ->
                     val writeVm: dev.beacon.feature.surfaces.SurfaceWriteViewModel = hiltViewModel()
@@ -201,7 +201,7 @@ private fun BeaconNavHost(permanentSidebar: Boolean) {
                     }
                     dev.beacon.feature.surfaces.FolderChatsScreen(
                         writeModel = writeVm,
-                        folderName = "",
+                        folderName = android.net.Uri.decode(entry.arguments?.getString("name").orEmpty()),
                         onBack = { nav.popBackStack() },
                         onOpenChat = { chatId -> nav.navigate("chat/$chatId") },
                     )
@@ -232,14 +232,14 @@ private fun BeaconNavHost(permanentSidebar: Boolean) {
                     )
                 }
                 composable(
-                    route = "channel/{id}",
+                    route = "channel/{id}/{name}",
                     arguments = listOf(navArgument("id") { type = NavType.StringType }),
                 ) { entry ->
                     val writeVm: dev.beacon.feature.surfaces.SurfaceWriteViewModel = hiltViewModel()
                     dev.beacon.feature.surfaces.ChannelChatScreen(
                         writeModel = writeVm,
                         channelId = entry.arguments?.getString("id").orEmpty(),
-                        channelName = "",
+                        channelName = android.net.Uri.decode(entry.arguments?.getString("name").orEmpty()),
                         onBack = { nav.popBackStack() },
                     )
                 }
@@ -287,12 +287,21 @@ private fun SurfaceRoute(
     val vm: dev.beacon.feature.surfaces.SurfaceViewModel = hiltViewModel()
     val writeVm: dev.beacon.feature.surfaces.SurfaceWriteViewModel = hiltViewModel()
     val state = vm.state.collectAsStateWithLifecycle().value
+    // Re-fetch on every resume of the backstack entry: returning from a note
+    // editor / folder detail shows fresh data (M4 fix: stale lists).
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        vm.refresh()
+        onPauseOrDispose { }
+    }
     when (key) {
         "folders" -> dev.beacon.feature.surfaces.FoldersScreen(
             writeModel = writeVm,
             loaderState = state,
             onBack = onBack,
-            onOpenFolderChats = { id -> nav.navigate("folder/$id/chats") },
+            onOpenFolderChats = { id ->
+                val folder = state.folders.firstOrNull { it.id == id }
+                nav.navigate("folder/$id/${android.net.Uri.encode(folder?.name ?: "")}/chats")
+            },
         )
         "notes" -> dev.beacon.feature.surfaces.ListSurfaceScreen(
             title = "Notes",
@@ -326,7 +335,11 @@ private fun SurfaceRoute(
             error = state.error,
             rowKey = { it.id },
             onBack = onBack,
-            onItem = { channel -> nav.navigate("channel/${channel.id}") }
+            onItem = { channel ->
+                nav.navigate(
+                    "channel/${channel.id}/${android.net.Uri.encode(channel.name)}",
+                )
+            }
         ) { channel ->
             androidx.compose.foundation.layout.Column(
                 Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
@@ -349,8 +362,12 @@ private fun SurfaceRoute(
             rowKey = { it.id },
             onBack = onBack,
             onItem = { file ->
-                // The file viewer is a real surface since M2-3.
-                nav.navigate("file/${android.net.Uri.encode(file.id)}/${android.net.Uri.encode(file.filename)}/${android.net.Uri.encode("application/octet-stream")}")
+                // The file viewer is a real surface since M2-3; mime from the
+                // row's meta.content_type (files.py:54) so images render natively.
+                nav.navigate(
+                    "file/${android.net.Uri.encode(file.id)}/${android.net.Uri.encode(file.filename)}/" +
+                        android.net.Uri.encode(file.meta?.content_type ?: "application/octet-stream"),
+                )
             },
         ) { file ->
             androidx.compose.foundation.layout.Column(
@@ -359,33 +376,13 @@ private fun SurfaceRoute(
                 androidx.compose.material3.Text(file.filename, style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
             }
         }
-        "workspace" -> dev.beacon.feature.surfaces.ListSurfaceScreen(
-            title = "Workspace",
-            items = state.prompts,
-            loading = state.loading,
-            error = state.error,
-            rowKey = { (it.id ?: it.command) },
+        "workspace" -> dev.beacon.feature.surfaces.WorkspaceScreen(
             onBack = onBack,
-            onItem = { prompt -> dev.beacon.feature.chat.ShareSeed.pending = promptContent(prompt); nav.navigate(ROUTE_CHAT_NEW) },
-            header = {
-                androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
-                    androidx.compose.material3.Text("Prompts", style = androidx.compose.material3.MaterialTheme.typography.labelLarge, color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant)
-                    state.tools.take(3).forEach { tool ->
-                        androidx.compose.material3.Text("• ${tool.name}", style = androidx.compose.material3.MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 8.dp))
-                    }
-                    state.knowledge.take(3).forEach { knowledge ->
-                        androidx.compose.material3.Text("• ${knowledge.name}", style = androidx.compose.material3.MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 8.dp))
-                    }
-                }
+            onPrompt = { prompt ->
+                dev.beacon.feature.chat.ShareSeed.pending = promptContent(prompt)
+                nav.navigate(ROUTE_CHAT_NEW)
             },
-        ) { prompt ->
-            androidx.compose.foundation.layout.Column(
-                Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
-            ) {
-                androidx.compose.material3.Text(prompt.name, style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
-                androidx.compose.material3.Text("/${prompt.command}", style = androidx.compose.material3.MaterialTheme.typography.labelLarge, color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
+        )
         else -> onBack()
     }
 }

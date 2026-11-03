@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -27,6 +28,115 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+
+// ── M4 fix: Workspace as REAL sections (prompts/tools/knowledge rows), not a
+// prompts-only list with bullet header.
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun WorkspaceScreen(
+    onBack: () -> Unit,
+    onPrompt: (dev.beacon.core.api.PromptRow) -> Unit,
+) {
+    val vm: SurfaceViewModel = androidx.hilt.navigation.compose.hiltViewModel()
+    val state by vm.state.collectAsStateWithLifecycle()
+
+    androidx.compose.material3.Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Workspace") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        LazyColumn(Modifier.padding(padding).fillMaxSize()) {
+            if (state.loading && state.prompts.isEmpty()) {
+                item { SectionHeader("Loading…") }
+            }
+            if (state.prompts.isNotEmpty()) {
+                item { SectionHeader("Prompts") }
+                items(state.prompts, key = { it.command }) { prompt ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { onPrompt(prompt) }
+                            .padding(horizontal = 20.dp, vertical = 12.dp),
+                    ) {
+                        Column {
+                            Text(prompt.name, style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "/${prompt.command}",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    HorizontalDivider()
+                }
+            }
+            if (state.tools.isNotEmpty()) {
+                item { SectionHeader("Tools") }
+                items(state.tools, key = { it.id }) { tool ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 12.dp),
+                    ) {
+                        Text(tool.name, style = MaterialTheme.typography.titleMedium)
+                    }
+                    HorizontalDivider()
+                }
+            }
+            if (state.knowledge.isNotEmpty()) {
+                item { SectionHeader("Knowledge") }
+                items(state.knowledge, key = { it.id }) { knowledge ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 12.dp),
+                    ) {
+                        Column {
+                            Text(knowledge.name, style = MaterialTheme.typography.titleMedium)
+                            knowledge.description?.let {
+                                Text(
+                                    it,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                )
+                            }
+                        }
+                    }
+                    HorizontalDivider()
+                }
+            }
+            if (state.prompts.isEmpty() && state.tools.isEmpty() && state.knowledge.isEmpty() && !state.loading) {
+                item {
+                    Text(
+                        "No workspace items on this server yet.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(16.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionHeader(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
+    )
+}
 
 /**
  * Shared read-only listing screen for the drawer surfaces (M4-d1). Tap

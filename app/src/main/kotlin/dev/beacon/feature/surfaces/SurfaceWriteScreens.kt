@@ -179,6 +179,8 @@ fun FoldersScreen(
     loaderState: LoaderState,
     onBack: () -> Unit,
     onOpenFolderChats: (String) -> Unit,
+    /** Re-fetch the listing after a mutation (M4 fix: the list went stale). */
+    onChanged: () -> Unit = {},
 ) {
     val state by writeModel.state.collectAsStateWithLifecycle()
     var createOpen by remember { mutableStateOf(false) }
@@ -216,7 +218,7 @@ fun FoldersScreen(
                             }
                         }
                         TextButton(onClick = { menuFor = folder.id to folder.name }) { Text("Rename") }
-                        TextButton(onClick = { writeModel.deleteFolder(folder.id) {} }) { Text("Delete") }
+                        TextButton(onClick = { writeModel.deleteFolder(folder.id) { onChanged() } }) { Text("Delete") }
                     }
                     HorizontalDivider()
                 }
@@ -233,9 +235,9 @@ fun FoldersScreen(
             onDismiss = { createOpen = false; menuFor = null },
             onConfirm = { value ->
                 if (createOpen) {
-                    writeModel.createFolder(value) { createOpen = false }
+                    writeModel.createFolder(value) { createOpen = false; onChanged() }
                 } else {
-                    menuFor?.let { (id, _) -> writeModel.renameFolder(id, value) { menuFor = null } }
+                    menuFor?.let { (id, _) -> writeModel.renameFolder(id, value) { menuFor = null; onChanged() } }
                 }
             },
         )

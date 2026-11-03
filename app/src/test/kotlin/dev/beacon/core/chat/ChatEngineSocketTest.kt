@@ -107,8 +107,8 @@ class ChatEngineSocketTest {
         // Stream deltas then the terminal, exactly as middleware emits them (§5467/:6372).
         fake.flow.emit(
             dev.beacon.core.network.socket.SocketEnvelope(
-                "live-chat-1", assistantId,
-                buildJsonObject {
+                chatId = "live-chat-1", messageId = assistantId,
+                data = buildJsonObject {
                     put("type", kotlinx.serialization.json.JsonPrimitive("response.output_text.delta"))
                     put("delta", kotlinx.serialization.json.JsonPrimitive("Sock"))
                 },
@@ -117,8 +117,8 @@ class ChatEngineSocketTest {
         delay(60)
         fake.flow.emit(
             dev.beacon.core.network.socket.SocketEnvelope(
-                "live-chat-1", assistantId,
-                buildJsonObject {
+                chatId = "live-chat-1", messageId = assistantId,
+                data = buildJsonObject {
                     put("type", kotlinx.serialization.json.JsonPrimitive("chat:completion"))
                     put("data", buildJsonObject {
                         put("done", kotlinx.serialization.json.JsonPrimitive(true))

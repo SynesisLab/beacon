@@ -48,6 +48,7 @@ import dev.beacon.core.api.ChannelMessageRow
 import dev.beacon.core.api.WorkspaceApis
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -59,6 +60,7 @@ import javax.inject.Inject
 @HiltViewModel
 class SurfaceWriteViewModel @Inject constructor(
     private val apis: WorkspaceApis,
+    private val socket: dev.beacon.core.network.socket.OwuiSocket,
 ) : ViewModel() {
 
     data class UiState(
@@ -163,12 +165,49 @@ class SurfaceWriteViewModel @Inject constructor(
     fun channelMessages(channelId: String) {
         viewModelScope.launch {
             set { copy(busy = true, error = null) }
+            activeChannelId = channelId
             try {
                 val messages = withTimeoutSafe { apis.channelMessages(channelId) }
                 set { copy(busy = false, channelMessages = messages ?: emptyList()) }
             } catch (e: Exception) {
                 set { copy(busy = false, error = e.message) }
             }
+        }
+    }
+
+    /**
+     * LIVE CHANNEL EVENTS (M4): the server emits `events:channel` to the
+     * `channel:{id}` room on every post (channels.py:1440-1455; the user's
+     * socket session joins its channel rooms at user-join, socket/main.py:
+     * 670-675). The open screen folds them by REFETCHING the open channel —
+     * debounced, so bursts collapse into one read; the row key dedupes.
+     */
+    private var activeChannelId: String? = null
+    private var lastChannelRefetch = 0L
+    private var channelEventsJob: Job? = null
+
+    init {
+        channelEventsJob = viewModelScope.launch {
+            socket.events.collect { envelope ->
+                val id = envelope.channelId
+                if (id == null || id != activeChannelId) return@collect
+                val type = (envelope.data["type"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+                if (type != "message" && type != "message:reply") return@collect
+                val now = android.os.SystemClock.elapsedRealtime()
+                if (now - lastChannelRefetch < 300) return@collect
+                lastChannelRefetch = now
+                refetchChannel(id)
+            }
+        }
+    }
+
+    /** A live-event refresh: NO busy spinner, silent failures (the socket
+     *  bursts may be several; the next one retries). */
+    private fun refetchChannel(channelId: String) = viewModelScope.launch {
+        try {
+            val messages = withTimeoutSafe { apis.channelMessages(channelId) }
+            if (messages != null) set { copy(channelMessages = messages) }
+        } catch (_: Exception) {
         }
     }
 

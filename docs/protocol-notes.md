@@ -103,6 +103,15 @@ The M4 "memories" item lands gated by `enable_memories`
 | Recover | `/recover {challenge_token, reset_token}` needs the ADMIN-issued reset token — Beacon keeps a typed message directing to the web UI | mfa.py:186-190; MfaRecoveryForm auths.py:166-168 |
 | Rate limit | POST endpoints have an IP limiter (100/900s) — retries are user-visible, not silent | mfa.py:31, :41-48 |
 
+## Channels live events (2026-11-03, channels.py + socket/main.py)
+
+| Topic | Finding | Proof |
+| --- | --- | --- |
+| Post event | every message POST (and replies) re-emit `events:channel` to room `channel:{channel.id}`: `{channel_id, message_id, data: {type: 'message', data: {temp_id, ...message}}, user, channel}`; replies carry `message:reply` with the PARENT payload to the same room | channels.py:1440-1474 |
+| Room membership | the user's session joins its channels' rooms during user-join — nothing extra for an API client | socket/main.py:670-675, :735-754 |
+| Mute/active | `channel:mute` + member-active events ride the same event name to the acting user / room | channels.py:637-641 |
+| Beacon fold | `SocketEnvelope` now carries `channel_id`; the channel screen quietly refetches (debounced 300ms) on `message`/`message:reply` | feature/surfaces |
+
 Beacon protocol deltas (2026-11-03 device-verified round-trips): note read/write via
 `data.pages[].content.{json,html,md}` (models/notes.py:156-220, :748-772, :357-367,
 NoteForm rejects pages at :474); files list carries meta.content_type (files.py:54).

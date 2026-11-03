@@ -52,8 +52,11 @@ sealed interface SocketHealth {
 
 /** One server event, exactly as the server sent it. Carries the [ack] for
  *  server→client CALLS (request:user_input etc.): the receiver answers via
- *  [reply] / [cancelReply] — the socket.io ack responds once, any thread. */
+ *  [reply] / [cancelReply] — the socket.io ack responds once, any thread.
+ *  Channel payloads additionally carry [channelId] (channels.py:1440-1455:
+ *  `{channel_id, message_id, data:{type,…}, user, channel}`) — no chat_id. */
 data class SocketEnvelope(
+    val channelId: String? = null,
     val chatId: String?,
     val messageId: String?,
     val data: JsonObject,
@@ -272,6 +275,7 @@ class OwuiSocket @Inject constructor() {
         }
 
         val envelope = SocketEnvelope(
+            channelId = (obj["channel_id"] as? JsonPrimitive)?.content,
             chatId = (obj["chat_id"] as? JsonPrimitive)?.content,
             messageId = (obj["message_id"] as? JsonPrimitive)?.content,
             data = data,

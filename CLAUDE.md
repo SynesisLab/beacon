@@ -72,12 +72,14 @@ until its milestone — add the gate/route when the milestone lands.
 | Context-usage display (`context_usage` in GET /{id}) | **MISSING — add in M3** (data verified in the response) |
 | Reconciler + flick-to-refetch | M3 |
 | Prompt-autocomplete task (`task.autocomplete.enable`) | **MISSING — add M4+** |
-| MFA sign-in flows (`mfa.py`; SigninResult MFA branch) | **MISSING — add M4** (M1 surfaces a typed message only) |
+| MFA sign-in flows (`mfa.py`; SigninResult MFA branch) | M4 ✓ (verify + recovery-code + enroll landed; `recover` keeps a typed message — admin reset token only) |
 | Socket.IO transports (taskSocket/chat-events/confirmations) | M4 |
 | Workspace screens (models/knowledge/prompts/tools/TOOL SERVERS/skills) — capability-gated | M4 (+ tool-servers listing) |
-| **Memories** (`memories.py`; `memories.enable`) — user memory view/edit | **MISSING — add M4** |
-| **Notes** (`notes.py`; enable_notes) | M4 ✓ |
-| **Channels** incl. `channels.encryption.enable` E2EE | M4 (E2EE: hide the flag where enabled? decide then) |
+| **Memories** (`memories.py`; `memories.enable`) — user memory view/edit | M4 ✓ (view/add/edit/delete + wipe, gated `enable_memories`) |
+| **Notes** (`notes.py`; enable_notes) | M4 ✓ (+ delete & pin-toggle landed M4; note rows carry ns-timestamp normalization) |
+| Socket.IO transports (taskSocket/chat-events/confirmations) | M4 |
+| Workspace screens (models/knowledge/prompts/tools/TOOL SERVERS/skills) — capability-gated | M4 (+ tool-servers listing) |
+| **Channels** incl. `channels.encryption.enable` E2EE | M4 (read/post; live `events:channel` folds landed M4 — E2EE: hide the flag where enabled? decide then) |
 | **Apps panel** (`apps.py`; `apps.enable`) | **MISSING — add M4+** |
 | **Calendar** (`calendar.py`; `calendar.enable`) | **MISSING — add M4+** |
 | **Automations** (`automations.py`; `automations.enable`) | **MISSING — add M4+** (server-side scheduled agent tasks — distinct from removed Hermes) |

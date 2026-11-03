@@ -323,7 +323,13 @@ fun NoteEditorScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (noteId == null) "New note" else titleDraft.ifBlank { "Note" }) },
+                title = {
+                    Text(
+                        if (noteId == null) "New note" else titleDraft.ifBlank { "Note" },
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -427,7 +433,9 @@ fun ChannelChatScreen(
 @Composable
 private fun SurfaceTopBar(title: String, onBack: () -> Unit) {
     TopAppBar(
-        title = { Text(title) },
+        title = {
+                    Text(title, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                },
         navigationIcon = {
             IconButton(onClick = onBack) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -457,7 +465,9 @@ private fun NameDialog(
     var value by remember { mutableStateOf(initial) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(title) },
+        title = {
+                    Text(title, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                },
         text = {
             OutlinedTextField(
                 value = value,

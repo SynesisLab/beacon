@@ -112,7 +112,9 @@ fun FileViewerScreen(
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text(name.ifBlank { "Terminal file" }) },
+                    title = {
+                        Text(name.ifBlank { "Terminal file" }, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -145,7 +147,9 @@ fun FileViewerScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(name.ifBlank { fileId }) },
+                title = {
+                        Text(name.ifBlank { fileId }, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")

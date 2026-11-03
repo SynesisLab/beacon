@@ -156,7 +156,15 @@ fun ChatScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(state.engine.title ?: "New chat") },
+                // One line, then ellipsis (user request): long titles must not
+                // blow the bar open.
+                title = {
+                    Text(
+                        state.engine.title ?: "New chat",
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    )
+                },
                 navigationIcon = {
                     if (state.engine.chatId == null) {
                         IconButton(onClick = actions.onOpenDrawer) {

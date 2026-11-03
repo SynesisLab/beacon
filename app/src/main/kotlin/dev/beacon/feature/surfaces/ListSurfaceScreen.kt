@@ -44,7 +44,7 @@ fun WorkspaceScreen(
     androidx.compose.material3.Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Workspace") },
+                title = { Text("Workspace", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -161,7 +161,9 @@ fun <T> ListSurfaceScreen(
         floatingActionButton = { fab?.invoke() },
         topBar = {
             TopAppBar(
-                title = { Text(title) },
+                title = {
+                    Text(title, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")

@@ -25,10 +25,12 @@ val LightSurfaceVariant = Color(0xFFECE9E2)
 val Ink = Color(0xFF3D3929)
 val MutedInk = Color(0xFF6B6657)
 
-// Dark scheme
-val Umber = Color(0xFF262624)
-val UmberSurface = Color(0xFF30302E)
-/** Distinctly lighter for bubbles/cards so they never vanish against the bg (user report). */
-val UmberSurfaceVariant = Color(0xFF40403C)
-val WarmWhite = Color(0xFFF5F4EE)
-val WarmMuted = Color(0xFFA8A396)
+// Dark scheme — calibrated to the live dark captures (2026-11-02): Claude's
+// dark is FLATTER and darker than a naive warm-gray ramp: bg ≈ #1B1A18, the
+// composer/sheets ≈ #232220 (barely lifted, hairline outline), pills ≈ #3A3833.
+val Umber = Color(0xFF1B1A18)
+val UmberSurface = Color(0xFF232220)
+/** Distinctly lighter for pills/cards (never vanish against the bg — user report). */
+val UmberSurfaceVariant = Color(0xFF3A3833)
+val WarmWhite = Color(0xFFF2F1EB)
+val WarmMuted = Color(0xFFA9A69B)

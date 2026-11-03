@@ -28,7 +28,7 @@ private val DarkScheme = darkColorScheme(
     onSurface = WarmWhite,
     surfaceVariant = UmberSurfaceVariant,
     onSurfaceVariant = WarmMuted,
-    outline = Color(0xFF57534E),
+    outline = Color(0xFF3B3934), // the hairline lift on the flat dark
 )
 
 private val LightScheme = lightColorScheme(

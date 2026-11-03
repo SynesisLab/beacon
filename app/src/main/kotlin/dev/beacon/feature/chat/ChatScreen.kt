@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -233,6 +234,7 @@ fun ChatScreen(
         Column(
             modifier = Modifier
                 .padding(padding)
+                .consumeWindowInsets(padding) // Scaffold already spent these insets — imePadding below must not double-count (the ghost gap over an open keyboard)
                 .fillMaxSize()
                 .imePadding(),
         ) {
@@ -664,14 +666,15 @@ private fun MessageBubble(
 ) {
     val streaming = message.id == streamingMessageId
     if (message.role == "user") {
-        // Left-aligned warm-gray pill (interface copy, 2026-11-02).
+        // Right-hugging warm pill (user request 2026-11-03: sent turns belong
+        // on the right, Claude parity).
         Box(Modifier.fillMaxWidth()) {
             Surface(
                 color = MaterialTheme.colorScheme.surfaceVariant,
                 shape = UserBubbleShape,
                 modifier = Modifier
                     .widthIn(max = 320.dp)
-                    .align(Alignment.CenterStart),
+                    .align(Alignment.CenterEnd),
             ) {
                 MiniMarkdown(
                     markdown = message.markdown,

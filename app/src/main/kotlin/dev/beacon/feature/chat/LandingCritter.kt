@@ -17,16 +17,15 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import dev.beacon.ui.theme.Coral
 
 /**
  * The landing-page critter (user request 2026-11-03: "a cute avatar inspired
- * by Claude's" pixel mascot). ORIGINAL design — chunky pixel creature in the
- * Beacon palette: a terracotta body with a little left-facing snout, ink
- * square eyes, three stub legs, and a floating heart right above the snout
- * (Beacon = warmth + the heart of the mark, drawn in our own shape; nothing
- * copied from Anthropic's assets, interface-mapping.md rule). The grid is a
- * string map — pixel-perfect, resolution-independent, zero assets.
+ * by Claude's" pixel mascot, "maybe blue"). ORIGINAL design in a soft
+ * beacon-blue: a chunky body with two ink square eyes, three stub legs, and
+ * a floating red heart at the corner (Beacon = warmth + the heart of the
+ * mark, drawn in our own shape; nothing copied from Anthropic's assets,
+ * interface-mapping.md rule). The grid is a string map — pixel-perfect,
+ * resolution-independent, zero assets.
  *
  * Legend: '.' empty · 'B' body · 'E' eye · 'H' heart.
  */
@@ -47,7 +46,7 @@ private val CRITTER_MAP = listOf(
     ".....BB..BB..BB.....",
 )
 
-private val BodyColor = Coral
+private val BodyColor = Color(0xFF5B7FD9) // soft beacon-blue (user request 2026-11-03)
 private val EyeColor = Color(0xFF131313)
 private val HeartColor = Color(0xFFE14B4B)
 

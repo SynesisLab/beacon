@@ -130,6 +130,25 @@ class OwuiApi @Inject constructor(
         })).await().decodeJson<SignInData>(json)
     }
 
+    /** GET /api/v1/configs/models/defaults → {DEFAULT_MODEL_METADATA{
+     *  capabilities, defaultFeatureIds?, builtinTools?}} — USER-readable
+     *  (routers/configs.py:780-784; the admin writes it via setModelsConfig
+     *  :792-…). 404s on older servers → null. */
+    suspend fun globalDefaultFeatureIds(): List<String>? = withContext(Dispatchers.IO) {
+        try {
+            val request = Request.Builder()
+                .url(joinUrl(instance(), "/api/v1/configs/models/defaults"))
+                .get().build()
+            val obj = client.newCall(request).await().decodeJson<JsonObject>(json)
+            val meta = obj["DEFAULT_MODEL_METADATA"] as? kotlinx.serialization.json.JsonObject
+                ?: return@withContext null
+            (meta["defaultFeatureIds"] as? kotlinx.serialization.json.JsonArray)
+                ?.mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     /** The current user (GET /api/v1/auths/ — verified auths.py:178). */
     suspend fun sessionUser(): SessionUser = withContext(Dispatchers.IO) {
         val request = Request.Builder().url(joinUrl(instance(), "/api/v1/auths/")).get().build()

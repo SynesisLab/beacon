@@ -132,6 +132,16 @@ The M4 "memories" item lands gated by `enable_memories`
   no `terminal_server.connections` / group access not granted —
   terminals.py:90-106). The empty-state now names the admin lever.
 
+## Feature defaults (2026-11-03, models-defaults chain)
+
+| Topic | Finding | Proof |
+| --- | --- | --- |
+| Admin panel save | Admin → Settings → Models saves `{DEFAULT_MODELS, DEFAULT_PINNED_MODELS, MODEL_ORDER_LIST, DEFAULT_MODEL_METADATA{capabilities, defaultFeatureIds?, builtinTools?}, DEFAULT_MODEL_PARAMS}` — ADMIN-only route | routers/configs.py:772-794 (set), src/lib ModelDefaultsPanel.svelte:102-122 |
+| USER read route | `GET /api/v1/configs/models/defaults` → `{DEFAULT_MODEL_METADATA}` — `get_verified_user`, NOT admin-gated | routers/configs.py:780-784 |
+| Server-side merge | the global defaults merge into EVERY listed model's `info.meta` where the key is absent (per-model wins); capabilities merge is dict-union with per-model precedence | utils/models.py:369-388 |
+| Chip semantics (web) | the composer chips start ON when the selected models' merged meta lists the feature id | Chat.svelte:1118 |
+| Beacon wiring | per-model `info.meta.defaultFeatureIds` else the global `/configs/models/defaults` fetch; both under the /api/config gates | feature/chat ChatViewModel |
+
 Beacon protocol deltas (2026-11-03 device-verified round-trips): note read/write via
 `data.pages[].content.{json,html,md}` (models/notes.py:156-220, :748-772, :357-367,
 NoteForm rejects pages at :474); files list carries meta.content_type (files.py:54).

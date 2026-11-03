@@ -147,6 +147,11 @@ class ChatViewModel @Inject constructor(
                 serverDefault = config.default_models
                     ?.split(',')?.firstOrNull()?.trim()
                     ?.takeIf { it.isNotEmpty() }
+                // The admin's Model-Defaults (GET /api/v1/configs/models/
+                // defaults, configs.py:780-784) — applies to models that
+                // don't declare their own defaultFeatureIds (same precedence
+                // as the server-side merge, utils/models.py:373-388).
+                globalDefaultFeatureIds = api.globalDefaultFeatureIds().orEmpty()
                 applyModelDefaults(selected.value)
             }
             selected.value = selected.value ?: serverDefault
@@ -326,12 +331,20 @@ class ChatViewModel @Inject constructor(
      */
     private var defaultsAppliedFor: String? = null
 
+    /** The admin's global defaultFeatureIds (configs/models/defaults). */
+    private var globalDefaultFeatureIds: List<String> = emptyList()
+
     private fun applyModelDefaults(modelId: String?) {
         if (modelId == null || defaultsAppliedFor == modelId) return
         val model = modelsState.value.firstOrNull { it.id == modelId } ?: return
         val gate = configFeaturesFlow.value
+        // Per-model declares its OWN → wins; otherwise the admin defaults
+        // apply (the server-side merge writes BOTH shapes into info.meta —
+        // utils/models.py:373-388 — this client check covers either server).
+        val own = model.info?.meta?.defaultFeatureIds
+        val ids = own ?: globalDefaultFeatureIds
         val on = { feature: String ->
-            model.default_feature_ids.contains(feature) &&
+            ids.contains(feature) &&
                 gate?.let { f -> when (feature) {
                     "web_search" -> f.enable_web_search
                     "image_generation" -> f.enable_image_generation
@@ -339,9 +352,15 @@ class ChatViewModel @Inject constructor(
                     else -> false
                 } } == true
         }
+        android.util.Log.d(
+            "BeaconDefaults",
+            "model=$modelId own=$own global=$globalDefaultFeatureIds " +
+                "gate(webSearch=${gate?.enable_web_search},image=${gate?.enable_image_generation})",
+        )
         toggles.value = Toggles(
             webSearch = on("web_search") || toggles.value.webSearch,
             imageGeneration = on("image_generation") || toggles.value.imageGeneration,
+            codeInterpreter = on("code_interpreter") || toggles.value.codeInterpreter,
         )
         defaultsAppliedFor = modelId
     }

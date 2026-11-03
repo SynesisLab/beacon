@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -283,28 +285,15 @@ private fun SurfaceRoute(
     onBack: () -> Unit,
 ) {
     val vm: dev.beacon.feature.surfaces.SurfaceViewModel = hiltViewModel()
+    val writeVm: dev.beacon.feature.surfaces.SurfaceWriteViewModel = hiltViewModel()
     val state = vm.state.collectAsStateWithLifecycle().value
     when (key) {
-        "folders" -> dev.beacon.feature.surfaces.ListSurfaceScreen(
-            title = "Folders",
-            items = state.folders,
-            loading = state.loading,
-            error = state.error,
-            rowKey = { it.name + it.id },
+        "folders" -> dev.beacon.feature.surfaces.FoldersScreen(
+            writeModel = writeVm,
+            loaderState = state,
             onBack = onBack,
-            onItem = { folder -> nav.navigate("folder/${folder.id}/chats") }
-        ) { folder ->
-            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)) {
-                androidx.compose.material3.Text(folder.name, style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
-                if (folder.unread_count > 0) {
-                    androidx.compose.material3.Text(
-                        "${folder.unread_count} new",
-                        style = androidx.compose.material3.MaterialTheme.typography.labelLarge,
-                        color = androidx.compose.material3.MaterialTheme.colorScheme.primary,
-                    )
-                }
-            }
-        }
+            onOpenFolderChats = { id -> nav.navigate("folder/$id/chats") },
+        )
         "notes" -> dev.beacon.feature.surfaces.ListSurfaceScreen(
             title = "Notes",
             items = state.notes,
@@ -312,7 +301,14 @@ private fun SurfaceRoute(
             error = state.error,
             rowKey = { it.id },
             onBack = onBack,
-            onItem = { note -> nav.navigate("note/${note.id}") }
+            onItem = { note -> nav.navigate("note/${note.id}") },
+            fab = {
+                androidx.compose.material3.FloatingActionButton(
+                    onClick = { nav.navigate("note/new") },
+                ) {
+                    androidx.compose.material3.Icon(Icons.Filled.Add, contentDescription = "New note")
+                }
+            },
         ) { note ->
             androidx.compose.foundation.layout.Column(
                 Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),

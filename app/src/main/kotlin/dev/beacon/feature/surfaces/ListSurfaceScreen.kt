@@ -42,10 +42,13 @@ fun <T> ListSurfaceScreen(
     rowKey: (T) -> String,
     onBack: () -> Unit,
     onItem: (T) -> Unit,
+    /** Optional create-action FAB (M4-d2: notes/folders). */
+    fab: (@Composable () -> Unit)? = null,
     header: (@Composable () -> Unit)? = null,
     row: @Composable (T) -> Unit,
 ) {
     Scaffold(
+        floatingActionButton = { fab?.invoke() },
         topBar = {
             TopAppBar(
                 title = { Text(title) },

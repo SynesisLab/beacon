@@ -253,6 +253,14 @@ class ChatViewModel @Inject constructor(
 
     fun cancelInput() = engine.cancelInput()
 
+    /** M4 approval: the pending non-ask_user tool call (rendered by ToolApprovalDialog). */
+    val toolApproval: kotlinx.coroutines.flow.StateFlow<ChatEngine.ToolApprovalRequest?> =
+        engine.toolApproval
+
+    fun approveToolCall() = engine.approveToolCall()
+
+    fun rejectToolCall() = engine.rejectToolCall()
+
     /**
      * +New chat while ALREADY on the chat/new surface (launchSingleTop makes
      * the navigate a no-op): reset the engine + composer so the surface is a

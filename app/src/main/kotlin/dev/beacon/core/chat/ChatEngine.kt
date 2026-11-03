@@ -117,6 +117,24 @@ class ChatEngine(
         val callId: String? = null,
     )
 
+    /**
+     * A non-ask_user tool call the server holds PENDING for user approval
+     * (tool_approval.py:23-31; pause_for_tool_approval middleware.py:3347 —
+     * only when the chat params run tool_approval_mode 'ask', middleware
+     * :3136/:5740). Approve = {action:'approve'} → the tools run (resume
+     * 'tools', tool_approval.py:119-125,166-167); Reject = {action:'reject'}
+     * → a "rejected by user" function_call_output rides in and the MODEL
+     * resumes (:126-136). The resolve response is the resumed completion —
+     * the caller drains it like a normal send (same path as answerInput).
+     */
+    data class ToolApprovalRequest(
+        val chatId: String,
+        val messageId: String,
+        val callId: String,
+        val name: String,
+        val arguments: String,
+    )
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _state = MutableStateFlow(ChatUiModel())
     val state: StateFlow<ChatUiModel> = _state.asStateFlow()
@@ -277,6 +295,10 @@ class ChatEngine(
 
     private fun launchStream(block: suspend () -> SendPlan) {
         if (_state.value.busy) return
+        // A new send abandons any open interactive leg (the server times the
+        // held calls out on its own).
+        _inputPrompt.value = null
+        _toolApproval.value = null
         streamJob = scope.launch {
             // The foreground lease holds the stream alive while backgrounded (§6.3).
             appContext?.let { StreamingLeaseService.start(it) }
@@ -592,6 +614,10 @@ class ChatEngine(
     private val _inputPrompt = MutableStateFlow<InputRequest?>(null)
     val inputPrompt: StateFlow<InputRequest?> = _inputPrompt.asStateFlow()
 
+    /** Open tool-call approval (tool_approval.py), rendered by ToolApprovalDialog. */
+    private val _toolApproval = MutableStateFlow<ToolApprovalRequest?>(null)
+    val toolApproval: StateFlow<ToolApprovalRequest?> = _toolApproval.asStateFlow()
+
     /** builtin.py:620-640 — the normalized question shape arriving on the wire. */
     private fun parseInputRequest(envelope: dev.beacon.core.network.socket.SocketEnvelope): InputRequest {
         val questions = (envelope.data["questions"] as? JsonArray).orEmpty().mapNotNull { raw ->
@@ -630,17 +656,45 @@ class ChatEngine(
      */
     private fun maybeSurfacePendingInput(output: List<JsonElement>) {
         val messageId = _state.value.streamingMessageId ?: return
+        val chatId = _state.value.chatId
+        var approval: ToolApprovalRequest? = null
+        val openCallIds = mutableSetOf<String>()
         for (item in output) {
             val call = item as? JsonObject ?: continue
-            val status = (call["status"] as? JsonPrimitive)?.content
             if ((call["type"] as? JsonPrimitive)?.content != "function_call") continue
-            if (status !in listOf("pending", "queued", "requires_approval")) {
-                // Already resolved (output carries the function_call_output elsewhere).
-                continue
-            }
-            if ((call["name"] as? JsonPrimitive)?.content != "ask_user") continue
             val callId = ((call["call_id"] as? JsonPrimitive)?.content
                 ?: (call["id"] as? JsonPrimitive)?.content) ?: continue
+            val status = (call["status"] as? JsonPrimitive)?.content
+            // pending_tool_calls (tool_approval.py:23-31, :110): open = no
+            // function_call_output for its call_id, not approved:true, and
+            // a non-terminal status.
+            val hasOutput = output.any { other ->
+                val o = other as? JsonObject
+                (o?.get("type") as? JsonPrimitive)?.content == "function_call_output" &&
+                    (o["call_id"] as? JsonPrimitive)?.content == callId
+            }
+            val open = status in listOf("pending", "queued", "requires_approval") &&
+                !hasOutput &&
+                (call["approved"] as? JsonPrimitive)?.jsonBool() != true
+            if (!open) continue
+            openCallIds.add(callId)
+            if ((call["name"] as? JsonPrimitive)?.content != "ask_user") {
+                // A held regular tool = the approve/reject leg (first wins).
+                if (approval == null && chatId != null) {
+                    approval = ToolApprovalRequest(
+                        chatId = chatId,
+                        messageId = messageId,
+                        callId = callId,
+                        name = (call["name"] as? JsonPrimitive)?.content.orEmpty(),
+                        arguments = (call["arguments"] as? JsonPrimitive)?.content ?: "",
+                    )
+                }
+                continue
+            }
+            // The pending interaction needs the RESOLVE leg: the chat id must
+            // be real (the resolve route reads the stored message; a temp
+            // chat's ask_user can't be answered — tool_approval.py:74).
+            if (chatId == null) continue
             val args = (call["arguments"] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() } ?: continue
             val parsed = runCatching { json.parseToJsonElement(args) }.getOrNull()
             val questions = (parsed as? JsonObject)?.get("questions") as? JsonArray
@@ -663,11 +717,6 @@ class ChatEngine(
                 )
             }
             if (questionsParsed.isEmpty()) continue
-            // The pending interaction needs the RESOLVE leg: the chat id must
-            // be real (the resolve route reads the stored message; a temp
-            // chat's ask_user can't be answered — tool_approval.py:74).
-            val chatId = _state.value.chatId
-            if (chatId == null) continue
             _inputPrompt.value = InputRequest(
                 questions = questionsParsed,
                 allowOther = ((parsed as JsonObject)["allow_other"] as? JsonPrimitive)?.jsonBool() ?: true,
@@ -679,6 +728,13 @@ class ChatEngine(
             )
             return
         }
+        // Resolution cleanup: a snapshot that no longer carries the OPEN
+        // surfaced call (approved:true / rejected / its output arrived) drops
+        // the card — the resolve drain's own OutputSnapshot re-clears it.
+        _toolApproval.value?.let { prev ->
+            if (prev.callId !in openCallIds) _toolApproval.value = null
+        }
+        if (approval != null) _toolApproval.value = approval
     }
 
     /** Intent: answer the open ask_user — via the resolve route (HTTP), or the
@@ -686,23 +742,41 @@ class ChatEngine(
     fun answerInput(answers: Map<String, String>) {
         val prompt = _inputPrompt.value ?: return
         _inputPrompt.value = null
-        val liveAck = prompt.envelope?.reply(
+        // The live ack (when the server made the interactive call) and the
+        // HTTP resolve are the same resolution from the server's view; the
+        // HTTP one wins whenever the chat is saved (the resume = a normal
+        // completion drain, §6.1).
+        prompt.envelope?.reply(
             buildJsonObject {
                 put("answers", buildJsonObject {
                     answers.forEach { (id, label) -> put(id, kotlinx.serialization.json.JsonPrimitive(label)) }
                 })
             },
-        ) == true
+        )
         val chatId = prompt.chatId ?: _state.value.chatId ?: return
         val messageId = prompt.messageId ?: _state.value.streamingMessageId ?: return
+        resolveAndDrain(chatId, messageId, prompt.callId.orEmpty(), "answer", answers)
+    }
+
+    /**
+     * Shared tail of ALL resolve legs (answer/approve/reject): the server
+     * appends the function_call_output (the action table: approve tools
+     * tool_approval.py:119-125, reject :126-136, answer :137-160) and RE-RUNS
+     * the completion — this POST returns whatever chat_completion returns (an
+     * SSE stream or the {task_ids} JSON), so drain it like a normal send.
+     */
+    private fun resolveAndDrain(
+        chatId: String,
+        messageId: String,
+        callId: String,
+        action: String,
+        answers: Map<String, String>?,
+    ) {
         scope.launch {
-            // The live ack and the HTTP resolve are the same resolution from
-            // the server's view; send the HTTP one whenever the chat is
-            // saved (the resume = a normal completion drain, §6.1).
             taskTerminated = false
             activeAssistantId = messageId
             val resolveCall = try {
-                api.resolveToolCall(chatId, messageId, prompt.callId.orEmpty(), "answer", answers)
+                api.resolveToolCall(chatId, messageId, callId, action, answers)
             } catch (e: Exception) {
                 patch { copy(error = describe(e)) }
                 return@launch
@@ -718,6 +792,21 @@ class ChatEngine(
                 patch { copy(error = describe(e)) }
             }
         }
+    }
+
+    /** Intent: approve the open tool call → the tools run (resume 'tools'). */
+    fun approveToolCall() {
+        val request = _toolApproval.value ?: return
+        _toolApproval.value = null
+        resolveAndDrain(request.chatId, request.messageId, request.callId, "approve", null)
+    }
+
+    /** Intent: reject the open tool call → a rejected function_call_output
+     *  rides in and the MODEL resumes (tool_approval.py:126-136,168-170). */
+    fun rejectToolCall() {
+        val request = _toolApproval.value ?: return
+        _toolApproval.value = null
+        resolveAndDrain(request.chatId, request.messageId, request.callId, "reject", null)
     }
 
     /** Intent: cancel the open ask_user ({status:'cancelled'} = a timed-out resolve). */

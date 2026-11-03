@@ -448,6 +448,17 @@ private fun BeaconChatSurface(
         )
     }
 
+    // M4: a held NON-ask_user tool call — approve runs it, reject answers the
+    // model with the rejection (both via the resolve route; tool_approval.py).
+    val toolApproval by vm.toolApproval.collectAsStateWithLifecycle()
+    toolApproval?.let { request ->
+        dev.beacon.feature.chat.ToolApprovalDialog(
+            request = request,
+            onApprove = vm::approveToolCall,
+            onReject = vm::rejectToolCall,
+        )
+    }
+
     val surfacesVm: dev.beacon.feature.surfaces.SurfaceViewModel = hiltViewModel()
     // Fold-aware note (agent.md queue): on expanded widths the chats panel will
     // be a PERMANENT two-pane surface instead of the modal drawer — deferred here

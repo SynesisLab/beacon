@@ -69,6 +69,15 @@ Reference clones verified against: `open-webui` (BSD-3-style) + `conduit` (GPL, 
 | ask_user | builtin tool (builtin.py:543-660) emits `request:user_input` via event_call; **the interactive call was NOT delivered to a correctly-authed first-party client (probe + Beacon) — the server resolved the tool internally**; Beacon auto-answers `{status:'cancelled', answers:{}}` so the turn completes | probe 2026-11-03 log; socket/main.py:1790-1810 |
 | /api/chat/completed | reads `data['session_id']` unconditionally (utils/chat.py:353) and the outlet filters run INLINE on 0.12 (middleware.py:6377); Beacon sends session_id + skips the completed call for servers ≥0.10 | trace 400 "'session_id'" |
 
+## Tool approval (2026-11-03, tool_approval.py)
+
+| Topic | Finding | Proof |
+| --- | --- | --- |
+| Resolve form | `{call_id, action: 'approve'\|'reject'\|'answer', answers?, timed_out?}`; **approve is for NON-ask_user only** (ask_user → 400), reject sets status `rejected` + appends output "Error: tool call rejected by user.", answer is ask_user-only | utils/tool_approval.py:16-20, :119-160 |
+| Resume | approve → resume `'tools'` (tools run next); reject (nothing pending) → tool_continuation + resume `'model'`; the resolve POST returns the RE-RUN completion response (SSE or `{task_ids}`) and a `chat:completion{output}` event rides sockets | tool_approval.py:162-185; main.py:1947-1952 |
+| Pending shape | pending = function_call items with no function_call_output, not `approved:true`, status in `{pending,queued,requires_approval}` (in_progress = running) | tool_approval.py:23-31, :105-117 |
+| Approval gate | the server asks for approval only when chat params `tool_approval_mode == 'ask'` (default `full` = run everything) | middleware.py:3136, :3341-3344, :5737-5744 |
+
 Beacon protocol deltas (2026-11-03 device-verified round-trips): note read/write via
 `data.pages[].content.{json,html,md}` (models/notes.py:156-220, :748-772, :357-367,
 NoteForm rejects pages at :474); files list carries meta.content_type (files.py:54).

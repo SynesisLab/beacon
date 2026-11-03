@@ -182,6 +182,24 @@ class WorkspaceApis @Inject constructor(
         }
     }
 
+    /** DELETE /api/v1/notes/{id}/delete → bool (notes.py:718; write access :731). */
+    suspend fun deleteNote(noteId: String): Boolean = withContext(Dispatchers.IO) {
+        client.newCall(
+            Request.Builder().url(joinUrl(requireInstance(), "/api/v1/notes/$noteId/delete"))
+                .delete().build(),
+        ).await().use { it.isSuccessful }
+    }
+
+    /** POST /api/v1/notes/{id}/pin — a TOGGLE; returns the full note with is_pinned
+     *  recomputed for this user (notes.py:675, toggle_note_pinned_by_id :700). */
+    suspend fun pinNote(noteId: String): Boolean = withContext(Dispatchers.IO) {
+        client.newCall(
+            Request.Builder().url(joinUrl(requireInstance(), "/api/v1/notes/$noteId/pin"))
+                .post(ByteArray(0).toRequestBody(null))
+                .build(),
+        ).await().use { it.isSuccessful }
+    }
+
     /** GET /api/v1/channels/{id}/messages (channels.py:988). */
     suspend fun channelMessages(channelId: String): List<ChannelMessageRow> = withContext(Dispatchers.IO) {
         client.newCall(get("/api/v1/channels/$channelId/messages")).await()

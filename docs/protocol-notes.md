@@ -72,3 +72,13 @@ Reference clones verified against: `open-webui` (BSD-3-style) + `conduit` (GPL, 
 Beacon protocol deltas (2026-11-03 device-verified round-trips): note read/write via
 `data.pages[].content.{json,html,md}` (models/notes.py:156-220, :748-772, :357-367,
 NoteForm rejects pages at :474); files list carries meta.content_type (files.py:54).
+
+## Notes mutations (2026-11-03, notes.py)
+
+| Call | Behavior | Proof |
+| --- | --- | --- |
+| `DELETE /api/v1/notes/{id}/delete` | → bool; requires write access (owner/admin/grant), 404 if unknown | routers/notes.py:718-741 |
+| `POST /api/v1/notes/{id}/pin` | a **toggle** (`toggle_note_pinned_by_id`, models:700); needs only READ access (:688); response recomputes `is_pinned` for this user (:701-702) | routers/notes.py:675-710 |
+| `GET /api/v1/notes/pinned` | list pinned rows (unused for now; list already carries `is_pinned` per user via pinned ids :135-141) | routers/notes.py:156-182 |
+| timestamps in list/get/update | `created_at`/`updated_at` are epoch **nanoseconds** — `int(time.time_ns())` on insert (models/notes.py:553-554); stale "timestamp in epoch" comment at :445-446. Beacon normalizes ns→ms by magnitude (feature/surfaces `noteUpdatedAtMs`). | models/notes.py:553-554 |
+| `GET /api/v1/notes/{id}` | also returns `is_pinned` + `write_access` (admin/owner/grant, :309-320) | routers/notes.py:278-326 |

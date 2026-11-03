@@ -19,6 +19,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -128,6 +130,14 @@ class SurfaceWriteViewModel @Inject constructor(
             val id = runCatching { apis.createNote(title, content) }.getOrNull()
             onDone(id)
         }
+    }
+
+    fun deleteNote(noteId: String, onDone: () -> Unit) {
+        async { apis.deleteNote(noteId) }.invokeOnCompletion { onDone() }
+    }
+
+    fun pinNote(noteId: String, onDone: () -> Unit) {
+        async { apis.pinNote(noteId) }.invokeOnCompletion { onDone() }
     }
 
     // ── channels ─────────────────────────────────────────────────────────────
@@ -292,6 +302,114 @@ fun FolderChatsScreen(
             }
         }
     }
+}
+
+/** The M6 Notes surface: dedicated rows (title · date · Pinned tag) with a
+ *  per-row pin/delete menu; the generic M4-d1 list only showed a title. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun NotesScreen(
+    writeModel: SurfaceWriteViewModel,
+    loaderState: LoaderState,
+    onBack: () -> Unit,
+    onOpenNote: (String) -> Unit,
+    onNewNote: () -> Unit,
+    /** Re-fetch the listing after a mutation (M4 fix: the list went stale). */
+    onChanged: () -> Unit = {},
+) {
+    Scaffold(
+        topBar = { SurfaceTopBar("Notes", onBack) },
+        floatingActionButton = {
+            FloatingActionButton(onClick = onNewNote) {
+                Icon(Icons.Filled.Add, contentDescription = "New note")
+            }
+        },
+    ) { padding ->
+        Column(Modifier.padding(padding).fillMaxSize().fillMaxWidth()) {
+            if (loaderState.notes.isEmpty() && !loaderState.loading) {
+                HintRow("No notes yet — create one with +.")
+            }
+            LazyColumn {
+                items(loaderState.notes, key = { it.id }) { note ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onOpenNote(note.id) }
+                            .padding(horizontal = 20.dp, vertical = 14.dp),
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                note.title,
+                                style = MaterialTheme.typography.titleMedium,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            )
+                            updatedAtLabel(note.updated_at)?.let {
+                                Text(
+                                    it,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        if (note.is_pinned == true) {
+                            Text(
+                                "Pinned",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                        NoteRowMenu(
+                            pinned = note.is_pinned == true,
+                            onPin = { writeModel.pinNote(note.id) { onChanged() } },
+                            onDelete = { writeModel.deleteNote(note.id) { onChanged() } },
+                        )
+                    }
+                    HorizontalDivider()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NoteRowMenu(pinned: Boolean, onPin: () -> Unit, onDelete: () -> Unit) {
+    androidx.compose.foundation.layout.Box {
+        var open by remember { mutableStateOf(false) }
+        IconButton(onClick = { open = true }) { Text("⋯") }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(
+                text = { Text(if (pinned) "Unpin" else "Pin") },
+                onClick = { open = false; onPin() },
+            )
+            DropdownMenuItem(
+                text = { Text("Delete") },
+                onClick = { open = false; onDelete() },
+            )
+        }
+    }
+}
+
+/**
+ * notes.py:553-554 stores created_at/updated_at as epoch NANoseconds
+ * (`int(time.time_ns())`; the model comment "timestamp in epoch" at :445 is
+ * stale). Older builds may hold seconds — normalize by magnitude to millis
+ * (agent.md §17 timestamp gotcha).
+ */
+internal fun noteUpdatedAtMs(updated_at: Long?): Long? {
+    val t = updated_at ?: return null
+    return when {
+        t >= 100_000_000_000_000_000L -> t / 1_000_000 // ns → ms
+        t >= 100_000_000_000L -> t                     // already ms
+        else -> t * 1_000                              // seconds → ms (legacy)
+    }
+}
+
+private fun updatedAtLabel(updated_at: Long?): String? {
+    val ms = noteUpdatedAtMs(updated_at) ?: return null
+    return java.time.format.DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.MEDIUM)
+        .format(java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault()))
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

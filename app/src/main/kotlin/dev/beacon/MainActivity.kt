@@ -329,32 +329,16 @@ private fun SurfaceRoute(
                 val folder = state.folders.firstOrNull { it.id == id }
                 nav.navigate("folder/$id/${android.net.Uri.encode(folder?.name ?: "")}/chats")
             },
+            onChanged = { vm.refresh() },
         )
-        "notes" -> dev.beacon.feature.surfaces.ListSurfaceScreen(
-            title = "Notes",
-            items = state.notes,
-            loading = state.loading,
-            error = state.error,
-            rowKey = { it.id },
+        "notes" -> dev.beacon.feature.surfaces.NotesScreen(
+            writeModel = writeVm,
+            loaderState = state,
             onBack = onBack,
-            onItem = { note -> nav.navigate("note/${note.id}") },
-            fab = {
-                androidx.compose.material3.FloatingActionButton(
-                    onClick = { nav.navigate("note/new") },
-                ) {
-                    androidx.compose.material3.Icon(Icons.Filled.Add, contentDescription = "New note")
-                }
-            },
-        ) { note ->
-            androidx.compose.foundation.layout.Column(
-                Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
-            ) {
-                androidx.compose.material3.Text(note.title, style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
-                if (note.is_pinned == true) {
-                    androidx.compose.material3.Text("Pinned", style = androidx.compose.material3.MaterialTheme.typography.labelLarge, color = androidx.compose.material3.MaterialTheme.colorScheme.primary)
-                }
-            }
-        }
+            onOpenNote = { note -> nav.navigate("note/$note") },
+            onNewNote = { nav.navigate("note/new") },
+            onChanged = { vm.refresh() },
+        )
         "channels" -> dev.beacon.feature.surfaces.ListSurfaceScreen(
             title = "Channels",
             items = state.channels,

@@ -99,8 +99,8 @@ fun ChatsDrawer(
             }
         }
         DrawerRow("+ New chat", onClick = { onNewChat(); onClose() })
-        GatedRow("Folders", gates.foldersGate, onClick = { onOpenSurface("folders"); onClose() })
-        GatedRow("Notes", gates.notesGate, onClick = { onOpenSurface("notes"); onClose() })
+        // Folders/Notes live in the tab bar (de-dup, user request 2026-11-03);
+        // the gated surface rows stay for what has no tab.
         GatedRow("Memories", gates.memoriesGate, onClick = { onOpenSurface("memories"); onClose() })
         GatedRow("Channels", gates.channelsGate, onClick = { onOpenSurface("channels"); onClose() })
         // The fixed trio (user request 2026-11-03): Workspace/terminal/settings.

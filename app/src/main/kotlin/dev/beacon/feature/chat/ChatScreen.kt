@@ -292,7 +292,7 @@ fun ChatScreen(
                                 .padding(vertical = 40.dp),
                         ) {
                             if (state.tempMode) {
-                                ThinkingBurst(size = 64)
+                                LandingCritter(size = 96.dp)
                                 Text(
                                     text = "Temporary chat",
                                     style = MaterialTheme.typography.headlineLarge,
@@ -305,7 +305,7 @@ fun ChatScreen(
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                                 )
                             } else {
-                                ThinkingBurst(size = 64)
+                                LandingCritter(size = 96.dp)
                                 Text(
                                     text = "Hello, I'm ${state.modelLabel ?: "your model"}.",
                                     style = MaterialTheme.typography.headlineLarge,

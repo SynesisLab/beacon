@@ -60,7 +60,7 @@ until its milestone — add the gate/route when the milestone lands.
 | Chats/crud/pins/archive/folders/search | M1 done / folders M4 |
 | Chat completions + SSE/tool-call/output parts | M1–M2 (M2-1 landed) |
 | display_file instance files → viewers | M2-3 (landed) |
-| **Terminal (`Open Terminal`) file inline view** (`terminals.py`; proxy `/api/v1/terminals/{id}/files/read`) | **Promoted into M2 (user request 2026-11-02; was a §1 stretch goal)** |
+| Terminal (`Open Terminal`) file inline view (`terminals.py`; proxy `/api/v1/terminals/{id}/files/read`) | **Landed M2-t** (files/* shapes verified vs `src/lib/apis/terminal/index.ts`; Files TAB opens the terminal surface 2026-11-03; gotcha: `/api/v1/terminals//` (double slash) falls into the SPA history-fallback = 200 HTML — always single-slash; entries have NO path field — compose cwd+name; upload = `?directory=` query, not a header) |
 | Terminal interactive sessions / commands | post-M5 (not planned — revisit) |
 | HtmlCard WebView pane + policy + bundles (mermaid/KaTeX/chart) | M2-2 (next) |
 | Composer feature toggles (web search / image gen / code interpreter) (`features.*` in the request) | **MISSING — add in M3** (request field exists; no UI) |

@@ -30,8 +30,9 @@ import androidx.compose.ui.unit.sp
  * Claude's bottom tab bar, copied from the live app (measured 2026-11-03):
  * a white float-pill with four tabs; the ACTIVE one = a gray chip that wraps
  * the icon + label, the icon tints Coral; inactive = black-on-white. Beacon
- * maps the tabs to: Chat / Folders / Notes / Files (workspace stays in the
- * drawer, user decision 2026-11-03).
+ * maps the tabs to: Chat / Folders / Notes / Files — Files OPENS THE TERMINAL
+ * FILES SURFACE (user request 2026-11-03); the OWUI user-files list keeps its
+ * viewer routes only. Workspace stays in the drawer.
  */
 data class TabDef(
     val key: String,

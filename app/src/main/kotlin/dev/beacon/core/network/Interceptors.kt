@@ -48,9 +48,16 @@ class AuthInterceptor @Inject constructor(
     override fun intercept(chain: Interceptor.Chain): Response {
         val instanceUrl = session.instanceUrlSnapshot()
         val bearer = instanceUrl?.let { session.credentialFor(it) }
-        return chain.proceed(
+        val response = chain.proceed(
             chain.request().attachInstanceAuth(instanceUrl, bearer, session.settingsSnapshot().customHeaders),
         )
+        // A 401 on a call that CARRIED credentials = dead token/key (M4
+        // session-expiry surfacing). Permission denials ride 403, sign-in
+        // sends no bearer — so this stays a fair proxy for expiry.
+        if (response.code == 401 && bearer != null) {
+            session.markAuthExpired()
+        }
+        return response
     }
 }
 

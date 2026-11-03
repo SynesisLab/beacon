@@ -476,6 +476,12 @@ private fun BeaconChatSurface(
     // pending a careful extraction of the surface body; the window-size class
     // plumbing (permanentSidebar) is ready.
 
+    // M4: the interceptor raises session.authExpired on any credentialed 401 —
+    // surface a re-auth banner instead of silently-empty screens (2026-11-03:
+    // the expired token 401'd EVERYTHING behind /api/config).
+    val authExpired by vm.authExpired.collectAsStateWithLifecycle()
+
+    androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
     androidx.compose.material3.ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
@@ -550,7 +556,11 @@ private fun BeaconChatSurface(
                     }
                     nav.navigate(base + suffix)
                 },
-                onOpenSurfaceTab = { key -> nav.navigate("surface/$key") },
+                // The Files TAB is the terminal files surface now (user request
+                // 2026-11-03); the OWUI user-files list keeps its viewer route.
+                onOpenSurfaceTab = { key ->
+                    if (key == "files") nav.navigate("terminal") else nav.navigate("surface/$key")
+                },
                 onAnswerInput = vm::answerInput,
                 onCancelInput = vm::cancelInput,
             ),
@@ -562,5 +572,45 @@ private fun BeaconChatSurface(
             },
             onSetDefault = { id -> vm.chooseModel(id) },
         )
+        if (authExpired) {
+            SessionExpiredBanner(
+                onSignInAgain = {
+                    vm.signOutNow()
+                    nav.navigate(ROUTE_ONBOARDING) { popUpTo(0) }
+                },
+                modifier = Modifier.align(androidx.compose.ui.Alignment.TopCenter),
+            )
+        }
+        }
+    }
+}
+
+/** M4: dead-credential banner — intercepts the empty-looking surfaces. */
+@Composable
+private fun SessionExpiredBanner(onSignInAgain: () -> Unit, modifier: Modifier = Modifier) {
+    androidx.compose.material3.Surface(
+        color = dev.beacon.ui.theme.CoralDeep,
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        androidx.compose.foundation.layout.Row(
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+        ) {
+            androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
+                androidx.compose.material3.Text(
+                    "Session expired",
+                    color = androidx.compose.ui.graphics.Color.White,
+                    style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+                )
+                androidx.compose.material3.Text(
+                    "Your login expired — sign in again to reconnect.",
+                    color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.85f),
+                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                )
+            }
+            androidx.compose.material3.TextButton(onClick = onSignInAgain) {
+                androidx.compose.material3.Text("Sign in", color = androidx.compose.ui.graphics.Color.White)
+            }
+        }
     }
 }

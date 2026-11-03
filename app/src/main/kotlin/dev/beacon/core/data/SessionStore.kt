@@ -5,8 +5,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import java.net.URI
@@ -57,6 +59,19 @@ class SessionStore @Inject constructor(
 
     override val settings: Flow<ServerSettings> = dataStore.data
 
+    /**
+     * M4: a same-origin AUTHENTICATED call came back 401 — the stored JWT/API
+     * key is dead (2026-11-03 device log: every authed GET 401'd while
+     * /api/config 200'd, and the UI silently went empty). The interceptor
+     * raises this; the chat surface shows the re-auth banner. New credentials
+     * or a sign-out clear it.
+     */
+    private val _authExpired = MutableStateFlow(false)
+    val authExpired: StateFlow<Boolean> = _authExpired.asStateFlow()
+
+    fun markAuthExpired() { _authExpired.value = true }
+    fun clearAuthExpired() { _authExpired.value = false }
+
     /** Hot snapshot so sync call sites (interceptors) never block on DataStore IO. */
     private val snapshot: StateFlow<ServerSettings> =
         dataStore.data.stateIn(scope, SharingStarted.Eagerly, ServerSettings())
@@ -89,11 +104,13 @@ class SessionStore @Inject constructor(
             AuthMethod.None -> return
         }
         secure.store(alias, secret)
+        clearAuthExpired()
         update { it.copy(authMethod = method) }
     }
 
     suspend fun signOut() {
         secure.deleteAll()
+        clearAuthExpired()
         update { ServerSettings() }
     }
 }

@@ -261,6 +261,13 @@ class ChatViewModel @Inject constructor(
 
     fun rejectToolCall() = engine.rejectToolCall()
 
+    /** M4: the interceptor's dead-credential flag → the re-auth banner. */
+    val authExpired: kotlinx.coroutines.flow.StateFlow<Boolean> = session.authExpired
+
+    fun signOutNow() {
+        viewModelScope.launch { session.signOut() }
+    }
+
     /**
      * +New chat while ALREADY on the chat/new surface (launchSingleTop makes
      * the navigate a no-op): reset the engine + composer so the surface is a

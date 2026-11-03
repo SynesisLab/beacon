@@ -112,6 +112,26 @@ The M4 "memories" item lands gated by `enable_memories`
 | Mute/active | `channel:mute` + member-active events ride the same event name to the acting user / room | channels.py:637-641 |
 | Beacon fold | `SocketEnvelope` now carries `channel_id`; the channel screen quietly refetches (debounced 300ms) on `message`/`message:reply` | feature/surfaces |
 
+## Terminal proxy correction (2026-11-03 device log + web client)
+
+- The backend router is ONLY a list + catch-all proxy (terminals.py:4-5,
+  :87-106, :112+). Every `files/*` verb lives on the UPSTREAM terminal server;
+  shapes verified against the web client `src/lib/apis/terminal/index.ts`:
+  `FileEntry {name, type:'file'|'directory', size?, modified?, writable?}`
+  (:34-40 — **no path field**; clients compose cwd+name), list =
+  `GET files/list?directory=` → `{entries, writable}` (:248-260), cwd GET
+  (:227) / POST {path} (:619-639), read (:380 → `{content}`), view raw
+  (:365/:432; preview=true only for pdf :452), upload = `POST
+  files/upload?directory=` + multipart field `file` (:504-506 — the query, NOT
+  a header; Beacon's X-Directory was wrong), mkdir POST {path} (:567-587),
+  delete DELETE `?path=` (:595-611), move POST `{source, destination}`
+  (:648-668), archive POST `{paths}` (:475-489). search/glob are extra
+  features Beacon skips for now.
+- Device evidence: `GET /api/v1/terminals// ← 200` with NO further calls = the
+  connections list came back EMPTY for that account (ENABLE_TOOL_SERVERS off /
+  no `terminal_server.connections` / group access not granted —
+  terminals.py:90-106). The empty-state now names the admin lever.
+
 Beacon protocol deltas (2026-11-03 device-verified round-trips): note read/write via
 `data.pages[].content.{json,html,md}` (models/notes.py:156-220, :748-772, :357-367,
 NoteForm rejects pages at :474); files list carries meta.content_type (files.py:54).

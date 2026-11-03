@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -139,30 +140,47 @@ class ChatViewModel @Inject constructor(
                 draft.value = seed
             }
             engine.load(savedStateHandle.get<String>(KEY_CHAT)?.takeUnless { it == NEW_CHAT })
-            runCatching {
-                modelsState.value = api.models().items
-                val config = api.config()
-                configFeaturesFlow.value = config.features
-                // OWUI admin-assigned default: "model-a,model-b" list → first id
-                serverDefault = config.default_models
-                    ?.split(',')?.firstOrNull()?.trim()
-                    ?.takeIf { it.isNotEmpty() }
-                // The admin's Model-Defaults (GET /api/v1/configs/models/
-                // defaults, configs.py:780-784) — applies to models that
-                // don't declare their own defaultFeatureIds (same precedence
-                // as the server-side merge, utils/models.py:373-388).
-                globalDefaultFeatureIds = api.globalDefaultFeatureIds().orEmpty()
-                // The caller's ui.* tool modes (users.py:466-483): the
-                // 'always' settings drive the quick-pill defaults.
-                userSettingsSnapshot = api.userSettings()
-                applyModelDefaults(selected.value)
-            }
+
+            fetchDefaults()
+            applyModelDefaults(selected.value)
             selected.value = selected.value ?: serverDefault
             applyModelDefaults(selected.value)
+            // One retry pass when the first round landed empty (boot-race
+            // networks); the app-resume re-entry covers later failures.
+            if (modelsState.value.isEmpty() || configFeaturesFlow.value == null) {
+                kotlinx.coroutines.delay(12_000)
+                fetchDefaults()
+                applyModelDefaults(selected.value)
+            }
         }
         // (the voice partials collector starts per-dictation in startDictation —
         // a construction-time collect here would see the not-yet-initialized
         // `voice` property: the crash on 2026-11-02's device log.)
+    }
+
+    /**
+     * The defaults chain, fetched INDEPENDENTLY and softly: any single failed
+     * call no longer cancels the rest (device log 2026-11-03 — one throw
+     * inside the old runCatching left every chip de-defaulted for the whole
+     * session, with no retry).
+     */
+    private suspend fun fetchDefaults() {
+        kotlinx.coroutines.coroutineScope {
+            val models = async { runCatching { api.models().items }.getOrNull() }
+            val config = async { runCatching { api.config() }.getOrNull() }
+            val global = async { runCatching { api.globalDefaultFeatureIds() }.getOrNull() }
+            val settings = async { runCatching { api.userSettings() }.getOrNull() }
+            models.await()?.let { modelsState.value = it }
+            config.await()?.also {
+                configFeaturesFlow.value = it.features
+                // OWUI admin-assigned default: "model-a,model-b" list → first id
+                serverDefault = it.default_models
+                    ?.split(',')?.firstOrNull()?.trim()
+                    ?.takeIf { id -> id.isNotEmpty() }
+            }
+            global.await()?.let { globalDefaultFeatureIds = it.orEmpty() }
+            settings.await()?.let { userSettingsSnapshot = it }
+        }
     }
 
     fun setDraft(value: String) {

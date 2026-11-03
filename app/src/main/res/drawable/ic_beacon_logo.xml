@@ -1,0 +1,29 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Beacon mark: one lamp dot with a three-ray beam fanning up-right.
+         Rays at -75° / -45° / -15°, radius 5→11 from the dot at (8,17). -->
+    <path
+        android:pathData="M 10.8,17 A 2.8,2.8 0 1 1 5.2,17 A 2.8,2.8 0 1 1 10.8,17 Z"
+        android:fillColor="#C96442" />
+    <path
+        android:pathData="M 9.3,12.2 L 10.9,6.4"
+        android:strokeColor="#C96442"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M 11.5,13.5 L 15.8,9.2"
+        android:strokeColor="#C96442"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M 12.8,15.7 L 18.6,14.1"
+        android:strokeColor="#C96442"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+</vector>

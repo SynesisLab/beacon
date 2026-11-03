@@ -74,17 +74,17 @@ fun ChatsDrawer(
             modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
         ) {
             androidx.compose.material3.Surface(
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
-                color = dev.beacon.ui.theme.Umber,
+                shape = androidx.compose.foundation.shape.CircleShape,
+                color = MaterialTheme.colorScheme.surfaceVariant,
                 modifier = Modifier.size(34.dp),
             ) {
-                // The launcher glyph's canvas is 108dp with a centered mark —
-                // oversize the image so the beacon fills the chip.
+                // The simplified mark (ic_beacon_logo): a lamp dot + a clean
+                // three-ray beam — designed symbol, not the full launcher glyph.
                 androidx.compose.foundation.layout.Box(contentAlignment = Alignment.Center) {
                     androidx.compose.foundation.Image(
-                        painter = androidx.compose.ui.res.painterResource(dev.beacon.R.drawable.ic_launcher_foreground),
+                        painter = androidx.compose.ui.res.painterResource(dev.beacon.R.drawable.ic_beacon_logo),
                         contentDescription = "Beacon",
-                        modifier = Modifier.size(44.dp),
+                        modifier = Modifier.size(24.dp),
                     )
                 }
             }

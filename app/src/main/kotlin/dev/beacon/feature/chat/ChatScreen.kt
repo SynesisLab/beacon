@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -22,6 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
@@ -97,6 +99,8 @@ fun ChatScreen(
     showModelPicker: Boolean,
     onDismissPicker: () -> Unit,
     onPickModel: (String) -> Unit,
+    /** Hold-to-set-default (user request): persists the model across sessions. */
+    onSetDefault: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -157,16 +161,27 @@ fun ChatScreen(
                     }
                 },
                 actions = {
-                    // Model chip: current model NAME (chat pick → user → server default),
-                    // truncated to keep the bar calm.
-                    Button(
+                    // Model chip (restyled per the interface reference): the soft
+                    // gray pill + chevron — not a filled coral button.
+                    Surface(
                         onClick = actions.onOpenModelPicker,
+                        color = MaterialTheme.colorScheme.surfaceVariant,
                         shape = RoundedCornerShape(50),
                     ) {
-                        Text(
-                            state.modelLabel ?: "Model",
-                            maxLines = 1,
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        ) {
+                            Text(
+                                state.modelLabel ?: "Model",
+                                maxLines = 1,
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                            androidx.compose.material3.Icon(
+                                androidx.compose.material.icons.Icons.Filled.KeyboardArrowDown,
+                                contentDescription = null,
+                            )
+                        }
                     }
                 },
             )
@@ -452,7 +467,8 @@ fun ChatScreen(
 
     if (showModelPicker) {
         // "Select model" sheet (interface copy, 2026-11-02): name + description
-        // rows, the chosen one checked.
+        // rows, the chosen one checked; HOLD a model to set it as the default
+        // (user request): the default = the persisted selection.
         ModalBottomSheet(onDismissRequest = onDismissPicker) {
             Column(Modifier.padding(horizontal = 16.dp)) {
                 Text(
@@ -461,17 +477,29 @@ fun ChatScreen(
                     modifier = Modifier.padding(bottom = 8.dp),
                 )
                 LazyColumn {
-                    items(state.models.size) { index ->
+                    items(state.models.size, key = { state.models[it].id }) { index ->
                         val model = state.models[index]
                         val chosen = model.id == state.selectedModelId
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { onPickModel(model.id) },
+                                .combinedClickable(
+                                    onClick = { onPickModel(model.id) },
+                                    onLongClick = { onSetDefault(model.id) },
+                                ),
                         ) {
                             Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
-                                Text(model.name, style = MaterialTheme.typography.titleMedium)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(model.name, style = MaterialTheme.typography.titleMedium)
+                                    if (chosen) {
+                                        Text(
+                                            "  Default",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
+                                }
                                 model.description?.let {
                                     Text(
                                         it,
@@ -491,6 +519,12 @@ fun ChatScreen(
                         }
                     }
                 }
+                Text(
+                    "Hold a model to make it the default across Beacon.",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 10.dp),
+                )
             }
         }
     }

@@ -48,13 +48,16 @@ private const val ROUTE_CHAT = "chat/{chatId}"
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+    @OptIn(androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         handleShareIntent(intent)
         setContent {
+            val windowSizeClass = androidx.compose.material3.windowsizeclass.calculateWindowSizeClass(this)
             BeaconTheme {
-                BeaconNavHost()
+                val wide = windowSizeClass.widthSizeClass != androidx.compose.material3.windowsizeclass.WindowWidthSizeClass.Compact
+                BeaconNavHost(permanentSidebar = wide)
             }
         }
     }
@@ -83,7 +86,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun BeaconNavHost() {
+private fun BeaconNavHost(permanentSidebar: Boolean) {
     val main: MainViewModel = hiltViewModel()
     val settings by main.settings.collectAsStateWithLifecycle()
 
@@ -127,13 +130,13 @@ private fun BeaconNavHost() {
                 }
                 // Boot surface: a fresh chat (chats live in the drawer).
                 composable(ROUTE_CHAT_NEW) {
-                    BeaconChatSurface(nav, chatIdArg = "new")
+                    BeaconChatSurface(nav, chatIdArg = "new", permanentSidebar)
                 }
                 composable(
                     route = ROUTE_CHAT,
                     arguments = listOf(navArgument("chatId") { type = NavType.StringType }),
                 ) { entry ->
-                    BeaconChatSurface(nav, chatIdArg = entry.arguments?.getString("chatId"))
+                    BeaconChatSurface(nav, chatIdArg = entry.arguments?.getString("chatId"), permanentSidebar)
                 }
                 composable(ROUTE_SETTINGS) {
                     val vm: SettingsViewModel = hiltViewModel()
@@ -323,6 +326,7 @@ private fun navPopToChatHome(nav: androidx.navigation.NavController) {
 private fun BeaconChatSurface(
     nav: androidx.navigation.NavController,
     chatIdArg: String?,
+    permanentSidebar: Boolean,
 ) {
     val drawerVm: HomeViewModel = hiltViewModel()
     val vm: ChatViewModel = hiltViewModel()
@@ -345,6 +349,11 @@ private fun BeaconChatSurface(
     ) { granted -> if (granted) vm.startDictation() }
 
     val surfacesVm: dev.beacon.feature.surfaces.SurfaceViewModel = hiltViewModel()
+    // Fold-aware note (agent.md queue): on expanded widths the chats panel will
+    // be a PERMANENT two-pane surface instead of the modal drawer — deferred here
+    // pending a careful extraction of the surface body; the window-size class
+    // plumbing (permanentSidebar) is ready.
+
     androidx.compose.material3.ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
@@ -411,6 +420,7 @@ private fun BeaconChatSurface(
                 vm.chooseModel(id)
                 pickerOpen = false
             },
+            onSetDefault = { id -> vm.chooseModel(id) },
         )
     }
 }

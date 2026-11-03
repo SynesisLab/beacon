@@ -107,6 +107,37 @@ private fun BeaconNavHost(permanentSidebar: Boolean) {
                 // Boot straight into a fresh chat surface; chats live in the drawer
                 // (user request + interface copy 2026-11-02).
                 startDestination = if (snapshot.isOnboarded) ROUTE_CHAT_NEW else ROUTE_ONBOARDING,
+                // Transitions ("better transitions" user request): the forward
+                // push fades-in w/ a slight right-to-left slide; the BACK gesture
+                // (predictive) previews a scale-down + slide-out — Claude-app calm.
+                enterTransition = {
+                    androidx.compose.animation.fadeIn(
+                        androidx.compose.animation.core.tween(240, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+                    ) + androidx.compose.animation.slideInHorizontally(
+                        androidx.compose.animation.core.tween(280, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+                    ) { fullWidth -> fullWidth / 8 }
+                },
+                exitTransition = {
+                    androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(180))
+                },
+                popEnterTransition = {
+                    androidx.compose.animation.fadeIn(
+                        androidx.compose.animation.core.tween(240, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+                    ) + androidx.compose.animation.slideInHorizontally(
+                        androidx.compose.animation.core.tween(280, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+                    ) { fullWidth -> -fullWidth / 10 }
+                },
+                popExitTransition = {
+                    // The predictive-back shape: scale-down + slide right.
+                    androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(200)) +
+                        androidx.compose.animation.scaleOut(
+                            animationSpec = androidx.compose.animation.core.tween(240, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+                            targetScale = 0.92f,
+                        ) +
+                        androidx.compose.animation.slideOutHorizontally(
+                            androidx.compose.animation.core.tween(240, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+                        ) { fullWidth -> fullWidth / 6 }
+                },
             ) {
                 composable(ROUTE_ONBOARDING) {
                     val vm: OnboardingViewModel = hiltViewModel()

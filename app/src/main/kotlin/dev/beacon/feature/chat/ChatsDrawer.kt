@@ -43,12 +43,12 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
- * The chats drawer (interface copy 2026-11-02). Claude's sidebar structure maps
- * onto the OWUI surfaces (gated by the server's /api/config features):
- * Chats → the recents; Projects → Folders; (Code/Artifacts → no OWUI surface,
- * Files takes their slot per user request); Notes / Channels / Workspace per the
- * capability gates. The bottom = the account row (avatar + name) → Settings
- * (user request: the sidebar was missing the account/settings buttons).
+ * The chats drawer (interface copy 2026-11-02; fixed trio 2026-11-03). Claude's
+ * sidebar structure maps onto the OWUI surfaces (gated by the server's
+ * /api/config features): Chats → the recents; Projects → Folders; Notes /
+ * Memories / Channels per the capability gates. The fixed block = Workspace /
+ * Terminal / Settings (Files lives in the M6-b tab bar). The bottom = the
+ * account row (avatar + name) → Settings.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -103,8 +103,10 @@ fun ChatsDrawer(
         GatedRow("Notes", gates.notesGate, onClick = { onOpenSurface("notes"); onClose() })
         GatedRow("Memories", gates.memoriesGate, onClick = { onOpenSurface("memories"); onClose() })
         GatedRow("Channels", gates.channelsGate, onClick = { onOpenSurface("channels"); onClose() })
-        GatedRow("Workspace", gates.workspaceGate, onClick = { onOpenSurface("workspace"); onClose() })
-        DrawerRow("Files", onClick = { onOpenSurface("files"); onClose() }) // artifacts' slot (user request)
+        // The fixed trio (user request 2026-11-03): Workspace/terminal/settings.
+        // Files lives in the tab bar now; Workspace is ungated there (the
+        // screen degrades gracefully, §16.5).
+        DrawerRow("Workspace", onClick = { onOpenSurface("workspace"); onClose() })
         DrawerRow("Terminal", onClick = { onOpenTerminal(); onClose() })
         DrawerRow("Settings", onClick = { onOpenSettings(); onClose() })
         HorizontalDivider(Modifier.padding(vertical = 8.dp))

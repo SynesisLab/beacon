@@ -1,5 +1,7 @@
 package dev.beacon.feature.chat
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -21,12 +23,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
@@ -151,10 +157,35 @@ fun segmentMarkdown(md: String): List<TextBlock> {
     return blocks
 }
 
-private val INLINE_MARKS = Regex("(\\*\\*[^*\\n]+\\*\\*)|(`[^`\\n]+`)|(\\*[^*\\n]+\\*)")
+private val INLINE_MARKS = Regex(
+    "(\\*\\*[^*\\n]+\\*\\*)" +   // bold
+        "|(`[^`\\n]+`)" +        // inline code (ticks removed)
+        "|(\\*[^*\\n]+\\*)" +    // italic
+        "|(\\[[^\\]\\n]+\\]\\([^)\\n]+\\))" + // markdown link [label](url)
+        "|(https?://[^\\s()<]+)",             // bare URL
+)
 
-/** Inline marks → styled spans. Bold, inline code (ticks removed), italic. */
-internal fun inlineText(raw: String, caret: Boolean = false): AnnotatedString = buildAnnotatedString {
+/**
+ * Inline marks → styled spans. Bold, inline code, italic — plus TAPPABLE
+ * links: `[label](url)` and bare `http(s)://…` (the M1 renderer had no link
+ * support — user report, 2026-11-03). [linkColor] is threaded in from the
+ * composition (buildAnnotatedString is not composable). Links open through
+ * an external chooser (browser); inline code always matches first, so a URL
+ * inside `ticks` is never linked.
+ */
+internal fun inlineText(
+    raw: String,
+    caret: Boolean = false,
+    linkColor: androidx.compose.ui.graphics.Color =
+        androidx.compose.ui.graphics.Color.Unspecified,
+): AnnotatedString = buildAnnotatedString {
+    val linkStyle = if (linkColor == androidx.compose.ui.graphics.Color.Unspecified) {
+        TextLinkStyles(style = SpanStyle(textDecoration = TextDecoration.Underline))
+    } else {
+        TextLinkStyles(
+            style = SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline),
+        )
+    }
     var last = 0
     for (match in INLINE_MARKS.findAll(raw)) {
         append(raw.substring(last, match.range.first))
@@ -164,13 +195,54 @@ internal fun inlineText(raw: String, caret: Boolean = false): AnnotatedString = 
                 withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(token.drop(2).dropLast(2)) }
             token.startsWith("`") ->
                 withStyle(SpanStyle(fontFamily = FontFamily.Monospace)) { append(token.drop(1).dropLast(1)) }
-            else ->
+            token.startsWith("*") ->
                 withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(token.drop(1).dropLast(1)) }
+            token.startsWith("[") -> {
+                val label = token.removePrefix("[").substringBefore(']')
+                val url = token.substringAfter("](").removeSuffix(")")
+                if (label.isNotEmpty() && url.isNotEmpty()) {
+                    pushLink(LinkAnnotation.Url(url, linkStyle) { LinkOpener.open(url) })
+                    append(label)
+                    pop()
+                } else {
+                    append(token)
+                }
+            }
+            else -> {
+                pushLink(LinkAnnotation.Url(token, linkStyle) { LinkOpener.open(token) })
+                append(token)
+                pop()
+            }
         }
         last = match.range.last + 1
     }
     if (last < raw.length) append(raw.substring(last))
     if (caret) append(STREAMING_CARET)
+}
+
+/** Opens a link outside Beacon (a chooser; https/http only — §11 cross-origin). */
+object LinkOpener {
+    fun open(raw: String) {
+        val context = contextHolder ?: return
+        if (!raw.startsWith("http://") && !raw.startsWith("https://")) return
+        runCatching {
+            context.startActivity(
+                Intent.createChooser(
+                    Intent(Intent.ACTION_VIEW, Uri.parse(raw)),
+                    "Open link",
+                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }
+    }
+
+    /** Set by the composition (the pure [inlineText] has no context). */
+    @Volatile
+    var contextHolder: android.content.Context? = null
+        private set
+
+    fun hold(context: android.content.Context) {
+        contextHolder = context.applicationContext
+    }
 }
 
 /** The orange starburst glyph: Claude's thinking marker (interface copy, 2026-11-02). */
@@ -182,12 +254,16 @@ fun MiniMarkdown(
     modifier: Modifier = Modifier,
     streaming: Boolean = false,
 ) {
+    // Links open externally (browser/chooser) — the opener needs a context.
+    val context = androidx.compose.ui.platform.LocalContext.current
+    androidx.compose.runtime.remember(context) { run { LinkOpener.hold(context); true } }
+    val linkColor = MaterialTheme.colorScheme.primary
     val blocks = segmentMarkdown(markdown)
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         blocks.forEach { block ->
             when (block.kind) {
                 BlockKind.Paragraph -> Text(
-                    text = inlineText(block.text, caret = streaming && block === blocks.last()),
+                    text = inlineText(block.text, caret = streaming && block === blocks.last(), linkColor = linkColor),
                     style = MaterialTheme.typography.bodyLarge,
                 )
                 BlockKind.List_ -> Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -199,14 +275,18 @@ fun MiniMarkdown(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             Text(
-                                text = inlineText(item, caret = streaming && block === blocks.last() && index == block.items.lastIndex),
+                                text = inlineText(
+                                    item,
+                                    caret = streaming && block === blocks.last() && index == block.items.lastIndex,
+                                    linkColor = linkColor,
+                                ),
                                 style = MaterialTheme.typography.bodyLarge,
                             )
                         }
                     }
                 }
                 BlockKind.Heading -> Text(
-                    text = inlineText(block.text),
+                    text = inlineText(block.text, linkColor = linkColor),
                     style = when {
                         block.headingLevel <= 1 -> MaterialTheme.typography.headlineSmall
                         block.headingLevel == 2 -> MaterialTheme.typography.titleLarge

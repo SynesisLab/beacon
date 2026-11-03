@@ -71,10 +71,10 @@ fun TerminalScreen(
                 else -> FilesCard(
                     entries = ui.entries,
                     onOpen = vm::openEntry,
-                    onPreview = { e -> ui.serverId?.let { vm.preview(it, e) } },
+                    onPreview = { e -> ui.serverId?.let { vm.previewFile(it, e) } },
                     onDownload = { e -> ui.serverId?.let { vm.download(it, e, onSaveDownload) } },
                     onRename = { e -> vm.openDialog("rename", e) },
-                    onDelete = { e -> ui.serverId?.let { vm.delete(it, e.path) } },
+                    onDelete = { e -> ui.serverId?.let { vm.delete(it, e) } },
                 )
             }
         }
@@ -117,7 +117,7 @@ private fun FilesCard(
             Text("Empty folder", modifier = Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
             LazyColumn {
-                itemsIndexed(entries, key = { _, e -> e.path }) { _, entry ->
+                itemsIndexed(entries, key = { _, e -> "${e.type}:${e.name}" }) { _, entry ->
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth().clickable { onOpen(entry) }

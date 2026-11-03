@@ -22,15 +22,21 @@ import javax.inject.Singleton
 @Serializable
 data class TerminalServer(val id: String, val url: String = "", val name: String = "")
 
+/** FileEntry (terminal upstream; src/lib/apis/terminal/index.ts:34-40):
+ *  {name, type:'file'|'directory', size?, modified?, writable?} — NO path
+ *  field; the client composes full paths from the cwd (web does the same).
+ *  `modified` is a FRACTIONAL epoch-seconds float on the live server
+ *  (1777343786.2236419, device round 2026-11-03) → Double? + truncate. */
 @Serializable
 data class TsFileEntry(
     val name: String,
-    val path: String,
-    @kotlinx.serialization.json.JsonNames("isDirectory") val is_dir: Boolean = false,
+    val type: String = "file",
     val size: Long? = null,
-    val modified_at: Long? = null,
+    val modified: Double? = null,
+    val created: Double? = null,
+    val writable: Boolean? = null,
 ) {
-    val isDirectory: Boolean get() = is_dir
+    val isDirectory: Boolean get() = type == "directory"
 }
 
 @Serializable
@@ -59,9 +65,15 @@ class TerminalsApi @Inject constructor(
     }
 
     suspend fun servers(): List<TerminalServer> = withContext(Dispatchers.IO) {
-        client.newCall(url("", "").build()).await().decodeJson(
-            ListSerializer(TerminalServer.serializer()), json,
-        )
+        // The "/" route ONLY: `url("", "")` used to build /api/v1/terminals//
+        // — the double slash misses the router, falls into the SPA
+        // history-fallback, and a 200 HTML page masked as a decode error
+        // (2026-11-03 device log).
+        val base = source.instanceUrl() ?: throw OwuiApiException(0, null, "No connected instance")
+        client.newCall(Request.Builder().url(joinUrl(base, "/api/v1/terminals/")).get().build())
+            .await().decodeJson(
+                ListSerializer(TerminalServer.serializer()), json,
+            )
     }
 
     suspend fun cwd(serverId: String): String? = withContext(Dispatchers.IO) {
@@ -121,8 +133,12 @@ class TerminalsApi @Inject constructor(
                     "file", fileName,
                     okhttp3.RequestBody.create("application/octet-stream".toMediaTypeOrNull(), bytes),
                 ).build()
-            client.newCall(url(serverId, "files/upload").post(multipart).header("X-Directory", directory).build())
-                .await().use { it.isSuccessful }
+            // The DIRECTORY rides the QUERY (web: files/upload?directory=…,
+            // index.ts:504); the multipart field is 'file'.
+            client.newCall(
+                url(serverId, "files/upload", "?directory=" + Uri.encode(directory))
+                    .post(multipart).build(),
+            ).await().use { it.isSuccessful }
         }
 
     suspend fun mkdir(serverId: String, path: String): Boolean = withContext(Dispatchers.IO) {

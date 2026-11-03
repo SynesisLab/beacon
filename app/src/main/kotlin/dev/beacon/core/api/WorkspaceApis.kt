@@ -7,8 +7,14 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import dev.beacon.core.api.dto.ChatPayload
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -34,7 +40,7 @@ data class ChannelRow(val id: String, val name: String, val description: String?
 data class FileRow(val id: String, val filename: String, val created_at: Long? = null)
 
 @Serializable
-data class PromptRow(val id: String? = null, val command: String, val name: String)
+data class PromptRow(val id: String? = null, val command: String, val name: String, val content: String? = null)
 
 @Serializable
 data class ToolRow(val id: String, val name: String)
@@ -91,6 +97,154 @@ class WorkspaceApis @Inject constructor(
             .decodeJson(KnowledgePage.serializer(), json).items
     }
 
+    // ── M4-d2 write-flows (verified: folders.py:150/:335/:710; notes.py:237/:529;
+    // channels.py:988-1484 — MessageForm {content, temp_id}) ──────────────────
+
+    suspend fun createFolder(name: String) {
+        val body = buildJsonObject { put("name", name) }
+        postJson("/api/v1/folders/", json.encodeToString(kotlinx.serialization.json.JsonObject.serializer(), body))
+    }
+
+    suspend fun renameFolder(folderId: String, name: String) {
+        val body = buildJsonObject { put("name", name) }
+        postJson("/api/v1/folders/$folderId/update", json.encodeToString(kotlinx.serialization.json.JsonObject.serializer(), body))
+    }
+
+    suspend fun deleteFolder(folderId: String): Boolean = withContext(Dispatchers.IO) {
+        client.newCall(
+            Request.Builder().url(joinUrl(requireInstance(), "/api/v1/folders/$folderId")).delete().build(),
+        ).await().use { it.isSuccessful }
+    }
+
+    /** The folder's chats: GET /api/v1/chats/folder/{id} (chats.py:944-959). */
+    suspend fun folderChats(folderId: String): List<ChatPayload> = withContext(Dispatchers.IO) {
+        client.newCall(get("/api/v1/chats/folder/$folderId")).await()
+            .decodeJson(ListSerializer(ChatPayload.serializer()), json)
+    }
+
+    /** POST /api/v1/notes/create {title, data{json: tiptap doc}} (notes.py:237). */
+    suspend fun createNote(title: String, plainContent: String): String? = withContext(Dispatchers.IO) {
+        val body = buildJsonObject {
+            put("title", title)
+            put("data", NoteDoc.doc(plainContent))
+        }
+        client.newCall(
+            Request.Builder().url(joinUrl(requireInstance(), "/api/v1/notes/create"))
+                .post(json.encodeToString(kotlinx.serialization.json.JsonObject.serializer(), body)
+                    .toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull()))
+                .build(),
+        ).await().use {
+            if (!it.isSuccessful) {
+                return@withContext null
+            }
+            it.body?.string()?.let { text ->
+                (json.parseToJsonElement(text) as? kotlinx.serialization.json.JsonObject)
+                    ?.get("id")?.let { id -> (id as? kotlinx.serialization.json.JsonPrimitive)?.content }
+            }
+        }
+    }
+
+    /** POST /api/v1/notes/{id}/update (notes.py:529); content replaces the doc. */
+    suspend fun updateNote(noteId: String, title: String?, plainContent: String): Boolean =
+        withContext(Dispatchers.IO) {
+            val body = buildJsonObject {
+                title?.let { put("title", it) }
+                put("data", NoteDoc.doc(plainContent))
+            }
+            client.newCall(
+                Request.Builder().url(joinUrl(requireInstance(), "/api/v1/notes/$noteId/update"))
+                    .post(json.encodeToString(kotlinx.serialization.json.JsonObject.serializer(), body)
+                        .toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull()))
+                    .build(),
+            ).await().use { it.isSuccessful }
+        }
+
+    /** GET /api/v1/notes/{id} — the full note (decode the doc to plain text). */
+    suspend fun note(noteId: String): Pair<String, String>? = withContext(Dispatchers.IO) {
+        client.newCall(get("/api/v1/notes/$noteId")).await().use { response ->
+            if (!response.isSuccessful) return@withContext null
+            val text = response.body?.string() ?: return@withContext null
+            val obj = json.parseToJsonElement(text) as? kotlinx.serialization.json.JsonObject
+                ?: return@withContext null
+            val title = (obj["title"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: ""
+            val content = obj["data"]?.let { NoteDoc.plainText(it) } ?: ""
+            title to content
+        }
+    }
+
+    /** GET /api/v1/channels/{id}/messages (channels.py:988). */
+    suspend fun channelMessages(channelId: String): List<ChannelMessageRow> = withContext(Dispatchers.IO) {
+        client.newCall(get("/api/v1/channels/$channelId/messages")).await()
+            .decodeJson(ListSerializer(ChannelMessageRow.serializer()), json)
+    }
+
+    /** POST /api/v1/channels/{id}/messages/post (channels.py:1484; MessageForm). */
+    suspend fun postChannelMessage(channelId: String, content: String, tempId: String): Boolean =
+        withContext(Dispatchers.IO) {
+            val body = buildJsonObject {
+                put("content", content)
+                put("temp_id", tempId)
+            }
+            client.newCall(
+                Request.Builder().url(joinUrl(requireInstance(), "/api/v1/channels/$channelId/messages/post"))
+                    .post(json.encodeToString(kotlinx.serialization.json.JsonObject.serializer(), body)
+                        .toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull()))
+                    .build(),
+            ).await().use { it.isSuccessful }
+        }
+
+    private suspend fun postJson(path: String, body: String) {
+        client.newCall(
+            Request.Builder().url(joinUrl(requireInstance(), path))
+                .post(body.toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull()))
+                .build(),
+        ).await().use { }
+    }
+
     private fun requireInstance(): String =
         source.instanceUrl() ?: throw OwuiApiException(0, null, "No connected instance")
 }
+
+/** Open WebUI notes store TipTap JSON docs under `data.json` — a minimal round-trip. */
+object NoteDoc {
+    /** Builds a single-paragraph/plain-text doc (the minimal valid TipTap shape). */
+    fun doc(plain: String): kotlinx.serialization.json.JsonObject = buildJsonObject {
+        put("json", buildJsonObject {
+            put("type", "doc")
+            put("content", kotlinx.serialization.json.JsonArray(listOf(buildJsonObject {
+                put("type", "paragraph")
+                put("content", kotlinx.serialization.json.JsonArray(listOf(buildJsonObject {
+                    put("type", "text")
+                    put("text", plain)
+                })))
+            })))
+        })
+    }
+
+    /** Walks the doc's content nodes and joins plain text. */
+    fun plainText(element: kotlinx.serialization.json.JsonElement): String = try {
+        val jsonDoc = element as? kotlinx.serialization.json.JsonObject
+        val doc = jsonDoc?.get("json")
+        extract(doc ?: element)
+    } catch (_: Exception) {
+        ""
+    }
+
+    private fun extract(element: kotlinx.serialization.json.JsonElement): String {
+        val obj = element as? kotlinx.serialization.json.JsonObject ?: return (element as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
+        if ((obj["type"] as? kotlinx.serialization.json.JsonPrimitive)?.content == "text") {
+            return (obj["text"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: ""
+        }
+        val kids = obj["content"] as? kotlinx.serialization.json.JsonArray ?: return ""
+        return kids.joinToString("") { extract(it) }
+    }
+}
+
+@Serializable
+data class ChannelMessageRow(
+    val id: String,
+    val content: String? = null,
+    val user_id: String? = null,
+    val is_pinned: Boolean? = null,
+    val created_at: Long? = null,
+)

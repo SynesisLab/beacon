@@ -190,6 +190,58 @@ private fun BeaconNavHost(permanentSidebar: Boolean) {
                     )
                 }
                 composable(
+                    route = "folder/{id}/chats",
+                    arguments = listOf(navArgument("id") { type = NavType.StringType }),
+                ) { entry ->
+                    val writeVm: dev.beacon.feature.surfaces.SurfaceWriteViewModel = hiltViewModel()
+                    androidx.compose.runtime.LaunchedEffect(Unit) {
+                        writeVm.folderChats(entry.arguments?.getString("id").orEmpty())
+                    }
+                    dev.beacon.feature.surfaces.FolderChatsScreen(
+                        writeModel = writeVm,
+                        folderName = "",
+                        onBack = { nav.popBackStack() },
+                        onOpenChat = { chatId -> nav.navigate("chat/$chatId") },
+                    )
+                }
+                composable(
+                    route = "note/{id}",
+                    arguments = listOf(navArgument("id") { type = NavType.StringType }),
+                ) { entry ->
+                    val writeVm: dev.beacon.feature.surfaces.SurfaceWriteViewModel = hiltViewModel()
+                    dev.beacon.feature.surfaces.NoteEditorScreen(
+                        writeModel = writeVm,
+                        noteId = entry.arguments?.getString("id"),
+                        title = "",
+                        onBack = { nav.popBackStack() },
+                        onCreated = { }, // list refresh = surface reload on back
+                        onSaved = { nav.popBackStack() },
+                    )
+                }
+                composable("note/new") { _ ->
+                    val writeVm: dev.beacon.feature.surfaces.SurfaceWriteViewModel = hiltViewModel()
+                    dev.beacon.feature.surfaces.NoteEditorScreen(
+                        writeModel = writeVm,
+                        noteId = null,
+                        title = "",
+                        onBack = { nav.popBackStack() },
+                        onCreated = { id -> nav.navigate("note/$id") { popUpTo("note/new") { inclusive = true } } },
+                        onSaved = { nav.popBackStack() },
+                    )
+                }
+                composable(
+                    route = "channel/{id}",
+                    arguments = listOf(navArgument("id") { type = NavType.StringType }),
+                ) { entry ->
+                    val writeVm: dev.beacon.feature.surfaces.SurfaceWriteViewModel = hiltViewModel()
+                    dev.beacon.feature.surfaces.ChannelChatScreen(
+                        writeModel = writeVm,
+                        channelId = entry.arguments?.getString("id").orEmpty(),
+                        channelName = "",
+                        onBack = { nav.popBackStack() },
+                    )
+                }
+                composable(
                     route = "file/{fileId}/{name}/{mime}?server={server}&path={path}",
                     arguments = listOf(
                         navArgument("fileId") { type = NavType.StringType; defaultValue = "" },
@@ -240,7 +292,7 @@ private fun SurfaceRoute(
             error = state.error,
             rowKey = { it.name + it.id },
             onBack = onBack,
-            onItem = { }, // folder chats: M4-d2
+            onItem = { folder -> nav.navigate("folder/${folder.id}/chats") }
         ) { folder ->
             Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)) {
                 androidx.compose.material3.Text(folder.name, style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
@@ -260,7 +312,7 @@ private fun SurfaceRoute(
             error = state.error,
             rowKey = { it.id },
             onBack = onBack,
-            onItem = { }, // note view/edit: M4-d2
+            onItem = { note -> nav.navigate("note/${note.id}") }
         ) { note ->
             androidx.compose.foundation.layout.Column(
                 Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
@@ -278,7 +330,7 @@ private fun SurfaceRoute(
             error = state.error,
             rowKey = { it.id },
             onBack = onBack,
-            onItem = { }, // channel chat: M4-d2 (socket-dependent)
+            onItem = { channel -> nav.navigate("channel/${channel.id}") }
         ) { channel ->
             androidx.compose.foundation.layout.Column(
                 Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
@@ -318,7 +370,7 @@ private fun SurfaceRoute(
             error = state.error,
             rowKey = { (it.id ?: it.command) },
             onBack = onBack,
-            onItem = { }, // prompt-send: M4-d2
+            onItem = { prompt -> dev.beacon.feature.chat.ShareSeed.pending = promptContent(prompt); nav.navigate(ROUTE_CHAT_NEW) },
             header = {
                 androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
                     androidx.compose.material3.Text("Prompts", style = androidx.compose.material3.MaterialTheme.typography.labelLarge, color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant)
@@ -341,6 +393,8 @@ private fun SurfaceRoute(
         else -> onBack()
     }
 }
+
+private fun promptContent(prompt: dev.beacon.core.api.PromptRow): String = prompt.content.orEmpty()
 
 private fun navPopToChatHome(nav: androidx.navigation.NavController) {
     nav.navigate(ROUTE_CHAT_NEW) {

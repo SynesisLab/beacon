@@ -151,17 +151,27 @@ class ChatEngine(
             _state.value = ChatUiModel()
             return
         }
+        // Paint ROOM FIRST so opening a chat switches instantly (user report:
+        // the tap showed the previous surface until the network answered).
+        runCatching {
+            val rows = store.activePath(existingChatId)
+            if (rows.isNotEmpty()) {
+                paintFromStore(existingChatId)
+            }
+        }
         try {
             val payload = store.fetchServerTree(existingChatId)
             if (payload != null) {
                 store.upsertServerChat(payload)
                 paintFromStore(existingChatId)
                 _state.value = _state.value.copy(title = payload.title)
-            } else {
+            } else if (_state.value.messages.isEmpty()) {
                 _state.value = ChatUiModel(chatId = existingChatId, error = "Instance unreachable")
             }
         } catch (e: OwuiApiException) {
-            _state.value = ChatUiModel(chatId = existingChatId, error = describe(e))
+            if (_state.value.messages.isEmpty()) {
+                _state.value = ChatUiModel(chatId = existingChatId, error = describe(e))
+            }
         }
     }
 

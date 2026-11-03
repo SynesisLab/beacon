@@ -454,11 +454,10 @@ private fun BeaconChatSurface(
                     listViewModel = drawerVm,
                     surfaces = surfacesVm,
                     onOpenChat = { chat -> nav.navigate("chat/${chat.chatId}") { launchSingleTop = true } },
+                    // pop+push: launchSingleTop would dedup against the CURRENT
+                    // chat/new entry (its VM keeps the old engine state — the
+                    // button "did nothing"); a fresh entry every tap instead.
                     onNewChat = {
-                        // launchSingleTop dedups against the CURRENT chat/new
-                        // entry (its VM keeps the old engine state — the
-                        // button "did nothing"); pop+push instead = a FRESH
-                        // entry/VM every time.
                         nav.navigate(ROUTE_CHAT_NEW) {
                             popUpTo(ROUTE_CHAT_NEW) { inclusive = true; saveState = false }
                         }

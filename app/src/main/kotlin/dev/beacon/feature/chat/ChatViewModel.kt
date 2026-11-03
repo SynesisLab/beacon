@@ -251,6 +251,21 @@ class ChatViewModel @Inject constructor(
 
     fun cancelInput() = engine.cancelInput()
 
+    /**
+     * +New chat while ALREADY on the chat/new surface (launchSingleTop makes
+     * the navigate a no-op): reset the engine + composer so the surface is a
+     * genuinely fresh chat.
+     */
+    fun resetForNewChat() {
+        draft.value = ""
+        attachments.value = emptyList()
+        uploading.value = false
+        attachmentError.value = null
+        toggles.value = Toggles()
+        tempMode.value = false
+        viewModelScope.launch { engine.load(null) }
+    }
+
     /** Lifecycle hook: silent reconciler sync on app resume (§9.1/§9.2). */
     fun onAppResume() {
         viewModelScope.launch {

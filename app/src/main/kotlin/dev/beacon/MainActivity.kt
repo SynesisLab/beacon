@@ -452,7 +452,15 @@ private fun BeaconChatSurface(
                     listViewModel = drawerVm,
                     surfaces = surfacesVm,
                     onOpenChat = { chat -> nav.navigate("chat/${chat.chatId}") { launchSingleTop = true } },
-                    onNewChat = { nav.navigate(ROUTE_CHAT_NEW) { launchSingleTop = true; popUpTo(ROUTE_CHAT_NEW) { inclusive = false } } },
+                    onNewChat = {
+                        // launchSingleTop dedups against the CURRENT chat/new
+                        // entry (its VM keeps the old engine state — the
+                        // button "did nothing"); pop+push instead = a FRESH
+                        // entry/VM every time.
+                        nav.navigate(ROUTE_CHAT_NEW) {
+                            popUpTo(ROUTE_CHAT_NEW) { inclusive = true; saveState = false }
+                        }
+                    },
                     onOpenSettings = { nav.navigate(ROUTE_SETTINGS) },
                     onOpenSurface = { key -> nav.navigate("surface/$key") },
                     onClose = { drawerScope.launch { drawerState.close() } },
@@ -470,7 +478,12 @@ private fun BeaconChatSurface(
                 onOpenModelPicker = { pickerOpen = true },
                 onOpenDrawer = { drawerScope.launch { drawerState.open() } },
                 onNewChat = {
-                    nav.navigate(ROUTE_CHAT_NEW) { launchSingleTop = true }
+                    // launchSingleTop = a no-op while on chat/new; reset instead
+                    // (bug 2026-11-03: the +New chat button did nothing there).
+                    val alreadyNew = nav.currentBackStackEntry?.destination?.route == ROUTE_CHAT_NEW
+                    if (alreadyNew) vm.resetForNewChat() else {
+                        nav.navigate(ROUTE_CHAT_NEW) { launchSingleTop = true }
+                    }
                 },
                 onAttach = { docPicker.launch(arrayOf("*/*")) },
                 onRemoveAttachment = vm::removeAttachment,

@@ -25,6 +25,7 @@ class SettingsViewModel @Inject constructor(
         val trustUserCa: Boolean = false,
         val signedInEmail: String? = null,
         val signingOut: Boolean = false,
+        val themeMode: dev.beacon.core.data.ThemeMode = dev.beacon.core.data.ThemeMode.System,
     )
 
     val state: StateFlow<UiState> = session.settings
@@ -36,9 +37,17 @@ class SettingsViewModel @Inject constructor(
                 customHeaders = it.customHeaders,
                 trustUserCa = it.trustUserCa,
                 signedInEmail = it.signedInEmail,
+                themeMode = it.themeMode,
             )
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())
+
+    /** Force light/dark or follow the system (applies instantly via the theme collect). */
+    fun setThemeMode(mode: dev.beacon.core.data.ThemeMode) {
+        viewModelScope.launch {
+            session.update { it.copy(themeMode = mode) }
+        }
+    }
 
     /** Clears Keystore secrets + settings; the nav host returns to onboarding. */
     fun signOut() {

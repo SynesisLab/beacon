@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -51,6 +52,9 @@ private const val ROUTE_CHAT = "chat/{chatId}"
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+    @javax.inject.Inject
+    lateinit var session: dev.beacon.core.data.SessionStore
+
     @OptIn(androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,7 +62,17 @@ class MainActivity : ComponentActivity() {
         handleShareIntent(intent)
         setContent {
             val windowSizeClass = androidx.compose.material3.windowsizeclass.calculateWindowSizeClass(this)
-            BeaconTheme {
+            // Appearance (user request 2026-11-03): Settings → Appearance forces
+            // Light/Dark or follows the system; DataStore rides live.
+            val settings by session.settings.collectAsState(
+                initial = dev.beacon.core.data.ServerSettings(),
+            )
+            val darkTheme = when (val mode = settings.themeMode) {
+                dev.beacon.core.data.ThemeMode.System -> androidx.compose.foundation.isSystemInDarkTheme()
+                dev.beacon.core.data.ThemeMode.Light -> false
+                dev.beacon.core.data.ThemeMode.Dark -> true
+            }
+            BeaconTheme(darkTheme = darkTheme) {
                 val wide = windowSizeClass.widthSizeClass != androidx.compose.material3.windowsizeclass.WindowWidthSizeClass.Compact
                 BeaconNavHost(permanentSidebar = wide)
             }
@@ -182,6 +196,7 @@ private fun BeaconNavHost(permanentSidebar: Boolean) {
                     SettingsScreen(
                         state = vm.state.collectAsStateWithLifecycle().value,
                         onSignOut = vm::signOut,
+                        onThemeMode = vm::setThemeMode,
                         onClose = { nav.popBackStack() },
                     )
                 }
@@ -486,7 +501,8 @@ private fun BeaconChatSurface(
         drawerState = drawerState,
         drawerContent = {
             androidx.compose.material3.ModalDrawerSheet(
-                drawerContainerColor = dev.beacon.ui.theme.DrawerPaper,
+                // Scheme-driven (Appearance): the drawer follows the forced mode.
+                drawerContainerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
             ) {
                 ChatsDrawer(
                     listViewModel = drawerVm,

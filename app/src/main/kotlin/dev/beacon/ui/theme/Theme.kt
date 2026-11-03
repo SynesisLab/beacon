@@ -28,6 +28,7 @@ private val DarkScheme = darkColorScheme(
     onSurface = WarmWhite,
     surfaceVariant = UmberSurfaceVariant,
     onSurfaceVariant = WarmMuted,
+    surfaceContainerLow = UmberSurface, // drawer/sheet = barely lifted (measured 2026-11-02)
     outline = Color(0xFF3B3934), // the hairline lift on the flat dark
 )
 
@@ -48,6 +49,7 @@ private val LightScheme = lightColorScheme(
     onSurface = Ink,
     surfaceVariant = LightSurfaceVariant,
     onSurfaceVariant = MutedInk,
+    surfaceContainerLow = DrawerPaper, // the drawer sheet = a touch warmer
     outline = Color(0xFFDEDCD7),
 )
 

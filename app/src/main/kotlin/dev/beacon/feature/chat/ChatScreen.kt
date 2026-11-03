@@ -712,7 +712,7 @@ private fun MessageBubble(
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    val iconTint = dev.beacon.ui.theme.IconInk
+                    val iconTint = MaterialTheme.colorScheme.onSurfaceVariant
                     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
                     IconButton(onClick = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(message.markdown)) }) {
                         Icon(

@@ -7,6 +7,10 @@ enum class AuthMethod {
     None, ApiKey, Password
 }
 
+/** The user's theme override (Settings → Appearance). */
+@Serializable
+enum class ThemeMode { System, Light, Dark }
+
 /** Device-side server configuration (no secrets — those live in SecureStore only). */
 @Serializable
 data class ServerSettings(
@@ -21,6 +25,8 @@ data class ServerSettings(
     val signedInEmail: String? = null,
     /** Display name for the home greeting (GET /api/v1/auths/). */
     val userName: String? = null,
+    /** Forced light/dark or follow-the-system (user request 2026-11-03). */
+    val themeMode: ThemeMode = ThemeMode.System,
 ) {
     val isOnboarded: Boolean get() = serverUrl.isNotBlank() && authMethod != AuthMethod.None
 }

@@ -149,7 +149,7 @@ class M0ScreensScreenshotTest {
 
     @Test
     fun settings_light() {
-        render { SettingsScreen(settings, onSignOut = {}, onClose = {}) }
+        render { SettingsScreen(settings, onSignOut = {}, onThemeMode = {}, onClose = {}) }
         capture("Settings/settings_light")
     }
 

@@ -2,6 +2,7 @@ package dev.beacon.feature.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -35,6 +36,7 @@ import dev.beacon.ui.theme.Paddings
 fun SettingsScreen(
     state: SettingsViewModel.UiState,
     onSignOut: () -> Unit,
+    onThemeMode: (dev.beacon.core.data.ThemeMode) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -71,6 +73,22 @@ fun SettingsScreen(
         SettingSection("Server") {
             Text(state.serverUrl.ifBlank { "Not connected" })
             state.serverVersion?.let { Text("Version $it", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+        HorizontalDivider()
+        SettingSection("Appearance") {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(
+                    dev.beacon.core.data.ThemeMode.System to "System",
+                    dev.beacon.core.data.ThemeMode.Light to "Light",
+                    dev.beacon.core.data.ThemeMode.Dark to "Dark",
+                ).forEach { (mode, label) ->
+                    androidx.compose.material3.FilterChip(
+                        selected = state.themeMode == mode,
+                        onClick = { onThemeMode(mode) },
+                        label = { Text(label) },
+                    )
+                }
+            }
         }
         HorizontalDivider()
         SettingSection("Authentication") {

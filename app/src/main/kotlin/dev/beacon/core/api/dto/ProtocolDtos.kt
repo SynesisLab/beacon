@@ -102,6 +102,12 @@ data class OwuiModel(
     val info: OwuiModelInfo? = null,
 ) {
     val description: String? get() = info?.meta?.description
+
+    /** The server-configured default features for this model
+     *  (Chat.svelte:1114-1118: a feature starts ON when every selected model
+     *  lists it in defaultFeatureIds; admin checks in utils/automations.py:186). */
+    val default_feature_ids: List<String>
+        get() = info?.meta?.defaultFeatureIds ?: emptyList()
 }
 
 @Serializable
@@ -112,6 +118,15 @@ data class OwuiModelInfo(
 @Serializable
 data class OwuiModelMeta(
     val description: String? = null,
+    val capabilities: Capabilities? = null,
+    val defaultFeatureIds: List<String>? = null,
+)
+
+@Serializable
+data class Capabilities(
+    val web_search: Boolean? = null,
+    val image_generation: Boolean? = null,
+    val code_interpreter: Boolean? = null,
 )
 
 /** GET /api/v1/auths/ — session user (auths.py:178; SessionUserInfoResponse). */

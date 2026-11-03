@@ -147,8 +147,10 @@ class ChatViewModel @Inject constructor(
                 serverDefault = config.default_models
                     ?.split(',')?.firstOrNull()?.trim()
                     ?.takeIf { it.isNotEmpty() }
+                applyModelDefaults(selected.value)
             }
             selected.value = selected.value ?: serverDefault
+            applyModelDefaults(selected.value)
         }
         // (the voice partials collector starts per-dictation in startDictation —
         // a construction-time collect here would see the not-yet-initialized
@@ -295,9 +297,38 @@ class ChatViewModel @Inject constructor(
 
     fun chooseModel(modelId: String) {
         selected.value = modelId
+        applyModelDefaults(modelId)
         viewModelScope.launch {
             session.update { it.copy(selectedModelId = modelId) }
         }
+    }
+
+    /**
+     * OWUI per-model defaults (Chat.svelte:1114-1118; utils/automations.py:186):
+     * a feature's chip starts ON when the SELECTED MODEL lists it in
+     * defaultFeatureIds (and it's gate-enabled server-side). Re-applied per
+     * model change, not per send (the user's manual taps stay sticky).
+     */
+    private var defaultsAppliedFor: String? = null
+
+    private fun applyModelDefaults(modelId: String?) {
+        if (modelId == null || defaultsAppliedFor == modelId) return
+        val model = modelsState.value.firstOrNull { it.id == modelId } ?: return
+        val gate = configFeaturesFlow.value
+        val on = { feature: String ->
+            model.default_feature_ids.contains(feature) &&
+                gate?.let { f -> when (feature) {
+                    "web_search" -> f.enable_web_search
+                    "image_generation" -> f.enable_image_generation
+                    "code_interpreter" -> f.enable_code_interpreter
+                    else -> false
+                } } == true
+        }
+        toggles.value = Toggles(
+            webSearch = on("web_search") || toggles.value.webSearch,
+            imageGeneration = on("image_generation") || toggles.value.imageGeneration,
+        )
+        defaultsAppliedFor = modelId
     }
 
     private fun resolveModel(): String? =

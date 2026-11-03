@@ -517,6 +517,7 @@ private fun BeaconChatSurface(
                     }
                     nav.navigate(base + suffix)
                 },
+                onOpenSurfaceTab = { key -> nav.navigate("surface/$key") },
                 onAnswerInput = vm::answerInput,
                 onCancelInput = vm::cancelInput,
             ),

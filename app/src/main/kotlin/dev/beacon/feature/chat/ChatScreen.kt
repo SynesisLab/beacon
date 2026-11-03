@@ -90,6 +90,8 @@ data class ChatActions(
     val onRegenerate: () -> Unit = {},
     val onRate: (messageId: String, rating: Int) -> Unit = { _, _ -> },
     val onShare: (messageId: String, text: String) -> Unit = { _, _ -> },
+    /** M4-d4+: the bottom tab bar's surface tabs. */
+    val onOpenSurfaceTab: (String) -> Unit = {},
     /** M4-d3: the model's ask_user interaction (answered via the socket ack). */
     val onAnswerInput: (Map<String, String>) -> Unit = {},
     val onCancelInput: () -> Unit = {},
@@ -178,6 +180,16 @@ fun ChatScreen(
                     }
                 },
                 actions = {
+                    // Temp chat: the ghost affordance top-right beside the
+                    // model chip (Claude parity; the inline chip is gone).
+                    IconButton(onClick = actions.onToggleTemp) {
+                        Icon(
+                            androidx.compose.ui.res.painterResource(dev.beacon.R.drawable.ic_ghost),
+                            contentDescription = if (state.tempMode) "Exit temporary chat" else "Temporary chat",
+                            tint = if (state.tempMode) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     // Model chip (restyled per the interface reference): the soft
                     // gray pill + chevron — not a filled coral button.
                     Surface(
@@ -199,6 +211,19 @@ fun ChatScreen(
                                 contentDescription = null,
                             )
                         }
+                    }
+                },
+            )
+        },
+        bottomBar = {
+            // Claude's bottom tab bar on the chat surface (user request):
+            // Chat / Folders / Notes / Files; workspace stays in the drawer.
+            dev.beacon.feature.chat.BeaconTabBar(
+                active = "chat",
+                onSelect = { key ->
+                    when (key) {
+                        "chat" -> actions.onNewChat()
+                        else -> actions.onOpenSurfaceTab(key)
                     }
                 },
             )
@@ -325,7 +350,7 @@ fun ChatScreen(
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Latest ⇅") }
             }
-            // §9.3 composer toggles (server-gated) + temp chat.
+            // §9.3 composer toggles (server-gated). Temp rides the topbar.
             val gate = state.featuresGate
             if (gate != null && (gate.enable_web_search == true || gate.enable_image_generation == true ||
                     gate.enable_code_interpreter == true)
@@ -357,11 +382,6 @@ fun ChatScreen(
                             label = { Text("⌨️ Code") },
                         )
                     }
-                    androidx.compose.material3.FilterChip(
-                        selected = state.tempMode,
-                        onClick = actions.onToggleTemp,
-                        label = { Text("Temp") },
-                    )
                 }
             }
             // M3-d: pending attachments (chips) + the attach affordance.
@@ -566,7 +586,14 @@ fun ChatScreen(
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier.padding(bottom = 8.dp),
                 )
-                LazyColumn {
+                LazyColumn(
+                    // The jumping = the sheet re-measuring itself while the
+                    // list scrolled past the drag limit (report 2026-11-03):
+                    // give the list a stable max height.
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 460.dp),
+                ) {
                     items(state.models.size, key = { state.models[it].id }) { index ->
                         val model = state.models[index]
                         val chosen = model.id == state.selectedModelId

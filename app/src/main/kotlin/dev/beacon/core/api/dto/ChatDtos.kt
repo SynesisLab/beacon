@@ -38,9 +38,15 @@ data class ChatPayload(
 /** The `chat` dict: history {messages: id → msg, currentId} (models/chats.py:418,497,591). */
 @Serializable
 data class ChatStorage(
+    /** The web's createNewChat dict (Chat.svelte:4829-4847): the server reads
+     *  the title from chat['title'] (models/chats.py:673-675). */
+    val title: String? = null,
+    val models: List<String> = emptyList(),
     val history: ChatHistory? = null,
     val messages: List<Map<String, kotlinx.serialization.json.JsonElement>> = emptyList(),
+    val tags: List<String> = emptyList(),
     val files: kotlinx.serialization.json.JsonElement? = null,
+    val timestamp: Long? = null,
 )
 
 @Serializable

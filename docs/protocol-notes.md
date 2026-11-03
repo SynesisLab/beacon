@@ -54,3 +54,21 @@ Reference clones verified against: `open-webui` (BSD-3-style) + `conduit` (GPL, 
 - Exact 401 body shape for expired JWTs (refresh path at M4).
 - `deployment_id` presence/absence variance (some proxies strip it).
 - Whether `/api/v1/models/list` honors `view_option` values Beacon may want (M1).
+## M4-d3 socket findings (2026-11-03, ai.anthonymiles.xyz v0.12.5)
+
+| Topic | Finding | Evidence |
+| --- | --- | --- |
+| Transport gate | `ENABLE_WEBSOCKET_SUPPORT` defaults True → server runs WEBSOCKET-ONLY: `transports=['websocket']`, `allow_upgrades=upgrades=false`; polling handshake answers 400 "Invalid transport" | env.py:473, socket/main.py:124-125 + live curl |
+| Handshake auth | `auth:{token}` rides the socket.io CONNECT packet; on acceptance the session enters room `user:{id}` | socket/main.py:611-641; live user-join ack returned the user |
+| Client wiring | socket.io-client-java 2.1.2 encodes nested kotlin/java maps via toString() — payloads must be org.json objects (the user-join was delivered as the STRING "{auth=…}" and silently dropped) | in-app j.u.l frame trace `20["user-join","{auth={…}"]` |
+| Event envelope | all middleware events ride socket event `events` as `{chat_id, message_id, data:{type,…}}` to room `user:{id}`; the HTTP SSE is the RAW upstream passthrough (OpenAI frames, no envelopes) | socket/main.py:1626-1673 + captured frames |
+| chat:list | emitted at chat creation/finish via the emitter (SOCKET-ONLY); M1-era "chat:list in SSE" does not hold for 0.12.5 | main.py:296-307, middleware.py:243-246 |
+| New chat flow | the CLIENT creates the chat first: POST /api/v1/chats/new (title inside `chat` dict — models/chats.py:673-675); a chat-less send = a TEMP chat server-side, nothing saved | Chat.svelte:4817-4847 + Beacon 2026-11-03 trace |
+| task_ids response | with session_id+chat_id: `POST /api/chat/completions` → `{status: true, task_ids: [...], chat_id}` and the stream rides socket events (chat:completion deltas) | main.py:1813-1930 |
+| Terminal event | `chat:completion {done:true, output, title, usage}` (middleware.py:6341-6379) | clone + fixtures |
+| ask_user | builtin tool (builtin.py:543-660) emits `request:user_input` via event_call; **the interactive call was NOT delivered to a correctly-authed first-party client (probe + Beacon) — the server resolved the tool internally**; Beacon auto-answers `{status:'cancelled', answers:{}}` so the turn completes | probe 2026-11-03 log; socket/main.py:1790-1810 |
+| /api/chat/completed | reads `data['session_id']` unconditionally (utils/chat.py:353) and the outlet filters run INLINE on 0.12 (middleware.py:6377); Beacon sends session_id + skips the completed call for servers ≥0.10 | trace 400 "'session_id'" |
+
+Beacon protocol deltas (2026-11-03 device-verified round-trips): note read/write via
+`data.pages[].content.{json,html,md}` (models/notes.py:156-220, :748-772, :357-367,
+NoteForm rejects pages at :474); files list carries meta.content_type (files.py:54).

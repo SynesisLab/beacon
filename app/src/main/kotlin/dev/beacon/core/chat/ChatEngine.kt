@@ -29,6 +29,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import okhttp3.Call
+import timber.log.Timber
 import java.util.UUID
 import javax.inject.Inject
 
@@ -57,6 +58,8 @@ class ChatEngine(
     private val json: Json,
     /** null in JVM tests — the lease is a device-only concern. */
     private val appContext: android.content.Context?,
+    /** null in JVM tests — the taskSocket/socket-events path (M4-d3). */
+    private val socket: dev.beacon.core.network.socket.ChatSocket? = null,
 ) {
     data class RenderMessage(
         val id: String,
@@ -67,6 +70,8 @@ class ChatEngine(
         val pending: Boolean = false,
         val sourceCount: Int = 0,
         val followUps: List<String> = emptyList(),
+        /** True while reasoning deltas are the last thing seen (drives the spinner). */
+        val reasoningActive: Boolean = false,
         /** Render-part list (§4 contract) — the UI renders ONLY through this. */
         val parts: List<ChatPart> = emptyList(),
     )
@@ -80,6 +85,31 @@ class ChatEngine(
         val error: String? = null,
         val busy: Boolean = false,
         val usage: JsonElement? = null,
+        /** A live ask_user interaction (builtin.py:543), awaiting the user. */
+        val inputPrompt: InputRequest? = null,
+    )
+
+    /**
+     * `request:user_input` (socket/main.py:1793; the ask_user builtin
+     * tools/builtin.py:543-660): 1-3 questions, each with 2-3 options + an
+     * optional free-form answer; the ack resolves as {answers: {id: label}} or
+     * {status:'cancelled'} and the model continues with the tool's result.
+     */
+    data class InputQuestion(
+        val id: String,
+        val header: String,
+        val question: String,
+        val options: List<InputOption>,
+        val allowOther: Boolean,
+    )
+
+    data class InputOption(val label: String, val description: String)
+
+    data class InputRequest(
+        val questions: List<InputQuestion>,
+        val allowOther: Boolean,
+        val timeoutMs: Long,
+        val envelope: dev.beacon.core.network.socket.SocketEnvelope,
     )
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -93,6 +123,7 @@ class ChatEngine(
     private var scanner = SseFrameScanner()
     private var assistantContent = StringBuilder()
     private var assistantReasoning = StringBuilder()
+    private var reasoningActive = false
     private var outputAdopted = false
     private var outputSeen = false
     private var outItems: List<JsonElement> = emptyList()
@@ -104,6 +135,13 @@ class ChatEngine(
 
     /** Entry: adopt the server chat tree and paint Room-first (§6.4). */
     suspend fun load(existingChatId: String?) {
+        // THE SOCKET EVENT COLLECTOR (M4-d3): on 0.12 servers the envelope
+        // events (chat:list, chat:title/tags, status, follow_ups, task-completion
+        // streams) ride the SOCKET ONLY (emit_chat_list_event →
+        // get_event_emitter → room user:{id}, main.py:296-307+1626-1673) — the
+        // HTTP SSE is the raw upstream passthrough. Bind ONE collector for the
+        // engine's chat; rebind per load/send.
+        socket?.let { bindEventCollector() }
         if (existingChatId == null) {
             _state.value = ChatUiModel()
             return
@@ -132,17 +170,22 @@ class ChatEngine(
     private fun renderOf(entity: MessageEntity): RenderMessage {
         val outElement = entity.outputJson?.let { runCatching { json.parseToJsonElement(it) }.getOrNull() }
         val outputItems = (outElement as? kotlinx.serialization.json.JsonArray)?.toList() ?: emptyList()
+        val reasoning = entity.reasoningText(json)
         val base = RenderMessage(
             id = entity.messageId,
             role = entity.role,
             markdown = entity.content.orEmpty(),
-            reasoning = entity.reasoningText(json),
+            reasoning = reasoning,
             pending = !entity.done,
         )
         return base.copy(
             parts = PartBuilder.build(
                 FoldedMessage(
                     contentMd = entity.content.orEmpty(),
+                    reasoningMd = reasoning,
+                    // An unfinished message whose content never arrived may have
+                    // died mid-reasoning — keep the card spinning there only.
+                    reasoningActive = !entity.done && entity.content.isNullOrBlank(),
                     outputItems = outputItems,
                     outputSeen = outputItems.isNotEmpty(),
                     streaming = !entity.done,
@@ -161,6 +204,7 @@ class ChatEngine(
                         FoldedMessage(
                             contentMd = assistantContent.toString(),
                             reasoningMd = assistantReasoning.toString().takeIf { it.isNotEmpty() },
+                            reasoningActive = reasoningActive,
                             outputItems = outItems,
                             outputSeen = outputSeen,
                             sourceCount = next.sourceCount,
@@ -338,6 +382,18 @@ class ChatEngine(
         if (tempId != null) {
             _state.value = _state.value.copy(chatId = tempId)
         }
+        // v0.12 protocol (the fresh-send 409/temp-chat bug, 2026-11-03): a
+        // chat-less send is a TEMP chat server-side (chat_id='' → saveless).
+        // The SAVED first turn = the CLIENT creates the chat first — the web's
+        // initChatHandler → POST /api/v1/chats/new (Chat.svelte:4817-4847) —
+        // and the completion runs with the real chat_id (+ task mode).
+        if (tempId == null && _state.value.chatId == null) {
+            store.createServerChat("New Chat", plan.modelId)?.let { created ->
+                if (_state.value.chatId == null) {
+                    _state.value = _state.value.copy(chatId = created.id, title = created.title)
+                }
+            }
+        }
         val existingChatId = _state.value.chatId
         val isNewChat = existingChatId == null
         val now = System.currentTimeMillis()
@@ -361,6 +417,7 @@ class ChatEngine(
         val assistantMessageId = plan.continueAssistantId ?: UUID.randomUUID().toString()
 
         // Optimistic UI state; Room rows follow (fresh chats persist post chat:list).
+        val userMessageId = plan.replaceUserMessageId ?: UUID.randomUUID().toString()
         _state.value = _state.value.copy(
             busy = true,
             error = null,
@@ -373,7 +430,7 @@ class ChatEngine(
                     else -> {
                         add(
                             RenderMessage(
-                                plan.replaceUserMessageId ?: UUID.randomUUID().toString().also { },
+                                userMessageId,
                                 MessageEntity.ROLE_USER,
                                 markdown = plan.text,
                             ),
@@ -403,6 +460,7 @@ class ChatEngine(
 
         assistantContent = StringBuilder()
         assistantReasoning = StringBuilder()
+        reasoningActive = false
         outputAdopted = false
         outputSeen = false
         outItems = emptyList()
@@ -425,7 +483,16 @@ class ChatEngine(
             user_message = when {
                 plan.continueAssistantId != null -> null
                 plan.regenerate -> null
-                else -> ProjectionMessage.user(plan.text)
+                // The web sends the FULL client-side user message (Chat.svelte:3375-3385):
+                // {id, parentId, role, content, timestamp} — `insert_chat_turn`
+                // 409s without the id (chats.py:1321-1331).
+                else -> buildJsonObject {
+                    put("id", userMessageId)
+                    parentIdForWire?.let { put("parentId", it) }
+                    put("role", "user")
+                    put("content", plan.text)
+                    put("timestamp", now / 1000)
+                }
             },
             files = plan.files,
             regeneration_message_id = if (plan.regenerate) previousAssistantId else null,
@@ -441,10 +508,150 @@ class ChatEngine(
         activeModelId = plan.modelId
         projectionSnapshot = projection
 
-        currentCall = api.streamingCompletion(CompletionRequests.encode(request))
-        drain(currentCall!!, assistantMessageId)
+        // M4-d3: with a live socket, the web-shaped `session_id` swaps the
+        // transport to a background task — HTTP {status, task_ids, chat_id}
+        // (main.py:1916-1930), stream over socket `events` (§6.1 taskSocket).
+        // Not connected within 3s → plain SSE, byte-identical to the M1 path.
+        val socketSessionId = socket?.takeIf { it.ensureConnected(3_000) }?.sessionId()
+        Timber.d("send: chat=%s assistant=%s socket=%s", existingChatId, assistantMessageId, socketSessionId)
+        // The event collector binds PERMANENTLY (rebound per send): the fresh
+        // chat's `chat:list` arrives on the socket while the HTTP SSE carries
+        // the deltas — a per-send subscribe would miss the early events.
+        taskTerminated = false
+        owuiParserForTask.reset()
+        activeAssistantId = assistantMessageId
+        bindEventCollector()
+        currentCall = api.streamingCompletion(
+            CompletionRequests.encode(request.copy(session_id = socketSessionId)),
+        )
+        var taskPayload: JsonObject? = null
+        drain(currentCall!!, assistantMessageId) { taskPayload = it }
+        if (taskPayload != null) {
+            drainTaskSocket(taskPayload!!, assistantMessageId)
+        }
         // The chat id may have been learned mid-stream (chat:list); resolve at finalize.
         finalizeAssistant(assistantMessageId)
+    }
+
+    /** Set by the terminal fold (chat:completion done:true / [DONE]). */
+    @Volatile
+    private var taskTerminated = true
+
+    /** The assistant message the event collector folds into (per send). */
+    private var activeAssistantId: String? = null
+
+    /** The collector's fold parser (own Responses state; reset per bind/send). */
+    private val owuiParserForTask = OwuiStreamParser(json)
+
+    /**
+     * Collects socket `events` for THIS engine's chat, folding each envelope's
+     * `data` through the SAME parser (the socket event family IS the SSE event
+     * family — middleware.py:6372 vs :6476). Bound at load()/send(); unknown
+     * chat ids pass (fresh sends learn their id mid-stream via chat:list).
+     */
+    private fun bindEventCollector() {
+        val s = socket ?: return
+        eventCollector?.cancel()
+        eventCollector = scope.launch {
+            s.events.collect { envelope ->
+                // Interactive host calls (ask_user) surface on the UI, not the fold.
+                val type = (envelope.data["type"] as? JsonPrimitive)?.content
+                if (type == "request:user_input" && envelope.canReply()) {
+                    _inputPrompt.value = parseInputRequest(envelope)
+                    return@collect
+                }
+                val chatId = _state.value.chatId
+                val sameChat = envelope.chatId == null || chatId == null || envelope.chatId == chatId
+                if (sameChat) {
+                    val target = activeAssistantId ?: envelope.messageId ?: ""
+                    owuiParserForTask.onFrame(SseFrameScanner.Frame(null, envelope.data.toString()))
+                        .forEach { fold(it, target) }
+                }
+            }
+        }
+    }
+
+    private var eventCollector: Job? = null
+
+    /** Open ask_user interaction, rendered by the chat screen's dialog. */
+    private val _inputPrompt = MutableStateFlow<InputRequest?>(null)
+    val inputPrompt: StateFlow<InputRequest?> = _inputPrompt.asStateFlow()
+
+    /** builtin.py:620-640 — the normalized question shape arriving on the wire. */
+    private fun parseInputRequest(envelope: dev.beacon.core.network.socket.SocketEnvelope): InputRequest {
+        val questions = (envelope.data["questions"] as? JsonArray).orEmpty().mapNotNull { raw ->
+            val q = raw as? JsonObject ?: return@mapNotNull null
+            val id = (q["id"] as? JsonPrimitive)?.content ?: return@mapNotNull null
+            InputQuestion(
+                id = id,
+                header = (q["header"] as? JsonPrimitive)?.content ?: "Question",
+                question = (q["question"] as? JsonPrimitive)?.content ?: "",
+                options = (q["options"] as? JsonArray).orEmpty().mapNotNull { optionRaw ->
+                    val option = optionRaw as? JsonObject ?: return@mapNotNull null
+                    InputOption(
+                        (option["label"] as? JsonPrimitive)?.content ?: return@mapNotNull null,
+                        (option["description"] as? JsonPrimitive)?.content ?: "",
+                    )
+                },
+                allowOther = (q["allow_other"] as? JsonPrimitive)?.jsonBool() ?: false,
+            )
+        }
+        return InputRequest(
+            questions = questions,
+            allowOther = (envelope.data["allow_other"] as? JsonPrimitive)?.jsonBool() ?: true,
+            timeoutMs = 120_000L,
+            envelope = envelope,
+        )
+    }
+
+    /** Intent: answer the open ask_user ({answers: {id: label}} → the model continues). */
+    fun answerInput(answers: Map<String, String>) {
+        val prompt = _inputPrompt.value ?: return
+        _inputPrompt.value = null
+        scope.launch {
+            runCatching {
+                prompt.envelope.reply(buildJsonObject {
+                    put("answers", buildJsonObject {
+                        answers.forEach { (id, label) -> put(id, kotlinx.serialization.json.JsonPrimitive(label)) }
+                    })
+                })
+            }
+        }
+    }
+
+    /** Intent: dismiss/cancel the open ask_user ({status:'cancelled'}). */
+    fun cancelInput() {
+        val prompt = _inputPrompt.value ?: return
+        _inputPrompt.value = null
+        scope.launch { runCatching { prompt.envelope.cancelReply() } }
+    }
+
+    /**
+     * The task-socket wait leg: the collector is already running; wait for the
+     * terminal `chat:completion {done:true}` (middleware.py:6341-6379) or
+     * recover by REFETCH after silence (§9.2 poll-recovery: GET /api/v1/chats/{id}).
+     */
+    private suspend fun drainTaskSocket(payload: JsonObject, assistantMessageId: String) {
+        val chatId = (payload["chat_id"] as? JsonPrimitive)?.content
+        chatId?.takeIf { _state.value.chatId == null }?.let { adopted ->
+            _state.value = _state.value.copy(chatId = adopted)
+        }
+        val terminated = kotlinx.coroutines.withTimeoutOrNull(45_000) {
+            while (!taskTerminated) kotlinx.coroutines.delay(50)
+        } != null
+        if (!terminated) {
+            val currentChatId = _state.value.chatId ?: return
+            runCatching {
+                store.fetchServerTree(currentChatId)?.let { store.upsertServerChat(it) }
+                paintFromStore(currentChatId)
+            }.onFailure { e ->
+                patch { copy(error = describe(e)) }
+            }
+        } else {
+            // Trailing events (title/tags/follow_ups) land right after the
+            // terminal; a short non-blocking window catches them.
+            kotlinx.coroutines.delay(800)
+        }
     }
 
     /** Visible-history projection of the branch, honoring the plan's edits. */
@@ -474,26 +681,36 @@ class ChatEngine(
             }
     }
 
-    private suspend fun drain(call: Call, assistantMessageId: String) = withContext(Dispatchers.IO) {
+    /** Non-null return = the classified body was a background task ({task_ids}). */
+    private suspend fun drain(
+        call: Call,
+        assistantMessageId: String,
+        onTaskPayload: (JsonObject) -> Unit = {},
+    ) = withContext(Dispatchers.IO) {
         val parser = OwuiStreamParser(json)
         call.execute().use { response ->
             val body = response.body ?: throw OwuiApiException(response.code, null, "Empty body")
-            when (classifyTransport(response.header(CONTENT_TYPE))) {
+            val contentType = response.header(CONTENT_TYPE)
+            when (classifyTransport(contentType)) {
                 TransportKind.HttpStream -> sourceFrames(body).forEach { frame ->
                     parser.onFrame(frame).forEach { event -> fold(event, assistantMessageId) }
                 }
-                TransportKind.JsonCompletion -> {
-                    // Plain-JSON completions (tiny models, some pipelines — §6.1): the
-                    // whole payload flows through the same fold (choices[].message).
+                TransportKind.JsonCompletion, TransportKind.TaskSocket -> {
+                    // Buffer and classify on CONTENT: `{task_ids,…}` = background
+                    // task (main.py:1916, some servers/paths reply JSON regardless
+                    // of our intent); plain JSON = §6.1 jsonCompletion.
                     val text = body.string()
-                    parser.onFrame(SseFrameScanner.Frame(null, text))
-                        .forEach { event -> fold(event, assistantMessageId) }
+                    val element = runCatching { json.parseToJsonElement(text) }.getOrNull()
+                    val payload = element as? JsonObject
+                    Timber.d("drain: ct=%s body=%s", contentType, text.take(220))
+                    if (payload != null && (payload["task_ids"] != null || payload["task_id"] != null)) {
+                        parser.reset()
+                        onTaskPayload(payload)
+                    } else {
+                        parser.onFrame(SseFrameScanner.Frame(null, text))
+                            .forEach { event -> fold(event, assistantMessageId) }
+                    }
                 }
-                TransportKind.TaskSocket -> throw OwuiApiException(
-                    response.code,
-                    null,
-                    "Server routed the completion to a socket task; task transports land in M4",
-                )
             }
         }
     }
@@ -514,16 +731,19 @@ class ChatEngine(
         when (event) {
             is StreamEvent.Content -> {
                 assistantContent.append(event.text)
-                foldPartsFor(assistantMessageId) { it.copy(markdown = assistantContent.toString()) }
+                reasoningActive = false // reasoning ended the moment content showed
+                foldPartsFor(assistantMessageId) { it.copy(markdown = assistantContent.toString(), reasoningActive = false) }
                 maybeWriteThrough(chatId, assistantMessageId)
             }
             is StreamEvent.Reasoning -> {
                 assistantReasoning.append(event.text)
-                foldPartsFor(assistantMessageId) { it.copy(reasoning = assistantReasoning.toString()) }
+                reasoningActive = true
+                foldPartsFor(assistantMessageId) { it.copy(reasoning = assistantReasoning.toString(), reasoningActive = true) }
             }
             is StreamEvent.Status -> patch { copy(statusText = if (event.done == true) null else event.text) }
             is StreamEvent.OutputSnapshot -> {
                 outItems = event.items
+                reasoningActive = false // content stage reached (§: spinner off)
                 if (!outputAdopted) {
                     val displayed = displayTextFromOutput(event.items)
                     if (displayed != null && assistantContent.isBlank()) {
@@ -548,9 +768,16 @@ class ChatEngine(
             }
             is StreamEvent.UsageUpdate -> patch { copy(usage = event.usage) }
             is StreamEvent.ModelSnapshot, is StreamEvent.Deferred -> Unit
-            is StreamEvent.ContentSnapshot -> assistantContent = StringBuilder(event.content.orEmpty())
-            is StreamEvent.ErrorSurface -> patch { copy(error = event.message) }
-            is StreamEvent.FinishReason, is StreamEvent.StreamDone -> Unit
+            is StreamEvent.ContentSnapshot -> {
+                assistantContent = StringBuilder(event.content.orEmpty())
+                reasoningActive = false
+                foldPartsFor(assistantMessageId) { it.copy(markdown = event.content.orEmpty(), reasoningActive = false) }
+            }
+            is StreamEvent.ErrorSurface -> {
+                taskTerminated = true
+                patch { copy(error = event.message) }
+            }
+            is StreamEvent.FinishReason, is StreamEvent.StreamDone -> taskTerminated = true
         }
     }
 
@@ -615,11 +842,23 @@ class ChatEngine(
         }
         _state.value = _state.value.copy(busy = false, streamingMessageId = null, statusText = null)
 
-        // §6.3: outlet filters run server-side. Adopt ONLY id-bearing messages.
+        // §6.3 / 0.9-compat: the outlet filters run INLINE on current servers
+        // (both paths, middleware.py:6377); the completed call remains for
+        // pre-0.10 (server <0.9 ran them twice otherwise). The tree refresh
+        // runs ALWAYS (a failing completed call must not skip it — the
+        // fresh-chat Room row bug, 2026-11-03).
         if (chatId != null) {
+            val inline = runCatching {
+                val v = store.serverVersion()?.split('.')?.mapNotNull { it.toIntOrNull() }
+                if (v != null && v.size >= 2) v[0] > 0 || v[1] >= 10 else false
+            }.getOrDefault(false)
+            if (!inline) {
+                runCatching {
+                    val completed = api.chatCompleted(completedBody(chatId, assistantMessageId))
+                    completedAdopt(completed)
+                }
+            }
             runCatching {
-                val completed = api.chatCompleted(completedBody(chatId, assistantMessageId))
-                completedAdopt(completed)
                 if (store.refreshServerChat(chatId)) {
                     _state.value = ChatUiModel(
                         chatId = chatId,
@@ -661,14 +900,16 @@ class ChatEngine(
         }
     }
 
-    private fun completedBody(chatId: String, assistantMessageId: String): String {
+    private suspend fun completedBody(chatId: String, assistantMessageId: String): String {
         // Same dict shape as the completion request (verified: utils/chat.py:319+
-        // chat_completed requires id + model; the outlet filter runs over messages).
+        // chat_completed requires id + model AND reads data['session_id'] — :353 —
+        // so the session id rides even when no socket is up ('' works there).
         val body: JsonElement = buildJsonObject {
             put("model", activeModelId.orEmpty())
             put("id", assistantMessageId)
             put("chat_id", chatId)
             put("stream", false)
+            put("session_id", socket?.sessionId().orEmpty())
             put(
                 "messages",
                 JsonArray(
@@ -694,7 +935,14 @@ class ChatEngine(
     }
 
     private fun JsonElement?.textContentOfOutput(): String? {
-        val parts = (this as? JsonArray)?.toList() ?: return null
+        // An output ITEM {type:'message', content:[{type:'output_text', text:…}]}
+        // (task sockets/Responses fold) — or a bare parts array from some upstreams.
+        val obj = this as? JsonObject
+        val parts = when {
+            obj != null -> (obj["content"] as? JsonArray)?.toList()
+            this is JsonArray -> toList()
+            else -> null
+        } ?: return null
         return parts.joinToString("") { part ->
             if ((part as? JsonObject)?.get("type")?.let { it is JsonPrimitive && it.content == "output_text" } == true) {
                 (part["text"] as? JsonPrimitive)?.content.orEmpty()
@@ -719,6 +967,12 @@ class ChatEngine(
         }
         else -> e.message ?: e.javaClass.simpleName
     }
+
+    private fun describe(t: Throwable): String =
+        (t as? Exception)?.let(::describe) ?: (t.message ?: t.javaClass.simpleName)
+
+
+    private fun JsonPrimitive.jsonBool(): Boolean = content == "true"
 
     companion object {
         private const val CHUNK_BUFFER = 8192

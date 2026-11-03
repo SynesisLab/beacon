@@ -35,4 +35,16 @@ interface ChatStore {
 
     /** Fetch the full tree from the instance + upsert; false when unreachable. */
     suspend fun refreshServerChat(chatId: String): Boolean
+
+    /**
+     * POST /api/v1/chats/new — the client creates the chat BEFORE the first
+     * completion on current servers (the web's initChatHandler,
+     * Chat.svelte:4817-4847): with no real chat_id the server treats the turn
+     * as a TEMP chat (nothing saved, no events). Returns the created payload
+     * (its id is the server-assigned chat id) or null on failure.
+     */
+    suspend fun createServerChat(title: String, modelId: String): ChatPayload?
+
+    /** The recorded server version ("0.12.5") — inline-era decisions. */
+    suspend fun serverVersion(): String?
 }

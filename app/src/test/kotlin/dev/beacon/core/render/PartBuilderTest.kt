@@ -23,6 +23,21 @@ class PartBuilderTest {
     }
 
     @Test
+    fun thinkingSpinner_stopsWhenContentStarts() {
+        // User report: "thinking is not stopping" — once content deltas arrive,
+        // the reasoning card must stop spinning even while the message streams.
+        val parts = PartBuilder.build(
+            FoldedMessage(contentMd = "Answer", reasoningMd = "Why", streaming = true),
+        )
+        assertTrue(!(parts[0] as ChatPart.Reasoning).streaming)
+        // Reasoning still the last-seen delta → it spins.
+        val spinning = PartBuilder.build(
+            FoldedMessage(reasoningMd = "Why", streaming = true, reasoningActive = true),
+        )
+        assertTrue((spinning[0] as ChatPart.Reasoning).streaming)
+    }
+
+    @Test
     fun outputPresent_evenEmpty_gatesRendering() {
         // §17: an emitted empty output[] is authoritative — no content render.
         val parts = PartBuilder.build(

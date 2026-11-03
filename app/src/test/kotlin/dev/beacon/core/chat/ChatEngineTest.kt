@@ -207,7 +207,7 @@ class ChatEngineTest {
 }
 
 /** In-memory [ChatStore] for engine tests (no Room on the JVM). */
-private class InMemoryChatStore : ChatStore {
+class InMemoryChatStore : ChatStore {
     val messages = ArrayList<MessageEntity>()
     val titles = HashMap<String, String>()
     val tags = HashMap<String, List<String>>()
@@ -280,4 +280,11 @@ private class InMemoryChatStore : ChatStore {
 
     override suspend fun refreshServerChat(chatId: String): Boolean =
         chats.containsKey(chatId)
+
+    /** Default: no /chats/new endpoint (the 0.9-era servers the fixtures
+     *  captured) — the fresh turn keeps the chat-less M1 flow (chat:list
+     *  discovery). Tests exercising the create-first flow override this. */
+    override suspend fun createServerChat(title: String, modelId: String): dev.beacon.core.api.dto.ChatPayload? = null
+
+    override suspend fun serverVersion(): String? = "0.12.5"
 }

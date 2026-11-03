@@ -23,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.getValue
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
 import kotlinx.coroutines.launch
@@ -426,6 +427,17 @@ private fun BeaconChatSurface(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
     ) { granted -> if (granted) vm.startDictation() }
 
+    // M4-d3: the model's ask_user interaction rides the socket; render it as
+    // a native dialog on top of the chat surface.
+    val inputPrompt by vm.inputPrompt.collectAsStateWithLifecycle()
+    inputPrompt?.let { prompt ->
+        dev.beacon.feature.chat.InputPromptDialog(
+            prompt = prompt,
+            onAnswer = vm::answerInput,
+            onCancel = vm::cancelInput,
+        )
+    }
+
     val surfacesVm: dev.beacon.feature.surfaces.SurfaceViewModel = hiltViewModel()
     // Fold-aware note (agent.md queue): on expanded widths the chats panel will
     // be a PERMANENT two-pane surface instead of the modal drawer — deferred here
@@ -491,6 +503,8 @@ private fun BeaconChatSurface(
                     }
                     nav.navigate(base + suffix)
                 },
+                onAnswerInput = vm::answerInput,
+                onCancelInput = vm::cancelInput,
             ),
             showModelPicker = pickerOpen,
             onDismissPicker = { pickerOpen = false },

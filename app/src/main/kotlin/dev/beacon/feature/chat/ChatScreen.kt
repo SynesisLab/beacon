@@ -88,6 +88,9 @@ data class ChatActions(
     val onRegenerate: () -> Unit = {},
     val onRate: (messageId: String, rating: Int) -> Unit = { _, _ -> },
     val onShare: (messageId: String, text: String) -> Unit = { _, _ -> },
+    /** M4-d3: the model's ask_user interaction (answered via the socket ack). */
+    val onAnswerInput: (Map<String, String>) -> Unit = {},
+    val onCancelInput: () -> Unit = {},
 )
 
 // Interface reference (2026-11-02): the user = a soft warm-gray pill, LEFT-aligned;

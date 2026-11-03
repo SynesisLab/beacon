@@ -3,6 +3,7 @@ package dev.beacon.core.chat
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 
 /**
  * POST /api/chat/completions request body — M1 field set, verified in
@@ -11,8 +12,11 @@ import kotlinx.serialization.json.Json
  * - `parent_id` null = new chat root; a value = follow-up (main.py:1255-1258);
  * - `id` = client-generated assistant message id (multi-model list flattened to
  *   the single-model `{model_id, message_id}` server fallback path);
- * - `session_id` omitted in M1 (no socket — the server then streams directly,
- *   never routes to taskSocket);
+ * - `session_id` = the socket session id (Chat.svelte:3281 `$socket?.id`). With
+ *   session_id + chat_id the server runs the completion as a background task
+ *   (middleware.py:2108, main.py:1813-1930): the HTTP body is
+ *   {status, task_ids, chat_id} (main.py:1916) and the stream rides socket
+ *   `events` (socket/main.py:1626-1673). Omitted → the server streams SSE.
  * - `background_tasks.title/tags_generation` only for a genuinely fresh chat
  *   (Chat.svelte:4489-4497 condition: not temporary && (no chat || first pair));
  * - `messages` = the visible history projection of the current branch.
@@ -25,7 +29,11 @@ data class CompletionRequest(
     val chat_id: String? = null,
     val id: String,
     val parent_id: String? = null,
-    val user_message: ProjectionMessage? = null,
+    /** The socket session id when connected; null = plain SSE (M1 path). */
+    val session_id: String? = null,
+    /** The client-side user turn dict (id/parentId/role/content/timestamp —
+     *  Chat.svelte:3375-3385); a JsonElement because extra keys ride along. */
+    val user_message: JsonElement? = null,
     val files: List<FileAttachment> = emptyList(),
     /** Regenerate: the sibling assistant being replaced (Chat.svelte:4472-4477). */
     val regeneration_message_id: String? = null,

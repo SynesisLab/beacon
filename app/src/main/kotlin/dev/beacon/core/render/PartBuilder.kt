@@ -21,6 +21,8 @@ import kotlinx.serialization.json.JsonPrimitive
 data class FoldedMessage(
     val contentMd: String = "",
     val reasoningMd: String? = null,
+    /** True while reasoning deltas are the last thing this fold saw (spinner). */
+    val reasoningActive: Boolean = false,
     val outputItems: List<JsonElement> = emptyList(),
     /** Has the fold SEEN an output snapshot at all (empty list counts — §17)? */
     val outputSeen: Boolean = false,
@@ -45,7 +47,16 @@ object PartBuilder {
             buildFromOutputs(m.outputItems, m.streaming, json).forEach { add(it) }
         } else {
             m.reasoningMd?.takeIf { it.isNotBlank() }?.let {
-                add(ChatPart.Reasoning(it, streaming = m.streaming))
+                // The Thinking spinner runs only while reasoning deltas are the
+                // last thing seen — it stops when content starts (user report:
+                // "thinking is not stopping"). The final content stage is NOT
+                // thinking.
+                add(
+                    ChatPart.Reasoning(
+                        it,
+                        streaming = m.streaming && m.reasoningActive,
+                    ),
+                )
             }
             val rendered = m.contentMd.trim('\n')
             if (rendered.isNotBlank()) {
@@ -91,7 +102,10 @@ object PartBuilder {
                 "reasoning" -> {
                     val text = (item["content"] as? JsonArray).outputText()
                     if (text.isNotBlank()) {
-                        add(ChatPart.Reasoning(text, streaming = item.statusInProgress() || streaming))
+                        // The item's own status is the authority: NOT the whole
+                        // message's streaming flag (which stays true through the
+                        // final content phase — "thinking is not stopping").
+                        add(ChatPart.Reasoning(text, streaming = item.statusInProgress()))
                     }
                 }
                 "message" -> {

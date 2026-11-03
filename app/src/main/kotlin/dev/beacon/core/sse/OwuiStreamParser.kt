@@ -165,13 +165,56 @@ class OwuiStreamParser(
             }
             "chat:completion", "response:completion" -> {
                 val body = obj["data"] as? JsonObject
-                val out = body?.get("output")
-                if (out is JsonArray) {
+                if (body == null) return listOf(StreamEvent.Deferred(type, body))
+                // Batched-delta wrap (middleware.py:4720-4733): non-continuing task
+                // mode flushes a raw delta under these aliases —
+                // {type:'response:completion', data:{type:'response.output_text.delta', delta}}.
+                // Fold the inner event when present.
+                val nestedType = (body["type"] as? JsonPrimitive)?.content
+                if (nestedType != null && nestedType.startsWith("response.")) {
+                    return foldResponsesEvent(nestedType, body)
+                }
+                // Task-socket envelopes (middleware.py:4008/:4725/:6372) carry the
+                // SAME keys both directions: output snapshots, done/error/usage/
+                // finish_reason/selected_model_id/sources/title. The terminal
+                // emission is {done: true, output, title, usage} (middleware.py:6341-6379).
+                val events = ArrayList<StreamEvent>(4)
+                val err = body["error"]
+                if (err is JsonObject) {
+                    val message = (err["message"] as? JsonPrimitive)?.content ?: "Completion error"
+                    events.add(StreamEvent.ErrorSurface(message, err))
+                }
+                (body["output"] as? JsonArray)?.let { out ->
                     responseOutput.clear()
                     responseOutput.addAll(out.toList())
-                    return listOf(StreamEvent.OutputSnapshot(out.toList()))
+                    events.add(StreamEvent.OutputSnapshot(out.toList()))
                 }
-                return listOf(StreamEvent.Deferred(type, body))
+                (body["content"])?.primitiveOrNull()?.content?.takeIf { it.isNotEmpty() }
+                    ?.let { events.add(StreamEvent.ContentSnapshot(it)) }
+                val reasoning = (
+                    body["reasoning_content"]
+                        ?: body["reasoning"]
+                        ?: body["thinking"]
+                    )?.primitiveOrNull()?.content
+                if (!reasoning.isNullOrEmpty()) events.add(StreamEvent.Reasoning(reasoning))
+                body["usage"]?.takeIf { it !is JsonNull }?.let {
+                    events.add(StreamEvent.UsageUpdate(it, null))
+                }
+                (body["selected_model_id"] as? JsonPrimitive)?.content
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.let { events.add(StreamEvent.ModelSnapshot(it)) }
+                (body["finish_reason"] as? JsonPrimitive)?.content
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.let { events.add(StreamEvent.FinishReason(it)) }
+                (body["sources"] as? JsonArray)?.let { events.add(StreamEvent.SourceEmitted(it)) }
+                (body["title"] as? JsonPrimitive)?.content
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.let { events.add(StreamEvent.TitleUpdate(it)) }
+                if ((body["done"] as? JsonPrimitive)?.booleanOrNull() == true) {
+                    events.add(StreamEvent.StreamDone)
+                }
+                if (events.isEmpty()) events.add(StreamEvent.Deferred(type, body))
+                return events
             }
         }
 
@@ -185,7 +228,7 @@ class OwuiStreamParser(
 
     /** Mirrors `handle_responses_streaming_event`'s primary event types (response.py:405+). */
     private fun foldResponsesEvent(type: String, obj: JsonObject): List<StreamEvent> = when (type) {
-        "response.output_item.added" -> {
+        "response.output_item.added", "response.output_item.done" -> {
             (obj["item"] as? JsonObject)?.let { item ->
                 val outputIndex = (obj["output_index"] as? JsonPrimitive)?.content?.toIntOrNull()
                     ?: responseOutput.size

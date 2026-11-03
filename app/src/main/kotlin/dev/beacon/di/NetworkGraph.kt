@@ -35,6 +35,7 @@ object NetworkGraph {
     @Singleton
     fun okHttp(auth: AuthInterceptor): OkHttpClient = OkHttpClient.Builder()
         .addInterceptor(auth)
+        .addInterceptor(dev.beacon.core.network.HttpTraceInterceptor())
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(45, TimeUnit.SECONDS)
         .build()

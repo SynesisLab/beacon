@@ -53,3 +53,27 @@ class AuthInterceptor @Inject constructor(
         )
     }
 }
+
+/**
+ * §16.7 evidence loop: one log line per REST call (method URL → status/error),
+ * always on (cheap, logcat-only). Sse/socket traffic stays out (frames log via
+ * the parser's own counters). `response.peekBody` — the response reads on.
+ */
+class HttpTraceInterceptor : Interceptor {
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val request = chain.request()
+        return try {
+            chain.proceed(request).also { response ->
+                if (!response.isSuccessful) {
+                    val excerpt = runCatching { response.peekBody(300).string() }.getOrNull()
+                    android.util.Log.w("BeaconHttp", "← ${response.code} ${request.url.encodedPath} ${excerpt?.take(200)}")
+                } else {
+                    android.util.Log.i("BeaconHttp", "→ ${request.method} ${request.url.encodedPath} ← ${response.code}")
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("BeaconHttp", "✗ ${request.method} ${request.url.encodedPath} ${e.javaClass.simpleName}: ${e.message}")
+            throw e
+        }
+    }
+}

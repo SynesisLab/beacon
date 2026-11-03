@@ -11,6 +11,7 @@ import dev.beacon.core.data.local.ChatEntity
 import dev.beacon.core.data.local.MessageEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -24,11 +25,14 @@ import javax.inject.Singleton
 class ChatRepository @Inject constructor(
     private val db: BeaconDatabase,
     private val chatsApi: ChatsApi,
+    private val session: dev.beacon.core.data.SessionStore,
 ) : ChatStore {
     internal fun chats() = db.chats()
     internal fun messages() = db.messages()
 
     fun observeChats(): Flow<List<ChatEntity>> = db.chats().observeAll()
+
+    override suspend fun serverVersion(): String? = session.settings.first().serverVersion
 
     // ── ChatStore (engine surface) ───────────────────────────────────────────
 
@@ -104,6 +108,30 @@ class ChatRepository @Inject constructor(
         }
 
     override suspend fun refreshServerChat(chatId: String): Boolean = adoptServerChat(chatId) != null
+
+    override suspend fun createServerChat(title: String, modelId: String): ChatPayload? =
+        withContext(Dispatchers.IO) {
+            try {
+                // The web's initChatHandler body (Chat.svelte:4829-4847): title/models
+                // + an empty history; the title lives INSIDE the chat dict
+                // (models/chats.py:673-675) and the server assigns the id.
+                chatsApi.create(
+                    dev.beacon.core.api.dto.NewChatBody(
+                        chat = dev.beacon.core.api.dto.ChatStorage(
+                            title = title,
+                            models = listOf(modelId),
+                            history = dev.beacon.core.api.dto.ChatHistory(messages = emptyMap(), currentId = null),
+                            messages = emptyList(),
+                            tags = emptyList(),
+                            timestamp = System.currentTimeMillis(),
+                        ),
+                    ),
+                )
+            } catch (e: Exception) {
+                android.util.Log.w("BeaconChat", "createServerChat failed: ${e.message}")
+                null
+            }
+        }
 
     // ── server-mirroring operations ──────────────────────────────────────────
 

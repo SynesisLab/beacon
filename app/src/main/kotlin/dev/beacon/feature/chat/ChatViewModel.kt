@@ -84,7 +84,10 @@ class ChatViewModel @Inject constructor(
     private val micState = MutableStateFlow<MicState>(MicState.Idle)
     private val micError = MutableStateFlow<String?>(null)
     private var dictationBase: String? = null
-    private var configFeatures: dev.beacon.core.api.dto.Features? = null
+    /** The gate rides the combine as a REAL flow — a var read inside the lambda
+     *  only paints when another input happens to re-emit afterwards
+     *  (the vanishing toggle chips, 2026-11-03). */
+    private val configFeaturesFlow = MutableStateFlow<dev.beacon.core.api.dto.Features?>(null)
     private var serverDefault: String? = null
     private val httpClient = api.publicClient()
     private val instanceUrl = session.instanceUrlSnapshot()
@@ -103,6 +106,7 @@ class ChatViewModel @Inject constructor(
             tempMode,
             micState,
             micError,
+            configFeaturesFlow,
         ) { values ->
             @Suppress("UNCHECKED_CAST")
             UiState(
@@ -118,7 +122,7 @@ class ChatViewModel @Inject constructor(
                 attachmentError = values[7] as String?,
                 toggles = values[8] as Toggles,
                 tempMode = values[9] as Boolean,
-                featuresGate = configFeatures,
+                featuresGate = values[12] as dev.beacon.core.api.dto.Features?,
                 mic = values[10] as MicState,
                 micError = values[11] as String?,
                 // §8.5: the mic STAYS visible; the tap requests the permission
@@ -138,7 +142,7 @@ class ChatViewModel @Inject constructor(
             runCatching {
                 modelsState.value = api.models().items
                 val config = api.config()
-                configFeatures = config.features
+                configFeaturesFlow.value = config.features
                 // OWUI admin-assigned default: "model-a,model-b" list → first id
                 serverDefault = config.default_models
                     ?.split(',')?.firstOrNull()?.trim()
@@ -188,9 +192,9 @@ class ChatViewModel @Inject constructor(
     }
 
     private fun currentFeatures(): dev.beacon.core.chat.Features = dev.beacon.core.chat.Features(
-        web_search = toggles.value.webSearch && (configFeatures?.enable_web_search ?: true),
-        image_generation = toggles.value.imageGeneration && (configFeatures?.enable_image_generation ?: true),
-        code_interpreter = toggles.value.codeInterpreter && (configFeatures?.enable_code_interpreter ?: true),
+        web_search = toggles.value.webSearch && (configFeaturesFlow.value?.enable_web_search ?: true),
+        image_generation = toggles.value.imageGeneration && (configFeaturesFlow.value?.enable_image_generation ?: true),
+        code_interpreter = toggles.value.codeInterpreter && (configFeaturesFlow.value?.enable_code_interpreter ?: true),
     )
 
     fun send() {
@@ -238,6 +242,14 @@ class ChatViewModel @Inject constructor(
     }
 
     fun stop() = engine.stop()
+
+    /** M4-d3: the model's ask_user interaction (rendered by InputPromptDialog). */
+    val inputPrompt: kotlinx.coroutines.flow.StateFlow<ChatEngine.InputRequest?> =
+        engine.inputPrompt
+
+    fun answerInput(answers: Map<String, String>) = engine.answerInput(answers)
+
+    fun cancelInput() = engine.cancelInput()
 
     /** Lifecycle hook: silent reconciler sync on app resume (§9.1/§9.2). */
     fun onAppResume() {

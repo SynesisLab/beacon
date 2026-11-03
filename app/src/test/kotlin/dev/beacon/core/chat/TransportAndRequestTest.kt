@@ -53,7 +53,12 @@ class CompletionRequestEncodeTest {
                 messages = listOf(ProjectionMessage.user("hi")),
                 id = "assistant-1",
                 parent_id = null,
-                user_message = ProjectionMessage.user("hi"),
+                // v0.12 user turn dict (id/parentId required; chats.py:1321 409s bare turns)
+                user_message = kotlinx.serialization.json.buildJsonObject {
+                    put("id", kotlinx.serialization.json.JsonPrimitive("user-1"))
+                    put("role", kotlinx.serialization.json.JsonPrimitive("user"))
+                    put("content", kotlinx.serialization.json.JsonPrimitive("hi"))
+                },
                 background_tasks = BackgroundTasks(title_generation = true, tags_generation = true),
             ),
         )

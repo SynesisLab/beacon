@@ -85,6 +85,7 @@ dependencies {
     implementation(libs.appcompat2)
     implementation(libs.datastore)
     implementation(libs.okhttp)
+    implementation(libs.socket.io.client)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.coroutines.android)
     implementation(libs.hilt.android)

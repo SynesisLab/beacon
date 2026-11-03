@@ -67,11 +67,36 @@ fun ChatsDrawer(
     var menuFor by remember { mutableStateOf<ChatEntity?>(null) }
 
     Column(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
-        Text(
-            "Beacon",
-            style = MaterialTheme.typography.headlineSmall,
+        // Logo block (user request): the beacon mark + "Beacon" + the tiny line.
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-        )
+        ) {
+            androidx.compose.material3.Surface(
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
+                color = dev.beacon.ui.theme.Umber,
+                modifier = Modifier.size(34.dp),
+            ) {
+                // The launcher glyph's canvas is 108dp with a centered mark —
+                // oversize the image so the beacon fills the chip.
+                androidx.compose.foundation.layout.Box(contentAlignment = Alignment.Center) {
+                    androidx.compose.foundation.Image(
+                        painter = androidx.compose.ui.res.painterResource(dev.beacon.R.drawable.ic_launcher_foreground),
+                        contentDescription = "Beacon",
+                        modifier = Modifier.size(44.dp),
+                    )
+                }
+            }
+            Column {
+                Text("Beacon", style = MaterialTheme.typography.headlineSmall)
+                Text(
+                    "a client for Open WebUI",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
         DrawerRow("+ New chat", onClick = { onNewChat(); onClose() })
         GatedRow("Folders", gates.foldersGate, onClick = { onOpenSurface("folders"); onClose() })
         GatedRow("Notes", gates.notesGate, onClick = { onOpenSurface("notes"); onClose() })

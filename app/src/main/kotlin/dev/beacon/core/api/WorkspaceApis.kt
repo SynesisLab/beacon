@@ -42,6 +42,10 @@ data class ToolRow(val id: String, val name: String)
 @Serializable
 data class KnowledgeRow(val id: String, val name: String, val description: String? = null)
 
+/** knowledge.py:139-141 — KnowledgeAccessListResponse. */
+@Serializable
+data class KnowledgePage(val items: List<KnowledgeRow> = emptyList(), val total: Int = 0)
+
 /** GET /api/v1/files/ → {items, total} (files.py:485-…). */
 @Serializable
 data class FilesPage(val items: List<FileRow> = emptyList(), val total: Int = 0)
@@ -67,7 +71,10 @@ class WorkspaceApis @Inject constructor(
     }
 
     suspend fun files(): List<FileRow> = withContext(Dispatchers.IO) {
-        client.newCall(get("/api/v1/files/")).await().decodeJson(FilesPage.serializer(), json).items
+        // content=false: the route ships file CONTENT by default (slow, blobs);
+        // the list only needs ids/names (files.py:485-490 verified).
+        client.newCall(get("/api/v1/files/?page=1&content=false")).await()
+            .decodeJson(FilesPage.serializer(), json).items
     }
 
     suspend fun prompts(): List<PromptRow> = withContext(Dispatchers.IO) {
@@ -78,8 +85,10 @@ class WorkspaceApis @Inject constructor(
         client.newCall(get("/api/v1/tools/")).await().decodeJson(ListSerializer(ToolRow.serializer()), json)
     }
 
+    /** GET /api/v1/knowledge/ → KnowledgeAccessListResponse {items, total} (routers/knowledge.py:139). */
     suspend fun knowledge(): List<KnowledgeRow> = withContext(Dispatchers.IO) {
-        client.newCall(get("/api/v1/knowledge/")).await().decodeJson(ListSerializer(KnowledgeRow.serializer()), json)
+        client.newCall(get("/api/v1/knowledge/")).await()
+            .decodeJson(KnowledgePage.serializer(), json).items
     }
 
     private fun requireInstance(): String =

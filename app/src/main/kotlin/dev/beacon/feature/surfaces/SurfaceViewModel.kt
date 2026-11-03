@@ -7,68 +7,73 @@ import dev.beacon.core.api.ChannelRow
 import dev.beacon.core.api.FolderRow
 import dev.beacon.core.api.FileRow
 import dev.beacon.core.api.KnowledgeRow
+import dev.beacon.core.api.NoteRow
 import dev.beacon.core.api.OwuiApi
 import dev.beacon.core.api.PromptRow
 import dev.beacon.core.api.ToolRow
 import dev.beacon.core.api.WorkspaceApis
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Loads one drawer surface's list (M4-d1 read-only screens). Fetch failures stay
- * typed to the surface — the drawer hides what the server doesn't expose.
+ * One drawer-surface state (M4-d1): the lists + the capability gates + the
+ * account summary. The surfaces' fetches run PARALLEL with a 15s cap each; a
+ * slow/failed surface degrades its rows, never the whole drawer (user report:
+ * a sequentially-loaded surface could pin the spinner forever).
  */
 @HiltViewModel
 class SurfaceViewModel @Inject constructor(
-    private val apis: WorkspaceApisLoader,
+    private val loader: WorkspaceApisLoader,
 ) : ViewModel() {
-
-    data class ListState(
-        val loading: Boolean = true,
-        val error: String? = null,
-        val folders: List<FolderRow> = emptyList(),
-        val notes: List<dev.beacon.core.api.NoteRow> = emptyList(),
-        val channels: List<ChannelRow> = emptyList(),
-        val files: List<FileRow> = emptyList(),
-        val prompts: List<PromptRow> = emptyList(),
-        val tools: List<ToolRow> = emptyList(),
-        val knowledge: List<KnowledgeRow> = emptyList(),
-        // The drawer's account row + capability gates (server config owned).
-        val accountName: String? = null,
-        val accountEmail: String? = null,
-        val foldersGate: Boolean = false,
-        val notesGate: Boolean = false,
-        val channelsGate: Boolean = false,
-        val workspaceGate: Boolean = false,
-    )
-
-    val state: StateFlow<ListState> = apis.state
+    val state: StateFlow<LoaderState> = loader.state
 
     init {
-        refresh()
+        loader.refresh()
     }
 
-    fun refresh() {
-        viewModelScope.launch { apis.refresh() }
-    }
+    fun refresh() = loader.refresh()
 }
 
-/** Wrapper over WorkspaceApis exposing list state (kept thin for the drawer VMs). */
+data class LoaderState(
+    val loading: Boolean = true,
+    val error: String? = null,
+    val folders: List<FolderRow> = emptyList(),
+    val notes: List<NoteRow> = emptyList(),
+    val channels: List<ChannelRow> = emptyList(),
+    val files: List<FileRow> = emptyList(),
+    val prompts: List<PromptRow> = emptyList(),
+    val tools: List<ToolRow> = emptyList(),
+    val knowledge: List<KnowledgeRow> = emptyList(),
+    val accountName: String? = null,
+    val accountEmail: String? = null,
+    val foldersGate: Boolean = false,
+    val notesGate: Boolean = false,
+    val channelsGate: Boolean = false,
+    val workspaceGate: Boolean = false,
+)
+
 @Singleton
 class WorkspaceApisLoader @Inject constructor(
     private val apis: WorkspaceApis,
-    session: dev.beacon.core.data.SessionStore,
+    private val session: dev.beacon.core.data.SessionStore,
     private val api: OwuiApi,
 ) {
-    private val _state = MutableStateFlow(SurfaceViewModel.ListState())
-    val state: StateFlow<SurfaceViewModel.ListState> = _state
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val _state = MutableStateFlow(LoaderState())
+    val state: StateFlow<LoaderState> = _state
 
     init {
-        // Gates + account ride the session settings (already loaded at onboarding).
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+        scope.launch {
+            // The account rows ride the session settings (onboarding-populated).
             launch {
                 session.settings.collect { settings ->
                     _state.value = _state.value.copy(
@@ -77,39 +82,64 @@ class WorkspaceApisLoader @Inject constructor(
                     )
                 }
             }
-            refresh() // suspend-safe inside the scope's launch
+            refresh()
         }
     }
 
-    suspend fun refresh() {
-        _state.value = _state.value.copy(loading = true, error = null)
-        // Capability gates from /api/config (verified keys; §16.6).
-        try {
-            val cfg = api.config()
-            val features = cfg.features
-            _state.value = _state.value.copy(
-                foldersGate = features?.enable_folders == true,
-                notesGate = features?.enable_notes == true,
-                channelsGate = features?.enable_channels == true,
-                workspaceGate = features?.enable_tools == true || features?.enable_functions == true,
-            )
-        } catch (_: Exception) {
-            // Unreachable server: rows degrade; gates read from the cached config on refresh.
-        }
-        suspend fun <T> fetch(slot: (SurfaceViewModel.ListState, List<T>) -> SurfaceViewModel.ListState, call: suspend () -> List<T>) {
-            try {
-                _state.value = slot(_state.value, call())
-            } catch (e: Exception) {
-                _state.value = _state.value.copy(error = e.message ?: e.javaClass.simpleName)
-            }
-        }
-        fetch({ s, v -> s.copy(folders = v) }) { apis.folders() }
-        fetch({ s, v -> s.copy(notes = v) }) { apis.notes() }
-        fetch({ s, v -> s.copy(channels = v) }) { apis.channels() }
-        fetch({ s, v -> s.copy(files = v) }) { apis.files() }
-        fetch({ s, v -> s.copy(prompts = v) }) { apis.prompts() }
-        fetch({ s, v -> s.copy(tools = v) }) { apis.tools() }
-        fetch({ s, v -> s.copy(knowledge = v) }) { apis.knowledge() }
-        _state.value = _state.value.copy(loading = false)
+    /** One capped, fault-isolated fetch; null rows on failure/timeouts. */
+    private suspend fun <T> safeSlot(call: suspend () -> List<T>): List<T>? = try {
+        withTimeout(15_000) { call() }
+    } catch (_: Exception) {
+        null
     }
+
+    fun refresh() {
+        scope.launch {
+            _state.value = _state.value.copy(loading = true, error = null)
+            // Gates from /api/config (the verified keys; agent.md §16.6).
+            configGateJob = scope.launch {
+                try {
+                    val features = api.config().features
+                    _state.value = _state.value.copy(
+                        foldersGate = features?.enable_folders == true,
+                        notesGate = features?.enable_notes == true,
+                        channelsGate = features?.enable_channels == true,
+                        workspaceGate = features?.enable_tools == true || features?.enable_functions == true,
+                    )
+                } catch (_: Exception) {
+                }
+            }
+
+            val results = kotlinx.coroutines.coroutineScope {
+                val f = async { safeSlot { apis.folders() } }
+                val n = async { safeSlot { apis.notes() } }
+                val c = async { safeSlot { apis.channels() } }
+                val fl = async { safeSlot { apis.files() } }
+                val p = async { safeSlot { apis.prompts() } }
+                val t = async { safeSlot { apis.tools() } }
+                val k = async { safeSlot { apis.knowledge() } }
+                val all = awaitAll(f, n, c, fl, p, t, k)
+                @Suppress("UNCHECKED_CAST")
+                all as List<List<Any>?>
+            }
+            val timedOut = results.count { it == null }
+            _state.value = _state.value.copy(
+                loading = false,
+                folders = (results[0] as List<FolderRow>?) ?: _state.value.folders,
+                notes = (results[1] as List<NoteRow>?) ?: _state.value.notes,
+                channels = (results[2] as List<ChannelRow>?) ?: _state.value.channels,
+                files = (results[3] as List<FileRow>?) ?: _state.value.files,
+                prompts = (results[4] as List<PromptRow>?) ?: _state.value.prompts,
+                tools = (results[5] as List<ToolRow>?) ?: _state.value.tools,
+                knowledge = (results[6] as List<KnowledgeRow>?) ?: _state.value.knowledge,
+                error = if (timedOut > 0) {
+                    "One or more surfaces timed out — pull down to reload."
+                } else {
+                    null
+                },
+            )
+        }
+    }
+
+    private var configGateJob: kotlinx.coroutines.Job? = null
 }

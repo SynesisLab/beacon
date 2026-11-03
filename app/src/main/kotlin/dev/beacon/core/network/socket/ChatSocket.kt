@@ -27,6 +27,10 @@ interface ChatSocket {
 
     /** All server events; envelopes {chat_id, message_id, data}. */
     val events: SharedFlow<SocketEnvelope>
+
+    /** Chat-room presence (the shared throttled-output stream lives in room chat:{id}). */
+    fun joinChat(chatId: String?): Boolean = false
+    fun leaveChat(chatId: String?): Boolean = false
 }
 
 @Singleton
@@ -43,6 +47,10 @@ class HiltChatSocket @Inject constructor(
     override fun sessionId(): String? = socketLazy.get().sessionId
 
     override val events: SharedFlow<SocketEnvelope> get() = socketLazy.get().events
+
+    override fun joinChat(chatId: String?): Boolean = socketLazy.get().joinChat(chatId)
+
+    override fun leaveChat(chatId: String?): Boolean = socketLazy.get().leaveChat(chatId)
 
     private fun tokenFor(url: String): String? {
         val settings = session.settingsSnapshot()

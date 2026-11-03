@@ -155,6 +155,18 @@ class ChatEngine(
     private var lastSyncAt = 0L
     private var activeModelId: String? = null
     private var projectionSnapshot: List<ProjectionMessage> = emptyList()
+    private var joinedChatId: String? = null
+
+    /** Joins room chat:{id} (the SHARED throttled output = live streaming);
+     *  leaves the previous room first. Temp chats never join (they share
+     *  nothing server-side; update_db/room logic at socket/main.py:1628). */
+    private fun joinChatRoom(chatId: String?) {
+        val id = chatId ?: return
+        if (id == joinedChatId) return
+        joinedChatId?.let { socket?.leaveChat(it) }
+        joinedChatId = if (socket?.joinChat(id) == true) id else joinedChatId
+        Timber.d("chat room %s -> %s", id, if (joinedChatId == id) "joined" else "join failed")
+    }
 
     /** Entry: adopt the server chat tree and paint Room-first (§6.4). */
     suspend fun load(existingChatId: String?) {
@@ -169,6 +181,8 @@ class ChatEngine(
             _state.value = ChatUiModel()
             return
         }
+        // The chat-room presence = the live-output stream (§streaming).
+        joinChatRoom(existingChatId)
         // Paint ROOM FIRST so opening a chat switches instantly (user report:
         // the tap showed the previous surface until the network answered).
         runCatching {
@@ -259,21 +273,35 @@ class ChatEngine(
         files: List<FileAttachment> = emptyList(),
         features: Features? = null,
         temporary: Boolean = false,
+        toolIds: List<String> = emptyList(),
+        skillIds: List<String> = emptyList(),
     ) {
         if (text.isBlank() || _state.value.busy) return
-        launchStream { sendParams(text, modelId).copy(files = files, features = features, temporary = temporary) }
+        launchStream {
+            sendParams(text, modelId, toolIds = toolIds, skillIds = skillIds)
+                .copy(files = files, features = features, temporary = temporary)
+        }
     }
 
-    /** §4: regenerate = a sibling branch under the same parent (new assistant id). */
-    fun regenerate(modelId: String) {
+    /** §4: regenerate = a sibling branch under the same parent (new assistant id).
+     *  Selections carry over (the web's preserveSelections). */
+    fun regenerate(modelId: String, toolIds: List<String> = emptyList(), skillIds: List<String> = emptyList()) {
         if (_state.value.busy) return
-        launchStream { sendParams("", modelId, regenerate = true) }
+        launchStream { sendParams("", modelId, regenerate = true, toolIds = toolIds, skillIds = skillIds) }
     }
 
     /** §4/§9.3: edit-and-retry — a sibling branch seeded by the same user turn. */
-    fun editAndRetry(messageId: String, newContent: String, modelId: String) {
+    fun editAndRetry(
+        messageId: String,
+        newContent: String,
+        modelId: String,
+        toolIds: List<String> = emptyList(),
+        skillIds: List<String> = emptyList(),
+    ) {
         if (newContent.isBlank() || _state.value.busy) return
-        launchStream { sendParams(newContent, modelId, regenerate = false, replaceUserMessageId = messageId) }
+        launchStream {
+            sendParams(newContent, modelId, regenerate = false, replaceUserMessageId = messageId, toolIds = toolIds, skillIds = skillIds)
+        }
     }
 
     /** §9.3: continue an interrupted/ended assistant turn (assistant_message_id). */
@@ -386,6 +414,11 @@ class ChatEngine(
         val continueAssistantId: String? = null,
         /** composer feature toggles (§9.3; server-gated) — the wire-typed set. */
         val features: Features? = null,
+        /** The model's default workspace TOOLS + SKILLS (Chat.svelte:1121-1140:
+         *  meta.toolIds ∪ sticky, meta.skillIds ∩ active) — the wire's
+         *  tool_ids/skill_ids; empty = no tools selected. */
+        val toolIds: List<String> = emptyList(),
+        val skillIds: List<String> = emptyList(),
         /** temporary chat: client-owned `temporary:<uuid>` id, never saved (§9.3) */
         val temporary: Boolean = false,
     )
@@ -397,7 +430,9 @@ class ChatEngine(
         replaceUserMessageId: String? = null,
         features: Features? = null,
         temporary: Boolean = false,
-    ): SendPlan = SendPlan(text, modelId, emptyList(), regenerate, replaceUserMessageId, features = features, temporary = temporary)
+        toolIds: List<String> = emptyList(),
+        skillIds: List<String> = emptyList(),
+    ): SendPlan = SendPlan(text, modelId, emptyList(), regenerate, replaceUserMessageId, features = features, temporary = temporary, toolIds = toolIds, skillIds = skillIds)
 
     /** Temporary chats own a client-generated `temporary:<uuid>` id (utils/chat_id.py verified). */
     private var tempSessionId: String? = null
@@ -433,6 +468,9 @@ class ChatEngine(
         }
         val existingChatId = _state.value.chatId
         val isNewChat = existingChatId == null
+        // Join the ROOM the moment the id is real: the shared output throttle
+        // is the live stream (§streaming).
+        joinChatRoom(existingChatId)
         val now = System.currentTimeMillis()
         val previousAssistantId = _state.value.messages.lastOrNull { it.role == MessageEntity.ROLE_ASSISTANT }?.id
 
@@ -536,6 +574,8 @@ class ChatEngine(
             regeneration_prompt = null,
             assistant_message_id = plan.continueAssistantId,
             features = plan.features ?: Features(),
+            tool_ids = plan.toolIds,
+            skill_ids = plan.skillIds,
             background_tasks = when {
                 plan.temporary -> BackgroundTasks() // nothing persists for temp chats
                 isNewChat -> BackgroundTasks(title_generation = true, tags_generation = true, follow_up_generation = true)
@@ -832,6 +872,7 @@ class ChatEngine(
         val chatId = (payload["chat_id"] as? JsonPrimitive)?.content
         chatId?.takeIf { _state.value.chatId == null }?.let { adopted ->
             _state.value = _state.value.copy(chatId = adopted)
+            joinChatRoom(adopted)
         }
         val terminated = kotlinx.coroutines.withTimeoutOrNull(45_000) {
             while (!taskTerminated) kotlinx.coroutines.delay(50)
@@ -983,6 +1024,7 @@ class ChatEngine(
     private suspend fun adoptLearnedChat(chatId: String, assistantMessageId: String) {
         if (_state.value.chatId != null) return // already known (multi-frame safety)
         _state.value = _state.value.copy(chatId = chatId)
+        joinChatRoom(chatId)
 
         val pending = _state.value.messages.takeLast(2) // optimistic user + assistant pair
         val userMsg = pending.firstOrNull { it.role == MessageEntity.ROLE_USER }

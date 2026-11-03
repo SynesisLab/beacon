@@ -124,6 +124,14 @@ data class OwuiModel(
      *  lists it in defaultFeatureIds; admin checks in utils/automations.py:186). */
     val default_feature_ids: List<String>
         get() = info?.meta?.defaultFeatureIds ?: meta?.defaultFeatureIds ?: emptyList()
+
+    /** The model's default TOOLS/SKILLS selections (Chat.svelte:1121-1135) —
+     *  same both-shapes fallback as the features. */
+    val default_tool_ids: List<String>
+        get() = info?.meta?.toolIds ?: meta?.toolIds ?: emptyList()
+
+    val default_skill_ids: List<String>
+        get() = info?.meta?.skillIds ?: meta?.skillIds ?: emptyList()
 }
 
 @Serializable
@@ -136,6 +144,10 @@ data class OwuiModelMeta(
     val description: String? = null,
     val capabilities: Capabilities? = null,
     val defaultFeatureIds: List<String>? = null,
+    /** The model's default workspace selections (Chat.svelte:1121-1142). */
+    val toolIds: List<String>? = null,
+    val skillIds: List<String>? = null,
+    val defaultFilterIds: List<String>? = null,
 )
 
 @Serializable

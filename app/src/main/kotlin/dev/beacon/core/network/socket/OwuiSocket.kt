@@ -289,6 +289,32 @@ class OwuiSocket @Inject constructor() {
         runCatching { socket?.emit("user-join", orgJson(mapOf("auth" to mapOf("token" to token)))) }
     }
 
+    /**
+     * Chat-room presence (socket/main.py:866-925 `events:chat`): the client
+     * emits {chat_id, data:{type:'join'|'leave'}} and lands in room
+     * `chat:{chat_id}` — where the SHARED `events` stream (the throttled,
+     * accumulating `chat:completion` output; 0.15s cadence, socket/main.py:
+     * 1644-1675) delivers the live incremental text the web renders. Without
+     * the join the generation's deltas never stream (device log 2026-11-03:
+     * only chat:list/chat:active + the terminal done:true arrived).
+     */
+    fun joinChat(chatId: String?): Boolean =
+        chatRoom(chatId, "join")
+
+    fun leaveChat(chatId: String?): Boolean =
+        chatRoom(chatId, "leave")
+
+    private fun chatRoom(chatId: String?, action: String): Boolean {
+        if (chatId.isNullOrBlank() || chatId.startsWith("temporary:")) return false
+        return runCatching {
+            socket?.emit(
+                "events:chat",
+                orgJson(mapOf("chat_id" to chatId, "data" to mapOf("type" to action))),
+            )
+            true
+        }.getOrDefault(false)
+    }
+
     // ── mapping: org.json (Java client) → kotlinx Json ─────────────────────
 
     private fun toTree(any: Any?): JsonElement = when (any) {

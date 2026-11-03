@@ -92,6 +92,27 @@ until its milestone — add the gate/route when the milestone lands.
 | Subagents gate (`enable_subagents`) | Watch M4 — likely part of workspace/automations |
 | User-webhooks gate (`ui.enable_user_webhooks`) | post-M5, only if requested |
 
+## Releases audit (2026-11-03, against the GitHub releases v0.11.4→v0.13.0 — server updated to 0.13.0)
+
+New feature rows this audit adds (not in the older table):
+
+| OWUI feature (release / gate) | Beacon plan |
+| --- | --- |
+| Unified workspace SEARCH: chats + shared chats + channels/DMs + notes (v0.12.3) | Extends the M4 search row — one search surface over the four lists |
+| Shared chats with "Allow replies" + live reply streaming (v0.12.0) | Rides the M3 share/export row (share_id; replies flag on the create-share API) |
+| Comment threads on chats/notes/models/knowledge/prompts/tools (`ENABLE_COMMENTS`, v0.13.0) | NEW row — M5+ |
+| Notification INBOX aggregating comments/mentions/automations/calendar (`notifications.*`, v0.13.0) | The audit's user-notifications row already tracks the target surface; inbox = its read shape |
+| Side chats — temp side conversation via "/side" `/btw` (gated permission, off by default, v0.13.0) | NEW row — M5+, gate-hidden |
+| MCP app frames rendered inside chat with per-call confirmation (v0.13.0) | The apps row's render-side: tool embeds policy already exists (M2-2); confirmations reuse the resolve/confirm dialog |
+| 3D model previews GLB/glTF/STL/OBJ/PLY (v0.13.0) | NEW row — file-viewer surface, M5+ |
+| Model CONTROLS knobs (named controls like Thinking: L/M/H; v0.12.0) | The M4 params sheet's shape: `model_controls` already rides `params` on the wire |
+| Tools ON/OFF switches + tool creation from chat; skills versions/export | Workspace M4+ (view-only first, per the model-editor row) |
+| Notes multi-page + tabs + live presence (v0.12.5) | Beacon reads/edits the MAIN page today (NoteDoc round-trip); pages + presence socket = M5+ |
+| Channel typed @/# mentions auto-resolve + mentions-only mute (v0.12.1) | Channels M4 polish |
+| MLS E2EE DM/group channels (`ENABLE_ENCRYPTED_CHANNELS`, v0.12.3) | The existing Channels-E2EE decision row (websocket-only + ≤16 KiB messages constraint noted) |
+| Skills lazy-load (`ENABLE_SKILL_LAZY_LOADING`), terminal skills in menus (v0.11.4/v0.12.4) | Server-side; Beacon sends skill_ids as adopted (2026-11-03 fix) — no client change needed |
+| Chat tabbed workspace = desktop tab bar (v0.13.0) | Deliberately NOT mobile-targeted: Beacon's tab bar = Chat/Folders/Notes/Files (user decision) |
+
 ## Gotchas (pre-distilled in agent.md §17 — do not re-discover these)
 
 - Empty SSE `data:` frames are **heartbeats** — never JSON-decode them; the frame scanner is byte-level.

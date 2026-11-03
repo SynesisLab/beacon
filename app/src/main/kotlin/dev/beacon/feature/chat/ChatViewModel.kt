@@ -232,7 +232,7 @@ class ChatViewModel @Inject constructor(
         val pending = attachments.value.toList()
         if (pending.isEmpty()) {
             draft.value = ""
-            engine.send(text, modelId, features = currentFeatures(), temporary = tempMode.value)
+            engine.send(text, modelId, features = currentFeatures(), temporary = tempMode.value, toolIds = toolSelection.value.toList(), skillIds = skillSelection.value.toList())
             return
         }
 
@@ -260,7 +260,7 @@ class ChatViewModel @Inject constructor(
                     uploaded.add(FileAttachment(id = id, name = entry.name))
                 }
                 attachments.value = emptyList()
-                engine.send(text, modelId, uploaded)
+                engine.send(text, modelId, uploaded, toolIds = toolSelection.value.toList(), skillIds = skillSelection.value.toList())
             } catch (e: Exception) {
                 attachmentError.value = e.message ?: "Upload failed"
             } finally {
@@ -427,8 +427,30 @@ class ChatViewModel @Inject constructor(
             imageGeneration = on("image_generation") || toggles.value.imageGeneration,
             codeInterpreter = on("code_interpreter") || toggles.value.codeInterpreter,
         )
+        // The model's default TOOLS + SKILLS selections (Chat.svelte:1121-1140):
+        // meta.toolIds (or the caller's settings.tools when the meta has none),
+        // meta.skillIds — carried monotone-sticky across model changes until
+        // the composer grows a selection menu (M4+).
+        val metaTools = model.default_tool_ids
+        val userPinned = pinnedTools(userSettingsSnapshot)
+        toolSelection.value = (toolSelection.value + metaTools + userPinned)
+        skillSelection.value = (skillSelection.value + model.default_skill_ids)
+        android.util.Log.d(
+            "BeaconDefaults",
+            "model=$modelId tools=${toolSelection.value} skills=${skillSelection.value}",
+        )
         defaultsAppliedFor = modelId
     }
+
+    /** The caller's user-settings pinned tools ($settings.tools on the web). */
+    private fun pinnedTools(settings: kotlinx.serialization.json.JsonObject?): List<String> {
+        val raw = settings?.get("tools") as? kotlinx.serialization.json.JsonArray ?: return emptyList()
+        return raw.mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+    }
+
+    /** The workspace-tool selection riding the wire (tool_ids). */
+    private val toolSelection = MutableStateFlow(emptySet<String>())
+    private val skillSelection = MutableStateFlow(emptySet<String>())
 
     private fun resolveModel(): String? =
         selected.value
@@ -457,10 +479,10 @@ class ChatViewModel @Inject constructor(
 
     fun micPermissionGranted(): Boolean = voice.hasPermission()
 
-    /** Regenerate with the resolved model (screen convenience). */
+    /** Regenerate with the resolved model (screen convenience); selections carry. */
     fun regenerate() {
         val modelId = resolveModel() ?: return
-        engine.regenerate(modelId)
+        engine.regenerate(modelId, toolIds = toolSelection.value.toList(), skillIds = skillSelection.value.toList())
     }
 
     /** Tap = on-device dictation with live partials. The permission request stays on the screen. */

@@ -13,6 +13,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -238,21 +242,39 @@ fun ChatScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom),
             ) {
                 if (state.engine.messages.isEmpty()) {
-                    // Empty-state hero, in the model's voice (user request 2026-11-02).
+                    // Empty-state hero, in the model's voice (user request 2026-11-02);
+                    // temp mode swaps to the Incognito-style honesty panel.
                     item(key = "empty_hero") {
                         Column(
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.padding(vertical = 24.dp),
                         ) {
-                            Text(
-                                text = "Hello, I'm ${state.modelLabel ?: "your model"}.",
-                                style = MaterialTheme.typography.headlineLarge,
-                            )
-                            Text(
-                                text = "Ask anything — everything runs on your server.",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                            if (state.tempMode) {
+                                Text(
+                                    text = "✳",
+                                    style = MaterialTheme.typography.headlineLarge,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                                Text(
+                                    text = "Temporary chat",
+                                    style = MaterialTheme.typography.headlineSmall,
+                                )
+                                Text(
+                                    text = "This chat stays out of your history and search, and nothing is saved to your server.",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            } else {
+                                Text(
+                                    text = "Hello, I'm ${state.modelLabel ?: "your model"}.",
+                                    style = MaterialTheme.typography.headlineLarge,
+                                )
+                                Text(
+                                    text = "Ask anything — everything runs on your server.",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
                 }
@@ -365,12 +387,35 @@ fun ChatScreen(
             )
             // The composer bar (interface copy, 2026-11-02): one rounded container,
             // attach left, draft middle, mic + dark send/stop circle right.
+            // Temp mode: a DASHED outline (the Incognito copy, 2026-11-02).
+            val composerOutline = MaterialTheme.colorScheme.outline
             Surface(
                 color = MaterialTheme.colorScheme.surface,
                 shape = RoundedCornerShape(24.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                border = if (!state.tempMode) {
+                    androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                } else {
+                    null
+                },
                 modifier = Modifier
                     .fillMaxWidth()
+                    .then(
+                        if (state.tempMode) {
+                            Modifier.drawBehind {
+                                drawRoundRect(
+                                    color = composerOutline,
+                                    cornerRadius = CornerRadius(24.dp.toPx()),
+                                    style = androidx.compose.ui.graphics.drawscope.Stroke(
+                                        width = 1.dp.toPx(),
+                                        pathEffect = androidx.compose.ui.graphics.PathEffect
+                                            .dashPathEffect(floatArrayOf(14f, 12f)),
+                                    ),
+                                )
+                            }
+                        } else {
+                            Modifier
+                        },
+                    )
                     .padding(horizontal = 10.dp, vertical = 8.dp),
             ) {
                 Row(

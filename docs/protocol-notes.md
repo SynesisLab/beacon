@@ -142,6 +142,16 @@ The M4 "memories" item lands gated by `enable_memories`
 | Chip semantics (web) | the composer chips start ON when the selected models' merged meta lists the feature id | Chat.svelte:1118 |
 | Feature defaults (2026-11-03, models-defaults chain) | per the composer's truth chain — the caller's `ui.webSearch`/`ui.imageGeneration` tool-modes (`GET /api/v1/users/user/settings`, users.py:466-483; values that read as always-on: `always/enabled/on/true/1`/true/1 — Conduit chat_feature_defaults.dart:25-52 semantics, original code), the model's merged `defaultFeatureIds` (own meta → the USER-readable global `GET /api/v1/configs/models/defaults` when absent, configs.py:780-784), and the model's capabilities (top-level `meta` on /list items — ModelModel.meta, models/models.py:199-217); all gated by `/api/config` same-flags | users.py:466-483; configs.py:780-784; models.py:199-217,224-229; Chat.svelte:1118 |
 
+## Streaming fold semantics (2026-11-03, device logs + Conduit cross-read)
+
+| Topic | Finding | Evidence |
+| --- | --- | --- |
+| Delta events | task/socket completions deliver `response.output_text.delta` / `response.reasoning_text.delta` / `response.function_call_arguments.delta` under `chat:completion` batches or direct envelopes; payload = `{type, item_id, output_index, content_index, delta}` — item_id/index NOT always present (id-less deltas continue the last matching-family item) | middleware.py:5467-5498; middleware.py:4716-4758 |
+| Fold model | accumulate ONE `output` item list: deltas APPEND into the item's content parts; every mutation = a fresh snapshot (the web's `applyResponseStreamEvent`; Conduit `openwebui_response_stream.dart` mirrors it) | src/lib + Conduit |
+| Snapshot merge | snapshots (terminal `chat:completion` output, `response.completed`, `output_item.added/done`) MERGE by id, or call_id+same-type; unmatched previous items SURVIVE — earlier tool rounds and reasoning must not vanish; a function_call_output shares its call's call_id and must never replace the call | Conduit issue #751 note |
+| Reasoning timing | the server stamps started_at/ended_at only at structural transitions; the client stamps locally so "Thought for N s" reads live | Conduit _stampReasoningTiming |
+| Live delivery | the shared throttled `chat:completion {output}` (0.15s cadence) lands in room `chat:{id}` — clients must JOIN via socket `events:chat {chat_id, data:{type:'join'}}`; the user room carries mostly chat:list/chat:active only | socket/main.py:866-925, :1628-1675 |
+
 Beacon protocol deltas (2026-11-03 device-verified round-trips): note read/write via
 `data.pages[].content.{json,html,md}` (models/notes.py:156-220, :748-772, :357-367,
 NoteForm rejects pages at :474); files list carries meta.content_type (files.py:54).

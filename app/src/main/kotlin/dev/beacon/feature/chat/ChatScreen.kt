@@ -796,33 +796,6 @@ private fun MessageBubble(
                 }
             }
         }
-        // §4 branch stepper (OWUI parity): ‹ 2/3 › under the regenerated turn.
-        if (message.branchCount > 1) {
-            Row(
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 0.dp),
-            ) {
-                IconButton(
-                    onClick = { onSetBranch(message.id, (message.branchIndex - 1 + message.branchCount) % message.branchCount) },
-                    modifier = Modifier.size(30.dp),
-                ) {
-                    Text("‹", style = MaterialTheme.typography.titleMedium)
-                }
-                Text(
-                    "${message.branchIndex + 1}/${message.branchCount}",
-                    style = MaterialTheme.typography.labelMedium,
-                )
-                IconButton(
-                    onClick = { onSetBranch(message.id, (message.branchIndex + 1) % message.branchCount) },
-                    modifier = Modifier.size(30.dp),
-                ) {
-                    Text("›", style = MaterialTheme.typography.titleMedium)
-                }
-            }
-        }
     } else {
         Column(Modifier.fillMaxWidth()) {
             // Assistant text sits on the app background directly (Copernicus-voice,
@@ -899,6 +872,28 @@ private fun MessageBubble(
                             "Regenerate",
                             tint = iconTint,
                         )
+                    }
+                    // §4 branch stepper BESIDE the regen button (user request
+                    // 2026-11-03): ‹ 2/3 › among this response's versions.
+                    if (message.branchCount > 1) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = { onSetBranch(message.id, (message.branchIndex - 1 + message.branchCount) % message.branchCount) },
+                                modifier = Modifier.size(30.dp),
+                            ) {
+                                Text("‹", style = MaterialTheme.typography.titleMedium)
+                            }
+                            Text(
+                                "${message.branchIndex + 1}/${message.branchCount}",
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                            IconButton(
+                                onClick = { onSetBranch(message.id, (message.branchIndex + 1) % message.branchCount) },
+                                modifier = Modifier.size(30.dp),
+                            ) {
+                                Text("›", style = MaterialTheme.typography.titleMedium)
+                            }
+                        }
                     }
                 }
             }

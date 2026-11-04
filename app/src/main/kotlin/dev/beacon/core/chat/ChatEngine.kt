@@ -220,10 +220,12 @@ class ChatEngine(
         _state.value = ChatUiModel(
             chatId = chatId,
             messages = path.map { row ->
-                // §4 branch stepper data: the siblings ride the parent's childrenIds.
+                // §4 version count: a node's siblings = its PARENT's childrenIds
+                // (the assistant versions under the user turn); the index = this
+                // node's position among them.
                 val parent = row.parentId?.let { byId[it] }
                 renderOf(row).copy(
-                    branchCount = parent?.childrenIds?.size ?: 1,
+                    branchCount = (parent?.childrenIds?.size ?: 1).coerceAtLeast(1),
                     branchIndex = parent?.childrenIds?.indexOf(row.messageId)?.coerceAtLeast(0) ?: 0,
                 )
             },
@@ -232,15 +234,19 @@ class ChatEngine(
         )
     }
 
-    /** §4 branch switch (the ◀/▶ stepper under a regenerated user turn):
-     *  pick the holder's [index]-th child, walk to the branch's leaf, make it
-     *  the active leaf (+the server tree save = the web's own semantics). */
-    fun setBranch(holderId: String, index: Int) {
+    /** §4 the action-row stepper's ◀/▶: [assistantId] = the viewed version; its
+     *  parent holds the siblings. Picks the requested sibling, walks to the
+     *  branch's leaf, repaints + saves the tree (the visible-path pointer moves;
+     *  nothing is deleted). */
+    fun setBranch(assistantId: String, index: Int) {
         val chatId = _state.value.chatId ?: return
         scope.launch {
             val rows = store.messages(chatId)
-            val child = rows.firstOrNull { it.messageId == holderId }?.childrenIds?.getOrNull(index)
-                ?: return@launch
+            val pressed = rows.firstOrNull { it.messageId == assistantId } ?: return@launch
+            val holder = pressed.parentId ?: return@launch
+            val child = (rows.firstOrNull { it.messageId == holder } ?: return@launch)
+                .childrenIds
+                .getOrNull(index) ?: return@launch
             var leaf = child
             while (true) {
                 val kids = rows.filter { it.parentId == leaf }
@@ -637,6 +643,7 @@ class ChatEngine(
             // (parentId=null) and the user turn fell off the active path.
             if (plan.regenerate && existingChatId != null) {
                 store.saveServerTree(existingChatId, assistantMessageId, plan.modelId)
+                pendingTreeSave = true
             }
         }
 
@@ -720,6 +727,9 @@ class ChatEngine(
     /** Set by the terminal fold (chat:completion done:true / [DONE]). */
     @Volatile
     private var taskTerminated = true
+
+    /** A version-tree fork happened this stream → the finalize re-saves the tree. */
+    private var pendingTreeSave = false
 
     /** The assistant message the event collector folds into (per send). */
     private var activeAssistantId: String? = null
@@ -1209,6 +1219,14 @@ class ChatEngine(
                 if (store.refreshServerChat(chatId)) {
                     paintFromStore(chatId)
                 }
+                // §4: post-turn tree save = the web's per-send saveChatHandler —
+                // the streamed turn's node arrives parent-less server-side; the
+                // merged Room tree (the local parent outranks the server null)
+                // now pushes the corrected chain back (forks stay branched).
+                if (pendingTreeSave && assistantMessageId != null) {
+                    store.saveServerTree(chatId, assistantMessageId, activeModelId)
+                }
+                pendingTreeSave = false
             }
         }
     }

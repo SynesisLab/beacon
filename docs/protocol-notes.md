@@ -160,6 +160,14 @@ The M4 "memories" item lands gated by `enable_memories`
 | Public link | `${origin}/s/${share_id}` (a web route; the client shows/sends the URL) | src/lib ShareChatModal.svelte:35 |
 | Export md/json | CLIENT-built from the chat tree — no server export endpoint (the stats/export routes are admin analytics only) | web ExportMenu; chats.py:622-720 |
 
+## Version-tree forks (2026-11-03, device DB proof)
+
+| Topic | Finding | Evidence |
+| --- | --- | --- |
+| The fork save | a regenerated turn = POST /{id} with the FULL chat dict (`{chat:{models, history{messages,currentId}, messages}}`) — the web's saveChatHandler does this per send; the server's streaming upsert merges into the EXISTING node (never re-parents) | chats.py:1415-1466; Chat.svelte:4877-4890; models/chats.py:1134-1159 |
+| The null-parent hazard | the streamed turn arrives via `upsert_message_to_chat_by_id_and_message_id`; the `{**existing, **incoming}` spread lets an incoming explicit parentId=null ERASE a locally-correct parent (device DB: the regen's node orphaned itself; the user turn fell off the active path). Clients must save the tree per turn and/or prefer a local parent over a server null. | models/chats.py:1158-1161 + the pulled rows |
+| Branch navigation | the version pager per turn: holder = the node's parent childrenIds; the on-path index = the position of the current-path child among them; switching = set the branch's leaf + the tree save | same sources |
+
 Beacon protocol deltas (2026-11-03 device-verified round-trips): note read/write via
 `data.pages[].content.{json,html,md}` (models/notes.py:156-220, :748-772, :357-367,
 NoteForm rejects pages at :474); files list carries meta.content_type (files.py:54).

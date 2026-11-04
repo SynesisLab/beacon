@@ -239,7 +239,19 @@ class ChatRepository @Inject constructor(
             ),
         )
         val nodes = history?.messages?.values.orEmpty()
-        db.messages().upsert(nodes.map { it.toEntity(payload.id) })
+        // §4 fork truth: the server's streaming upsert can null a node's
+        // parentId (the {existing,**incoming} spread; device DB proof
+        // 2026-11-03 — the fork's regen orphaned itself). A locally-known
+        // parent OUTRANKS a server null; the finalize re-saves the merged
+        // tree, so the web sees the corrected chain too.
+        val existingRows = db.messages().byChat(payload.id).associateBy { it.messageId }
+        db.messages().upsert(nodes.map { incoming ->
+            val entity = incoming.toEntity(payload.id)
+            if (entity.parentId == null) {
+                existingRows[entity.messageId]?.parentId?.let { known -> entity.copy(parentId = known) }
+                    ?: entity
+            } else entity
+        })
         db.chats().setCurrentMessageId(payload.id, history?.currentId ?: existing?.currentMessageId)
     }
 

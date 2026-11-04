@@ -33,6 +33,20 @@ data class ChatPayload(
     val pinned: Boolean? = null,
     val meta: Map<String, kotlinx.serialization.json.JsonElement> = emptyMap(),
     val folder_id: String? = null,
+    /** GET /{id} also carries the context meter (chats.py:1404 →
+     *  utils/context_compaction.py:300-306: {tokens, threshold, percent,
+     *  source:'estimated'}). */
+    val context_usage: ContextUsageDto? = null,
+)
+
+/** `get_chat_context_usage`'s shape (utils/context_compaction.py:300-306). */
+@Serializable
+data class ContextUsageDto(
+    val tokens: Long? = null,
+    val estimated_tokens: Long? = null,
+    val threshold: Long? = null,
+    val percent: Int? = null,
+    val source: String? = null,
 )
 
 /** The `chat` dict: history {messages: id → msg, currentId} (models/chats.py:418,497,591). */

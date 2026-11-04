@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.put
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -94,6 +95,52 @@ class ChatRepository @Inject constructor(
     }
 
     override suspend fun upsertServerChat(payload: ChatPayload) = upsertPayload(payload)
+
+    override suspend fun chatCurrentMessageId(chatId: String): String? = withContext(Dispatchers.IO) {
+        db.chats().byId(chatId)?.currentMessageId
+    }
+
+    override suspend fun saveServerTree(chatId: String, currentId: String, modelId: String?): Boolean =
+        withContext(Dispatchers.IO) {
+            val rows = db.messages().byChat(chatId)
+            val path = activePathFrom(rows, currentId)
+            val tree = kotlinx.serialization.json.buildJsonObject {
+                put(
+                    "models",
+                    kotlinx.serialization.json.buildJsonArray {
+                        add(kotlinx.serialization.json.JsonPrimitive(modelId.orEmpty()))
+                    },
+                )
+                put(
+                    "history",
+                    kotlinx.serialization.json.buildJsonObject {
+                        put("currentId", currentId)
+                        put(
+                            "messages",
+                            kotlinx.serialization.json.buildJsonObject {
+                                rows.forEach { row ->
+                                    put(row.messageId, dev.beacon.core.chat.messageNodeJson(row))
+                                }
+                            },
+                        )
+                    },
+                )
+                put(
+                    "messages",
+                    kotlinx.serialization.json.buildJsonArray {
+                        path.forEach { row ->
+                            add(
+                                kotlinx.serialization.json.buildJsonObject {
+                                    put("role", row.role)
+                                    put("content", row.content.orEmpty())
+                                },
+                            )
+                        }
+                    },
+                )
+            }
+            chatsApi.saveTree(chatId, tree)
+        }
 
     override suspend fun messages(chatId: String): List<MessageEntity> =
         withContext(Dispatchers.IO) { db.messages().byChat(chatId) }

@@ -2,12 +2,33 @@ package dev.beacon.core.chat
 
 import dev.beacon.core.api.dto.ChatPayload
 import dev.beacon.core.data.local.MessageEntity
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.put
 
 /**
  * Persistence surface the [ChatEngine] writes through (agent.md §10: write-through
  * Room, network actions mirror endpoints first). Interface keeps the engine testable
  * without Room on the JVM (MockWebServer fixture replay drives the real fold).
  */
+
+/** The chat-tree JSON node shape the server stores (models/chats.py ChatMessage). */
+fun messageNodeJson(row: dev.beacon.core.data.local.MessageEntity): kotlinx.serialization.json.JsonObject =
+    kotlinx.serialization.json.buildJsonObject {
+        put("id", row.messageId)
+        row.parentId?.let { put("parentId", it) }
+        put(
+            "childrenIds",
+            kotlinx.serialization.json.buildJsonArray {
+                row.childrenIds.forEach { add(kotlinx.serialization.json.JsonPrimitive(it)) }
+            },
+        )
+        put("role", row.role)
+        put("content", row.content.orEmpty())
+        row.timestamp?.let { put("timestamp", it / 1000) } // epoch SECONDS on this wire (§17)
+        put("done", row.done)
+    }
+
 interface ChatStore {
     suspend fun insertNode(message: MessageEntity)
     suspend fun setCurrentMessage(chatId: String, messageId: String)
@@ -47,4 +68,16 @@ interface ChatStore {
 
     /** The recorded server version ("0.12.5") — inline-era decisions. */
     suspend fun serverVersion(): String?
+
+    /**
+     * §4 version-tree: POST /{id} the FULL chat tree from Room (the chat dict
+     * the web's saveChatHandler sends per turn — Chat.svelte:4877-4890) with
+     * [currentId] = the leaf. The fork's sibling must reach the server this
+     * way: the server's streaming upsert merges into the EXISTING node
+     * (models/chats.py:1134-1159), never re-parents it.
+     */
+    suspend fun saveServerTree(chatId: String, currentId: String, modelId: String?): Boolean
+
+    /** A branch switch: set the active leaf via [currentId] and repaint-able. */
+    suspend fun chatCurrentMessageId(chatId: String): String?
 }

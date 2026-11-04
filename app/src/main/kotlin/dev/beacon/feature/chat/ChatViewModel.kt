@@ -480,11 +480,21 @@ class ChatViewModel @Inject constructor(
 
     fun micPermissionGranted(): Boolean = voice.hasPermission()
 
-    /** Regenerate with the resolved model (screen convenience); selections carry. */
-    fun regenerate() {
+    /** Regenerate with the resolved model (screen convenience); selections carry.
+     *  An id = the PRESSED bubble → the version-tree branch at that location. */
+    fun regenerate(atMessageId: String? = null) {
         val modelId = resolveModel() ?: return
-        engine.regenerate(modelId, toolIds = toolSelection.value.toList(), skillIds = skillSelection.value.toList())
+        val tools = toolSelection.value.toList()
+        val skills = skillSelection.value.toList()
+        if (atMessageId == null) {
+            engine.regenerate(modelId, toolIds = tools, skillIds = skills)
+        } else {
+            engine.regenerateAt(atMessageId, modelId, toolIds = tools, skillIds = skills)
+        }
     }
+
+    /** §4: the branch stepper's ◀/▶ (engine: leaf walk + server tree save). */
+    fun setBranch(holderId: String, index: Int) = engine.setBranch(holderId, index)
 
     /** Tap = on-device dictation with live partials. The permission request stays on the screen. */
     private var partialsJob: kotlinx.coroutines.Job? = null

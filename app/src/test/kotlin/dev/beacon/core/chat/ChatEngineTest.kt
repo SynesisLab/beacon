@@ -287,4 +287,9 @@ class InMemoryChatStore : ChatStore {
     override suspend fun createServerChat(title: String, modelId: String): dev.beacon.core.api.dto.ChatPayload? = null
 
     override suspend fun serverVersion(): String? = "0.12.5"
+
+    override suspend fun saveServerTree(chatId: String, currentId: String, modelId: String?): Boolean = true
+
+    override suspend fun chatCurrentMessageId(chatId: String): String? =
+        currentMessages[chatId]
 }

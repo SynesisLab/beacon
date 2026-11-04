@@ -72,6 +72,11 @@ class ChatEngine(
         val followUps: List<String> = emptyList(),
         /** True while reasoning deltas are the last thing seen (drives the spinner). */
         val reasoningActive: Boolean = false,
+        /** §4 branch stepper (OWUI parity): this turn's sibling count + the
+         *  active child's index (user turns hold the childrenIds). 1/N hidden
+         *  when count ≤ 1. */
+        val branchCount: Int = 1,
+        val branchIndex: Int = 0,
         /** Render-part list (§4 contract) — the UI renders ONLY through this. */
         val parts: List<ChatPart> = emptyList(),
     )
@@ -87,6 +92,8 @@ class ChatEngine(
         val usage: JsonElement? = null,
         /** A live ask_user interaction (builtin.py:543), awaiting the user. */
         val inputPrompt: InputRequest? = null,
+        /** The context meter from GET /{id} (context_usage; loads fresh only). */
+        val contextUsage: dev.beacon.core.api.dto.ContextUsageDto? = null,
     )
 
     /**
@@ -196,7 +203,7 @@ class ChatEngine(
             if (payload != null) {
                 store.upsertServerChat(payload)
                 paintFromStore(existingChatId)
-                _state.value = _state.value.copy(title = payload.title)
+                _state.value = _state.value.copy(title = payload.title, contextUsage = payload.context_usage)
             } else if (_state.value.messages.isEmpty()) {
                 _state.value = ChatUiModel(chatId = existingChatId, error = "Instance unreachable")
             }
@@ -208,10 +215,42 @@ class ChatEngine(
     }
 
     suspend fun paintFromStore(chatId: String) {
+        val path = store.activePath(chatId)
+        val byId = store.messages(chatId).associateBy { it.messageId }
         _state.value = ChatUiModel(
             chatId = chatId,
-            messages = store.activePath(chatId).map(::renderOf),
+            messages = path.map { row ->
+                // §4 branch stepper data: the siblings ride the parent's childrenIds.
+                val parent = row.parentId?.let { byId[it] }
+                renderOf(row).copy(
+                    branchCount = parent?.childrenIds?.size ?: 1,
+                    branchIndex = parent?.childrenIds?.indexOf(row.messageId)?.coerceAtLeast(0) ?: 0,
+                )
+            },
+            usage = _state.value.usage,
+            contextUsage = _state.value.contextUsage,
         )
+    }
+
+    /** §4 branch switch (the ◀/▶ stepper under a regenerated user turn):
+     *  pick the holder's [index]-th child, walk to the branch's leaf, make it
+     *  the active leaf (+the server tree save = the web's own semantics). */
+    fun setBranch(holderId: String, index: Int) {
+        val chatId = _state.value.chatId ?: return
+        scope.launch {
+            val rows = store.messages(chatId)
+            val child = rows.firstOrNull { it.messageId == holderId }?.childrenIds?.getOrNull(index)
+                ?: return@launch
+            var leaf = child
+            while (true) {
+                val kids = rows.filter { it.parentId == leaf }
+                if (kids.isEmpty()) break
+                leaf = kids.maxBy { it.timestamp ?: 0L }.messageId
+            }
+            store.setCurrentMessage(chatId, leaf)
+            store.saveServerTree(chatId, leaf, activeModelId)
+            paintFromStore(chatId)
+        }
     }
 
     private fun renderOf(entity: MessageEntity): RenderMessage {
@@ -288,6 +327,25 @@ class ChatEngine(
     fun regenerate(modelId: String, toolIds: List<String> = emptyList(), skillIds: List<String> = emptyList()) {
         if (_state.value.busy) return
         launchStream { sendParams("", modelId, regenerate = true, toolIds = toolIds, skillIds = skillIds) }
+    }
+
+    /**
+     * §4 VERSION-TREE regenerate (user request 2026-11-03): the pressed
+     * assistant's ↻ makes a SIBLING under ITS OWN user turn; the visible path
+     * truncates there. The later turns keep living under the old branch
+     * (never deleted) — the new sibling = the active leaf.
+     */
+    fun regenerateAt(messageId: String, modelId: String, toolIds: List<String> = emptyList(), skillIds: List<String> = emptyList()) {
+        if (_state.value.busy) return
+        launchStream {
+            sendParams(
+                "", modelId,
+                regenerate = true,
+                toolIds = toolIds,
+                skillIds = skillIds,
+                regenerateAtMessageId = messageId,
+            )
+        }
     }
 
     /** §4/§9.3: edit-and-retry — a sibling branch seeded by the same user turn. */
@@ -419,6 +477,9 @@ class ChatEngine(
          *  tool_ids/skill_ids; empty = no tools selected. */
         val toolIds: List<String> = emptyList(),
         val skillIds: List<String> = emptyList(),
+        /** Version-tree regenerate: the pressed assistant's id — its ↻ forks
+         *  a sibling under its own user turn and truncates the visible path. */
+        val regenerateAtMessageId: String? = null,
         /** temporary chat: client-owned `temporary:<uuid>` id, never saved (§9.3) */
         val temporary: Boolean = false,
     )
@@ -432,7 +493,8 @@ class ChatEngine(
         temporary: Boolean = false,
         toolIds: List<String> = emptyList(),
         skillIds: List<String> = emptyList(),
-    ): SendPlan = SendPlan(text, modelId, emptyList(), regenerate, replaceUserMessageId, features = features, temporary = temporary, toolIds = toolIds, skillIds = skillIds)
+        regenerateAtMessageId: String? = null,
+    ): SendPlan = SendPlan(text, modelId, emptyList(), regenerate, replaceUserMessageId, features = features, temporary = temporary, toolIds = toolIds, skillIds = skillIds, regenerateAtMessageId = regenerateAtMessageId)
 
     /** Temporary chats own a client-generated `temporary:<uuid>` id (utils/chat_id.py verified). */
     private var tempSessionId: String? = null
@@ -474,16 +536,42 @@ class ChatEngine(
         val now = System.currentTimeMillis()
         val previousAssistantId = _state.value.messages.lastOrNull { it.role == MessageEntity.ROLE_ASSISTANT }?.id
 
+        // ── version-tree regenerate (§4; user request 2026-11-03) ──
+        // The pressed assistant's ↻ = a SIBLING branch under ITS OWN user
+        // turn; the visible path truncates there (later turns stay under the
+        // old branch, never deleted). The replaced message goes back on the
+        // wire as regeneration_message_id.
+        val visible = _state.value.messages
+        val pressedAssistantId: String? = when {
+            plan.regenerateAtMessageId != null ->
+                visible.firstOrNull { it.id == plan.regenerateAtMessageId }?.id
+            plan.regenerate -> previousAssistantId
+            else -> null
+        }
+        val pressedIndex = pressedAssistantId?.let { at -> visible.indexOfFirst { it.id == at } } ?: -1
+        val pressedUserTurn = if (pressedIndex > 0) {
+            visible.getOrNull(pressedIndex - 1)?.takeIf { it.role == MessageEntity.ROLE_USER }
+        } else {
+            null
+        }
+        // The truncated list the turn hangs from (pressed regen: everything
+        // from the pressed assistant ON = parked under the old branch).
+        val visiblePath = when {
+            plan.regenerate && pressedUserTurn != null ->
+                visible.takeWhile { it.id != pressedUserTurn.id } + pressedUserTurn
+            else -> visible
+        }
+
         // The user turn the response hangs from (tree semantics, agent.md §6.4).
         // A sibling branch attaches to the user turn BEFORE the replaced assistant.
-        val lastAssistantIndex = _state.value.messages.indexOfLast { it.role == MessageEntity.ROLE_ASSISTANT }
+        val lastAssistantIndex = visiblePath.indexOfLast { it.role == MessageEntity.ROLE_ASSISTANT }
         val userTurnId: String? = when {
-            plan.regenerate -> _state.value.messages.getOrNull(lastAssistantIndex - 1)
-                ?.takeIf { it.role == MessageEntity.ROLE_USER }?.id
+            plan.regenerate -> visiblePath.lastOrNull { it.role == MessageEntity.ROLE_USER }?.id
                 ?: plan.replaceUserMessageId
             plan.continueAssistantId != null -> previousAssistantId
             else -> null // fresh turn
         }
+        val userTurnIndexForPaint = userTurnId?.let { at -> visiblePath.indexOfFirst { it.id == at } } ?: -1
         val parentIdForWire: String? = when {
             plan.regenerate -> userTurnId // parent_id = the user message (wire semantics: the assistant's parent)
             plan.continueAssistantId != null -> previousAssistantId
@@ -497,12 +585,23 @@ class ChatEngine(
             busy = true,
             error = null,
             streamingMessageId = assistantMessageId,
-            messages = _state.value.messages + buildList {
+            messages = buildList {
                 when {
-                    plan.regenerate ->
+                    plan.regenerate -> {
+                        // The truncated version + the pending sibling IN PLACE.
+                        if (userTurnIndexForPaint >= 0) {
+                            addAll(visiblePath.take(userTurnIndexForPaint + 1))
+                        } else {
+                            addAll(visiblePath)
+                        }
                         add(RenderMessage(assistantMessageId, MessageEntity.ROLE_ASSISTANT, pending = true))
-                    plan.continueAssistantId != null -> add(RenderMessage(assistantMessageId, MessageEntity.ROLE_ASSISTANT, pending = true))
+                    }
+                    plan.continueAssistantId != null -> {
+                        addAll(visible)
+                        add(RenderMessage(assistantMessageId, MessageEntity.ROLE_ASSISTANT, pending = true))
+                    }
                     else -> {
+                        addAll(visible)
                         add(
                             RenderMessage(
                                 userMessageId,
@@ -531,6 +630,14 @@ class ChatEngine(
                 )
             }
             store.setCurrentMessage(existingChatId, assistantMessageId)
+            // §4 version-tree: the sibling fork must reach the SERVER (the web
+            // saves the tree per regenerate; models/chats.py:1134 merges the
+            // streamed content into the EXISTING node) — device log
+            // 2026-11-03: without this the fork orphaned itself
+            // (parentId=null) and the user turn fell off the active path.
+            if (plan.regenerate && existingChatId != null) {
+                store.saveServerTree(existingChatId, assistantMessageId, plan.modelId)
+            }
         }
 
         assistantContent = StringBuilder()
@@ -570,7 +677,7 @@ class ChatEngine(
                 }
             },
             files = plan.files,
-            regeneration_message_id = if (plan.regenerate) previousAssistantId else null,
+            regeneration_message_id = if (plan.regenerate) (pressedAssistantId ?: previousAssistantId) else null,
             regeneration_prompt = null,
             assistant_message_id = plan.continueAssistantId,
             features = plan.features ?: Features(),
@@ -1100,11 +1207,7 @@ class ChatEngine(
             }
             runCatching {
                 if (store.refreshServerChat(chatId)) {
-                    _state.value = ChatUiModel(
-                        chatId = chatId,
-                        messages = store.activePath(chatId).map(::renderOf),
-                        usage = _state.value.usage,
-                    )
+                    paintFromStore(chatId)
                 }
             }
         }

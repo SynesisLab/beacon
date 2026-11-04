@@ -11,11 +11,15 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.PathEffect
@@ -50,8 +54,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -89,7 +95,10 @@ data class ChatActions(
     val onMicStop: () -> Unit = {},
     /** §8.4 read-aloud for an assistant bubble. */
     val onReadAloud: (messageId: String, text: String) -> Unit = { _, _ -> },
-    val onRegenerate: () -> Unit = {},
+    /** §4 version-tree: the pressed bubble's regen — id carries the location. */
+    val onRegenerate: (String) -> Unit = {},
+    /** The ◀/▶ branch stepper under a regenerated user turn. */
+    val onSetBranch: (holderId: String, index: Int) -> Unit = { _, _ -> },
     val onRate: (messageId: String, rating: Int) -> Unit = { _, _ -> },
     val onShare: (messageId: String, text: String) -> Unit = { _, _ -> },
     /** Chat-level (⋮): server share link + md/json export. */
@@ -122,7 +131,35 @@ fun ChatScreen(
 ) {
     val listState = rememberLazyListState()
 
-    // §9.1 flick-to-refetch: at bottom + upward flick ≥ ~4/3 viewport/sec ⇒ silent sync.
+    // §9.1 flick-to-refetch (VISIBLE, user request 2026-11-03): the flick
+    // bounces the surface up and pops a sync circle; the silent sync runs
+    // underneath (+ the "Updated ✓" pill reports real changes).
+    val flickScope = rememberCoroutineScope()
+    var refetching by remember { mutableStateOf(false) }
+    val pullUp = remember(listState) { androidx.compose.animation.core.Animatable(0f) }
+    val fireFlick: () -> Unit = {
+        if (listState.canScrollForward.not() && !refetching) {
+            flickScope.launch {
+                refetching = true
+                actions.onFlickRefetch()
+                runCatching {
+                    pullUp.snapTo(0f)
+                    pullUp.animateTo(-30f, androidx.compose.animation.core.tween(150))
+                    pullUp.animateTo(
+                        0f,
+                        androidx.compose.animation.core.spring(
+                            dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+                            stiffness = androidx.compose.animation.core.Spring.StiffnessLow,
+                        ),
+                    )
+                }
+                kotlinx.coroutines.delay(600)
+                refetching = false
+            }
+        }
+    }
+
+    // §9.1 flick-to-refetch: at bottom + upward flick ≥ ~4/3 viewport/sec ⇒ sync.
     val flickConnection = remember(listState) {
         object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
             override suspend fun onPostFling(
@@ -135,7 +172,7 @@ fun ChatScreen(
                 val threshold = (viewport * (1f / 0.3f) * 0.4f) // 40% of viewport per 300ms
                 val atBottom = listState.canScrollForward.not()
                 if (atBottom && upward >= threshold) {
-                    actions.onFlickRefetch()
+                    fireFlick()
                 }
                 return androidx.compose.ui.unit.Velocity.Zero
             }
@@ -305,15 +342,18 @@ fun ChatScreen(
                 }
             }
 
-            LazyColumn(
-                state = listState,
-                reverseLayout = true,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom),
-            ) {
+            // The transcript + the sync-circle overlay (floats over the list's
+            // bottom edge while the flick's sync runs).
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                LazyColumn(
+                    state = listState,
+                    reverseLayout = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .graphicsLayer { translationY = pullUp.value },
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom),
+                ) {
                 if (state.engine.messages.isEmpty()) {
                     // Empty-state hero (Claude parity, pixel-measured 2026-11-03):
                     // a BIG pulsing starburst OVER a display-class serif line,
@@ -363,11 +403,34 @@ fun ChatScreen(
                         onOpenFile = actions.onOpenFile,
                         httpClient = state.httpClient,
                         instanceUrl = state.instanceUrl,
-                        onRegenerate = actions.onRegenerate,
+                        onRegenerate = { actions.onRegenerate(messages[index].id) },
                         onReadAloud = actions.onReadAloud,
                         onRate = actions.onRate,
                         onShare = actions.onShare,
+                        onSetBranch = actions.onSetBranch,
                     )
+                }
+                }
+                if (refetching) {
+                    Box(Modifier.align(Alignment.BottomCenter)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .padding(bottom = 14.dp)
+                                .background(
+                                    MaterialTheme.colorScheme.surface,
+                                    RoundedCornerShape(50),
+                                )
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                        ) {
+                            androidx.compose.material3.CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                            )
+                            androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
+                            Text("Syncing…", style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
                 }
             }
 
@@ -384,6 +447,20 @@ fun ChatScreen(
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Latest ⇅") }
+            }
+            // Context meter (context_usage from GET /{id}; verified shape in
+            // the clone): tokenized estimate vs the compaction threshold.
+            val context = state.engine.contextUsage
+            if (context != null && (context.percent ?: 0) > 0) {
+                val pct = context.percent ?: 0
+                Text(
+                    "Context $pct%" + (context.tokens?.let { " · ${it / 1000}k tokens" } ?: ""),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (pct >= 70) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 2.dp),
+                )
             }
             // §9.3 composer toggles (server-gated). Temp rides the topbar.
             val gate = state.featuresGate
@@ -696,11 +773,13 @@ private fun MessageBubble(
     onReadAloud: (messageId: String, text: String) -> Unit = { _, _ -> },
     onRate: (messageId: String, rating: Int) -> Unit = { _, _ -> },
     onShare: (messageId: String, text: String) -> Unit = { _, _ -> },
+    /** Branch stepper / the version-tree fork (§4). */
+    onSetBranch: (holderId: String, index: Int) -> Unit = { _, _ -> },
 ) {
     val streaming = message.id == streamingMessageId
     if (message.role == "user") {
         // Right-hugging warm pill (user request 2026-11-03: sent turns belong
-        // on the right, Claude parity).
+        // on the right, Claude parity). Long-press = select/copy (v1).
         Box(Modifier.fillMaxWidth()) {
             Surface(
                 color = MaterialTheme.colorScheme.surfaceVariant,
@@ -709,10 +788,39 @@ private fun MessageBubble(
                     .widthIn(max = 320.dp)
                     .align(Alignment.CenterEnd),
             ) {
-                MiniMarkdown(
-                    markdown = message.markdown,
-                    modifier = BubblePadding,
+                androidx.compose.foundation.text.selection.SelectionContainer(Modifier) {
+                    MiniMarkdown(
+                        markdown = message.markdown,
+                        modifier = BubblePadding,
+                    )
+                }
+            }
+        }
+        // §4 branch stepper (OWUI parity): ‹ 2/3 › under the regenerated turn.
+        if (message.branchCount > 1) {
+            Row(
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 0.dp),
+            ) {
+                IconButton(
+                    onClick = { onSetBranch(message.id, (message.branchIndex - 1 + message.branchCount) % message.branchCount) },
+                    modifier = Modifier.size(30.dp),
+                ) {
+                    Text("‹", style = MaterialTheme.typography.titleMedium)
+                }
+                Text(
+                    "${message.branchIndex + 1}/${message.branchCount}",
+                    style = MaterialTheme.typography.labelMedium,
                 )
+                IconButton(
+                    onClick = { onSetBranch(message.id, (message.branchIndex + 1) % message.branchCount) },
+                    modifier = Modifier.size(30.dp),
+                ) {
+                    Text("›", style = MaterialTheme.typography.titleMedium)
+                }
             }
         }
     } else {
@@ -721,12 +829,15 @@ private fun MessageBubble(
             // no chrome) — parts render inside.
             Box(Modifier.fillMaxWidth()) {
                 if (message.parts.isEmpty()) {
-                    // Persisted legacy rows / tests without a part pipeline.
-                    MiniMarkdown(
-                        markdown = message.markdown,
-                        streaming = streaming,
-                        modifier = Modifier,
-                    )
+                    // Persisted legacy rows / tests without a part pipeline,
+                    // and long-press select/copy (user request 2026-11-03).
+                    androidx.compose.foundation.text.selection.SelectionContainer(Modifier) {
+                        MiniMarkdown(
+                            markdown = message.markdown,
+                            streaming = streaming,
+                            modifier = Modifier,
+                        )
+                    }
                 } else {
                     PartsView(
                         parts = message.parts,

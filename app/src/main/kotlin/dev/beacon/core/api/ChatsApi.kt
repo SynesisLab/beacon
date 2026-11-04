@@ -93,6 +93,27 @@ class ChatsApi @Inject constructor(
         ).await().decodeJson(ChatPayload.serializer(), json)
     }
 
+    /**
+     * POST /{id} — the FULL tree save (ChatForm `{chat: {models, history,
+     * messages}}`; chats.py:1415-1466; the web's saveChatHandler
+     * Chat.svelte:4877-4890 does exactly this per send, which is why its
+     * regenerate forks land server-side with a correct parent).
+     */
+    suspend fun saveTree(chatId: String, chat: kotlinx.serialization.json.JsonObject): Boolean =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                client.newCall(
+                    Request.Builder()
+                        .url(joinUrl(instance(), "/api/v1/chats/$chatId"))
+                        .post(json.encodeToString(
+                            kotlinx.serialization.json.JsonObject.serializer(),
+                            kotlinx.serialization.json.buildJsonObject { put("chat", chat) },
+                        ).toRequestBody(jsonType))
+                        .build(),
+                ).await().use { it.isSuccessful }
+            }.getOrDefault(false)
+        }
+
     private fun instance(): String =
         source.instanceUrl()
             ?: throw OwuiApiException(0, null, "No connected instance")

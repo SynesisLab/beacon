@@ -68,7 +68,7 @@ until its milestone — add the gate/route when the milestone lands.
 | Attachments/upload queue, share-target | M3 |
 | Voice STT/TTS engines | M3 (agent.md §8) |
 | Branches: edit/regenerate/fork/clone | M3 (fork/clone = chats.py:1783/1905) |
-| Chat/share/export (share_id, md/json export) | **MISSING — add in M3** |
+| Chat/share/export (share_id, md/json export) | **Landed M4** (2026-11-03): the chat-⋮ menu shares `{origin}/s/{share_id}` (POST /chats/{id}/share, chats.py:2083) + copies the branch as Markdown/JSON (client-built; no server export route) |
 | Context-usage display (`context_usage` in GET /{id}) | **MISSING — add in M3** (data verified in the response) |
 | Reconciler + flick-to-refetch | M3 |
 | Prompt-autocomplete task (`task.autocomplete.enable`) | **MISSING — add M4+** |

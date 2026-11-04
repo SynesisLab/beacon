@@ -175,6 +175,34 @@ class OwuiApi @Inject constructor(
         client.newCall(request).await().decodeJson<SessionUser>(json)
     }
 
+    /**
+     * POST /api/v1/chats/{id}/share `{share_mode?}` → ChatResponse carrying
+     * `share_id` (chats.py:2083-2127; URL scheme `{origin}/s/{share_id}`,
+     * ShareChatModal.svelte:35). Re-sharing re-snapshots the existing share
+     * (:2098-2109). Null when the server refuses (401 = no chat.share
+     * permission, :2090).
+     */
+    suspend fun shareChat(chatId: String): String? = withContext(Dispatchers.IO) {
+        try {
+            val request = Request.Builder()
+                .url(joinUrl(instance(), "/api/v1/chats/$chatId/share"))
+                .post(json.encodeToString(
+                    JsonObject.serializer(),
+                    buildJsonObject { },
+                ).toRequestBody("application/json; charset=utf-8".toMediaType()))
+                .build()
+            client.newCall(request).await().use { response ->
+                if (!response.isSuccessful) return@withContext null
+                val text = response.body?.string() ?: return@withContext null
+                val obj = json.parseToJsonElement(text) as? JsonObject
+                (obj?.get("share_id") as? kotlinx.serialization.json.JsonPrimitive)?.content
+                    ?.takeIf { it.isNotBlank() }
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     suspend fun models(): ModelsPage = withContext(Dispatchers.IO) {
         val request = Request.Builder()
             .url(joinUrl(instance(), "/api/v1/models/list?page=1"))

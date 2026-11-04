@@ -152,6 +152,14 @@ The M4 "memories" item lands gated by `enable_memories`
 | Reasoning timing | the server stamps started_at/ended_at only at structural transitions; the client stamps locally so "Thought for N s" reads live | Conduit _stampReasoningTiming |
 | Live delivery | the shared throttled `chat:completion {output}` (0.15s cadence) lands in room `chat:{id}` — clients must JOIN via socket `events:chat {chat_id, data:{type:'join'}}`; the user room carries mostly chat:list/chat:active only | socket/main.py:866-925, :1628-1675 |
 
+## Chat share/export (2026-11-03, chats.py)
+
+| Call | Behavior | Proof |
+| --- | --- | --- |
+| `POST /api/v1/chats/{id}/share` `{share_mode?: 'continue'\|null}` | → ChatResponse carrying `share_id`; requires the `chat.share` permission (401 otherwise); re-sharing RE-SNAPSHOTS the existing share; `DELETE /{id}/share` → bool (unshare + grants cleared) | chats.py:2082-2155; ShareChatForm/shared_chats.py |
+| Public link | `${origin}/s/${share_id}` (a web route; the client shows/sends the URL) | src/lib ShareChatModal.svelte:35 |
+| Export md/json | CLIENT-built from the chat tree — no server export endpoint (the stats/export routes are admin analytics only) | web ExportMenu; chats.py:622-720 |
+
 Beacon protocol deltas (2026-11-03 device-verified round-trips): note read/write via
 `data.pages[].content.{json,html,md}` (models/notes.py:156-220, :748-772, :357-367,
 NoteForm rejects pages at :474); files list carries meta.content_type (files.py:54).

@@ -52,6 +52,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
@@ -91,6 +92,10 @@ data class ChatActions(
     val onRegenerate: () -> Unit = {},
     val onRate: (messageId: String, rating: Int) -> Unit = { _, _ -> },
     val onShare: (messageId: String, text: String) -> Unit = { _, _ -> },
+    /** Chat-level (⋮): server share link + md/json export. */
+    val onShareChat: () -> Unit = {},
+    val onCopyMarkdown: () -> Unit = {},
+    val onCopyJson: () -> Unit = {},
     /** M4-d4+: the bottom tab bar's surface tabs. */
     val onOpenSurfaceTab: (String) -> Unit = {},
     /** M4-d3: the model's ask_user interaction (answered via the socket ack). */
@@ -210,6 +215,31 @@ fun ChatScreen(
                             androidx.compose.material3.Icon(
                                 androidx.compose.material.icons.Icons.Filled.KeyboardArrowDown,
                                 contentDescription = null,
+                            )
+                        }
+                    }
+                    // Chat actions (⋮): share link + export (interface map row:
+                    // the ⋮ menu rides the top bar). Saved chats only.
+                    if (state.engine.chatId != null) {
+                        var menuOpen by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+                        IconButton(onClick = { menuOpen = true }) {
+                            Text("⋮", style = MaterialTheme.typography.titleMedium)
+                        }
+                        androidx.compose.material3.DropdownMenu(
+                            expanded = menuOpen,
+                            onDismissRequest = { menuOpen = false },
+                        ) {
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text("Share link") },
+                                onClick = { menuOpen = false; actions.onShareChat() },
+                            )
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text("Copy as Markdown") },
+                                onClick = { menuOpen = false; actions.onCopyMarkdown() },
+                            )
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text("Copy as JSON") },
+                                onClick = { menuOpen = false; actions.onCopyJson() },
                             )
                         }
                     }

@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.put
 import javax.inject.Inject
 
 /**
@@ -572,6 +573,75 @@ class ChatViewModel @Inject constructor(
             android.content.Intent.createChooser(intent, "Share response")
                 .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
         )
+    }
+
+    /**
+     * Chat-level share (⋮ menu): POST /chats/{id}/share → `{origin}/s/{share_id}`
+     * (chats.py:2083-2127; ShareChatModal.svelte:35). A server refusing the
+     * chat.share permission reads as "not permitted" (401 at :2090).
+     */
+    fun shareChatLink() {
+        val chatId = engine.state.value.chatId ?: return
+        viewModelScope.launch {
+            val shareId = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { api.shareChat(chatId) }
+            if (shareId == null) {
+                toast("Sharing isn't permitted on this server.")
+                return@launch
+            }
+            val url = "${session.instanceUrlSnapshot().orEmpty()}/s/$shareId"
+            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(android.content.Intent.EXTRA_TEXT, url)
+            }
+            appContext.startActivity(
+                android.content.Intent.createChooser(intent, "Share chat link")
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }
+    }
+
+    /** Export the active branch as Markdown onto the clipboard. */
+    fun copyChatAsMarkdown() {
+        val state = engine.state.value
+        val md = buildString {
+            append("# ").append(state.title ?: "Chat").append("\n\n")
+            state.messages.forEach { m ->
+                if (m.markdown.isBlank()) return@forEach
+                append("**").append(if (m.role == "user") "You" else m.role).append(":**\n\n")
+                append(m.markdown.trim()).append("\n\n")
+            }
+        }
+        copyText(md, "Markdown copied")
+    }
+
+    /** Export the active branch as a JSON transcript onto the clipboard. */
+    fun copyChatAsJson() {
+        val state = engine.state.value
+        val payload = kotlinx.serialization.json.buildJsonObject {
+            put("title", state.title ?: "Chat")
+            put(
+                "messages",
+                kotlinx.serialization.json.JsonArray(
+                    state.messages.map { m ->
+                        kotlinx.serialization.json.buildJsonObject {
+                            put("role", m.role)
+                            put("content", m.markdown)
+                        }
+                    },
+                ),
+            )
+        }
+        copyText(payload.toString(), "JSON copied")
+    }
+
+    private fun copyText(text: String, toastMessage: String) {
+        val clipboard = appContext.getSystemService(android.content.ClipboardManager::class.java)
+        clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("Beacon chat", text))
+        toast(toastMessage)
+    }
+
+    private fun toast(message: String) {
+        android.widget.Toast.makeText(appContext, message, android.widget.Toast.LENGTH_SHORT).show()
     }
 
     fun stopTts() = tts.stop()

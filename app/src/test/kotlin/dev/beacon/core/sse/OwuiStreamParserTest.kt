@@ -87,17 +87,26 @@ class OwuiStreamParserTest {
     @Test
     fun responsesApi_fixtureFolds() {
         val list = events("responses_api")
-        // item.added → OutputSnapshot(reasoning), reasoning delta, item.added → OutputSnapshot(2),
-        // content delta, completed → OutputSnapshot(final 2) + usage
+        // Accumulator semantics (Conduit parity): item.added → S1(1);
+        // reasoning delta APPENDS into r1 → S2(1); item.added msg → S3(2);
+        // text delta appends → S4(2); completed merges by id → S5(2) + usage.
         val snapshots = list.filterIsInstance<StreamEvent.OutputSnapshot>()
-        assertEquals(3, snapshots.size)
-        assertEquals(1, snapshots[0].items.size)
-        assertEquals(2, snapshots[1].items.size)
-        assertEquals(2, snapshots[2].items.size)
-        assertTrue(list.any { (it as? StreamEvent.Reasoning)?.text == "plan" })
-        assertTrue(list.any { (it as? StreamEvent.Content)?.text == "Answer" })
+        assertEquals(5, snapshots.size)
+        assertEquals(listOf(1, 1, 2, 2, 2), snapshots.map { it.items.size })
+        // The reasoning delta landed INSIDE the reasoning item (S2), not a
+        // separate text event — the thinking block now streams in place.
+        assertEquals("plan", outputText(snapshots[1].items))
+        // S3/S4 carry BOTH items; the message's text grows in place.
+        assertEquals("Answer", outputText(snapshots[3].items.takeLast(1)))
+        assertEquals("planAnswer", outputText(snapshots[4].items))
         assertTrue(list.any { it is StreamEvent.UsageUpdate })
         assertEquals("StreamDone", eventTypes(list).last())
+        // Byte-by-byte re-drive must produce an identical fold:
+        parser.reset()
+        assertEquals(
+            eventTypes(list),
+            eventTypes(parserFramesByName("responses_api")),
+        )
     }
 
     @Test
@@ -124,6 +133,15 @@ class OwuiStreamParserTest {
         val frame = SseFrameScanner.Frame("unknown", raw)
         assertEquals("t", parser.onFrame(frame).filterIsInstance<StreamEvent.TitleUpdate>().single().title)
     }
+
+    private fun outputText(items: List<kotlinx.serialization.json.JsonElement>): String =
+        items.joinToString("") { item ->
+            val obj = item as? kotlinx.serialization.json.JsonObject
+            (obj?.get("content") as? kotlinx.serialization.json.JsonArray)?.joinToString("") { part ->
+                ((part as? kotlinx.serialization.json.JsonObject)?.get("text")
+                    as? kotlinx.serialization.json.JsonPrimitive)?.content ?: ""
+            } ?: ""
+        }
 
     private fun parserFramesByName(name: String): List<StreamEvent> {
         val bytes = File("src/test/fixtures/sse/$name.sse").readBytes()

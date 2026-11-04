@@ -236,7 +236,11 @@ fun ChatScreen(
                 .padding(padding)
                 .consumeWindowInsets(padding) // Scaffold already spent these insets — imePadding below must not double-count (the ghost gap over an open keyboard)
                 .fillMaxSize()
-                .imePadding(),
+                .imePadding()
+                // The flick rides the WHOLE surface: a short, non-scrolling
+                // transcript never dispatches a list fling ("flick to update
+                // feels missing" — user report 2026-11-03).
+                .nestedScroll(flickConnection),
         ) {
             state.engine.error?.let { error ->
                 Text(
@@ -276,8 +280,7 @@ fun ChatScreen(
                 reverseLayout = true,
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth()
-                    .nestedScroll(flickConnection),
+                    .fillMaxWidth(),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom),
             ) {

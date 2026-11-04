@@ -26,19 +26,23 @@ class TaskSocketParserTest {
 
     @Test
     fun textDeltasFold() {
+        // Accumulator semantics (Conduit parity): deltas APPEND into the item
+        // and every mutation emits a Snapshot — one truth list, the live paint.
         val events = fold("""{"type":"response.output_text.delta","delta":"Hel"}""") +
             fold("""{"type":"response.output_text.delta","delta":"lo"}""")
-        assertEquals("Content", events[0].javaClass.simpleName)
-        assertEquals("Content", events[1].javaClass.simpleName)
-        assertEquals("Hello", (events[0] as StreamEvent.Content).text + (events[1] as StreamEvent.Content).text)
+        val snaps = events.filterIsInstance<StreamEvent.OutputSnapshot>()
+        assertEquals(2, snaps.size)
+        assertEquals("Hel", outputText(snaps[0].items))
+        assertEquals("Hello", outputText(snaps[1].items))
     }
 
     @Test
     fun reasoningDeltaFolds() {
         val events = fold("""{"type":"response.reasoning_text.delta","delta":"why"}""")
-        assertEquals(1, events.size)
-        assertTrue(events[0] is StreamEvent.Reasoning)
-        assertEquals("why", (events[0] as StreamEvent.Reasoning).text)
+        val snap = events.single() as StreamEvent.OutputSnapshot
+        val item = snap.items.single() as kotlinx.serialization.json.JsonObject
+        assertEquals("reasoning", (item["type"] as JsonPrimitive).content)
+        assertEquals("why", outputText(snap.items))
     }
 
     @Test
@@ -46,15 +50,54 @@ class TaskSocketParserTest {
         val events = fold(
             """{"type":"response:completion","data":{"type":"response.output_text.delta","delta":"wrapped"}}""",
         )
-        assertEquals(1, events.size)
-        assertTrue(events[0] is StreamEvent.Content)
-        assertEquals("wrapped", (events[0] as StreamEvent.Content).text)
+        val snap = events.single() as StreamEvent.OutputSnapshot
+        assertEquals("wrapped", outputText(snap.items))
     }
 
     @Test
     fun summaryDeltaAlsoFolds() {
         val events = fold("""{"type":"response.reasoning_summary_text.delta","delta":"s"}""")
-        assertTrue(events.single() is StreamEvent.Reasoning)
+        val snap = events.single() as StreamEvent.OutputSnapshot
+        assertEquals("s", outputText(snap.items))
+    }
+
+    @Test
+    fun toolRoundPreservesReasoningAndCalls() {
+        // The device bug (2026-11-03): the thinking block vanished between tool
+        // calls and the tool result replaced its call. With the accumulator +
+        // merge: round-1 reasoning survives, the function_call survives its
+        // own function_call_output (call_id+type match; Conduit issue #751).
+        parser.reset()
+        fold("""{"type":"response.output_item.added","output_index":0,
+                "item":{"type":"reasoning","id":"r1","status":"in_progress","content":[]}}""")
+        fold("""{"type":"response.reasoning_text.delta","item_id":"r1","delta":"thinking…"}""")
+        fold("""{"type":"response.output_item.added","output_index":1,
+                "item":{"type":"function_call","id":"fc1","call_id":"c1","name":"generate_image","arguments":"{}","status":"in_progress"}}""")
+        // The tool result arrives as its own item, sharing call_id c1:
+        val afterResult = fold(
+            """{"type":"chat:completion","data":{"output":[
+                 {"type":"reasoning","id":"r1","status":"completed","content":[{"type":"output_text","text":"thinking…"}]},
+                 {"type":"function_call","id":"fc1","call_id":"c1","name":"generate_image","arguments":"{}","status":"completed"},
+                 {"type":"function_call_output","call_id":"c1","output":[{"type":"input_text","text":"done"}]}
+               ]}}""",
+        ).filterIsInstance<StreamEvent.OutputSnapshot>().single()
+        val types = afterResult.items.map { (it as kotlinx.serialization.json.JsonObject)["type"].toString() }
+        assertTrue("reasoning survives the tool round: $types", types.any { it.contains("reasoning") })
+        assertTrue("the call survives its result: $types", types.any { it.contains("function_call") })
+    }
+
+    @Test
+    fun envelopeRoundTripParses() {
+        val envelope = buildJsonObject {
+            put("chat_id", JsonPrimitive("chat-1"))
+            put("message_id", JsonPrimitive("msg-1"))
+            put("data", Json.parseToJsonElement("""{"type":"response.output_text.delta","delta":"Hi"}"""))
+        }
+        // The engine feeds ONLY the data payload into the parser:
+        val data = (envelope["data"] as kotlinx.serialization.json.JsonObject).toString()
+        val events = parser.onFrame(SseFrameScanner.Frame(null, data))
+        val snap = events.single() as StreamEvent.OutputSnapshot
+        assertEquals("Hi", outputText(snap.items))
     }
 
     @Test
@@ -89,21 +132,6 @@ class TaskSocketParserTest {
         val events = fold("""{"type":"chat:completion","data":{"error":{"message":"boom"}}}""")
         assertEquals(listOf("ErrorSurface"), events.map { it.javaClass.simpleName })
         assertEquals("boom", (events[0] as StreamEvent.ErrorSurface).message)
-    }
-
-    @Test
-    fun envelopeRoundTripParses() {
-        val envelope = buildJsonObject {
-            put("chat_id", JsonPrimitive("chat-1"))
-            put("message_id", JsonPrimitive("msg-1"))
-            put("data", Json.parseToJsonElement("""{"type":"response.output_text.delta","delta":"Hi"}"""))
-        }
-        // The engine feeds ONLY the data payload into the parser:
-        val data = (envelope["data"] as kotlinx.serialization.json.JsonObject).toString()
-        val events = parser.onFrame(SseFrameScanner.Frame(null, data))
-        assertEquals(1, events.size)
-        assertTrue(events[0] is StreamEvent.Content)
-        assertEquals("Hi", (events[0] as StreamEvent.Content).text)
     }
 
     private fun outputText(items: List<kotlinx.serialization.json.JsonElement>): String =

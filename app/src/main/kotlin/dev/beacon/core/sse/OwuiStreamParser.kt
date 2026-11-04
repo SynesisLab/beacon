@@ -6,6 +6,8 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import timber.log.Timber
 
 /**
@@ -185,9 +187,13 @@ class OwuiStreamParser(
                     events.add(StreamEvent.ErrorSurface(message, err))
                 }
                 (body["output"] as? JsonArray)?.let { out ->
+                    // Conduit-faithful MERGE (their openwebui_response_stream):
+                    // snapshots accumulate BY ID (+call_id+type) so tool-call
+                    // rounds and reasoning survive; never clear+replace.
+                    val merged = mergeOutput(responseOutput.toList(), out.toList())
                     responseOutput.clear()
-                    responseOutput.addAll(out.toList())
-                    events.add(StreamEvent.OutputSnapshot(out.toList()))
+                    responseOutput.addAll(merged)
+                    events.add(StreamEvent.OutputSnapshot(merged))
                 }
                 (body["content"])?.primitiveOrNull()?.content?.takeIf { it.isNotEmpty() }
                     ?.let { events.add(StreamEvent.ContentSnapshot(it)) }
@@ -226,53 +232,218 @@ class OwuiStreamParser(
         return foldTransportNeutral(obj)
     }
 
-    /** Mirrors `handle_responses_streaming_event`'s primary event types (response.py:405+). */
-    private fun foldResponsesEvent(type: String, obj: JsonObject): List<StreamEvent> = when (type) {
-        "response.output_item.added", "response.output_item.done" -> {
-            (obj["item"] as? JsonObject)?.let { item ->
-                val outputIndex = (obj["output_index"] as? JsonPrimitive)?.content?.toIntOrNull()
-                    ?: responseOutput.size
-                val existing = responseOutput.indexOfFirst { existingRaw ->
-                    val existing = existingRaw as? JsonObject
-                    (existing?.get("id") == item["id"] && item["id"] != JsonNull) ||
-                        (
-                            existing != null &&
-                                item["call_id"] != JsonNull &&
-                                existing["call_id"] == item["call_id"] &&
-                                existing["type"] == item["type"]
-                            )
+    /**
+     * Conduit-faithful output accumulator (their openwebui_response_stream,
+     * ORIGINAL code; GPL read as spec): per-token deltas MUTATE the item in
+     * place and every mutation emits a fresh Snapshot, so one list renders
+     * everything — text, reasoning, tool calls — as it grows. Snapshots MERGE
+     * by id (+call_id+same-type: a function_call_output shares the call's
+     * call_id and must never erase the call — issue #751's vanish).
+     */
+    private fun foldResponsesEvent(type: String, obj: JsonObject): List<StreamEvent> {
+        val itemId = itemId(obj)
+
+        // Structural: the round's items added/replaced in place.
+        if (type == "response.output_item.added" || type == "response.output_item.done") {
+            val item = obj["item"] as? JsonObject
+            if (item != null) {
+                val found = findItem(responseOutput, item)
+                val slot = if (found >= 0) found else outputIndex(obj) ?: responseOutput.size
+                if (slot >= responseOutput.size) responseOutput.add(item)
+                else responseOutput[slot] = item
+            }
+            return listOf(StreamEvent.OutputSnapshot(responseOutput.toList()))
+        }
+
+        if (type.endsWith(".delta") || type.endsWith(".done")) {
+            // "response.<family>.<suffix>" — the item family names the target.
+            val family = type.removePrefix("response.").substringBefore('.')
+            val slot = when {
+                itemId != null -> {
+                    val found = responseOutput.indexOfFirst { existing ->
+                        (existing as? JsonObject)?.let { o ->
+                            o["id"]?.primitiveOrNull()?.content == itemId ||
+                                o["call_id"]?.primitiveOrNull()?.content == itemId
+                        } == true
+                    }
+                    if (found >= 0) found else outputIndex(obj) ?: responseOutput.size
                 }
-                when {
-                    existing >= 0 -> responseOutput[existing] = item
-                    outputIndex in responseOutput.indices -> responseOutput.add(outputIndex, item)
-                    else -> responseOutput.add(item)
+                outputIndex(obj) != null -> outputIndex(obj)!!
+                // Id-less deltas continue the LAST item when it matches the family.
+                else -> {
+                    val last = responseOutput.lastOrNull() as? JsonObject
+                    if (last != null && familyMatchesItem(family, last)) responseOutput.size - 1
+                    else responseOutput.size
                 }
-                listOf(StreamEvent.OutputSnapshot(responseOutput.toList()))
-            } ?: emptyList()
+            }
+            ensureItemAt(responseOutput, slot, family)
+            (responseOutput.getOrNull(slot) as? JsonObject)?.let { item ->
+                responseOutput[slot] = applyDeltaToItem(type, family, item, obj)
+            }
+            stampReasoningTiming(responseOutput)
+            // Every mutation = a fresh snapshot: one truth list, the live paint.
+            return listOf(StreamEvent.OutputSnapshot(responseOutput.toList()))
         }
-        "response.output_text.delta" -> {
-            val delta = (obj["delta"] as? JsonPrimitive)?.content
-            delta?.takeIf { it.isNotEmpty() }?.let { listOf(StreamEvent.Content(it)) } ?: emptyList()
-        }
-        "response.reasoning_text.delta", "response.reasoning_summary_text.delta" -> {
-            val delta = (obj["delta"] as? JsonPrimitive)?.content
-            delta?.takeIf { it.isNotEmpty() }?.let { listOf(StreamEvent.Reasoning(it)) } ?: emptyList()
-        }
-        "response.completed" -> {
-            val response = obj["response"] as? JsonObject
+
+        if (type == "response.completed" || type == "response.failed" || type == "response.incomplete") {
             val events = ArrayList<StreamEvent>(2)
+            val response = obj["response"] as? JsonObject
             (response?.get("output") as? JsonArray)?.let { out ->
+                val merged = mergeOutput(responseOutput.toList(), out.toList())
                 responseOutput.clear()
-                responseOutput.addAll(out.toList())
-                events.add(StreamEvent.OutputSnapshot(out.toList()))
+                responseOutput.addAll(merged)
+                events.add(StreamEvent.OutputSnapshot(merged))
             }
             (response?.get("usage"))?.takeIf { it !is JsonNull }?.let {
                 events.add(StreamEvent.UsageUpdate(it, null))
             }
             if (events.isEmpty()) events.add(StreamEvent.Deferred(type, response))
-            events
+            return events
         }
-        else -> listOf(StreamEvent.Deferred(type, obj))
+
+        return listOf(StreamEvent.Deferred(type, obj))
+    }
+
+    /** The event family names its item type ("output_text" ⇒ message). */
+    private fun familyMatchesItem(family: String, item: JsonObject): Boolean {
+        val type = (item["type"] as? JsonPrimitive)?.content ?: return false
+        return when {
+            family.startsWith("reasoning") -> type == "reasoning"
+            family.startsWith("function_call") -> type == "function_call"
+            else -> type == "message"
+        }
+    }
+
+    /** The (possibly absent) item id from a responses event. */
+    private fun itemId(obj: JsonObject): String? =
+        (obj["item_id"] as? JsonPrimitive)?.content?.takeIf { it.isNotEmpty() }
+
+    private fun outputIndex(obj: JsonObject): Int? =
+        (obj["output_index"] as? JsonPrimitive)?.content?.toIntOrNull()
+
+    /**
+     * The slot an incoming ITEM updates: same id, or same call_id AND type — a
+     * function_call_output shares the call's call_id and must never replace
+     * the call (Conduit issue #751; the web checks the type too).
+     */
+    private fun findItem(output: List<JsonElement>, item: JsonObject): Int {
+        val id = item["id"]?.primitiveOrNull()?.content
+        val callId = item["call_id"]?.primitiveOrNull()?.content
+        return output.indexOfFirst { existing ->
+            val o = existing as? JsonObject ?: return@indexOfFirst false
+            (id != null && id.isNotEmpty() && o["id"]?.primitiveOrNull()?.content == id) ||
+                (callId != null && callId.isNotEmpty() &&
+                    o["call_id"]?.primitiveOrNull()?.content == callId &&
+                    o["type"] == item["type"])
+        }
+    }
+
+    /** Grows the output to [toIndex] in place: the addressed slot = the
+     *  family's item, the gaps = neutral message fillers (no ids). */
+    private fun ensureItemAt(output: ArrayList<JsonElement>, toIndex: Int, family: String) {
+        val kind = when {
+            family.startsWith("reasoning") -> "reasoning"
+            family == "function_call" || family == "function_call_arguments" -> "function_call"
+            else -> "message"
+        }
+        while (output.size <= toIndex) {
+            val last = output.size == toIndex
+            output.add(
+                buildJsonObject {
+                    if (last) {
+                        put("type", kind)
+                        put("status", "in_progress")
+                        put("role", "assistant")
+                        put("content", JsonArray(emptyList()))
+                        if (kind == "function_call") put("name", "tool")
+                    } else {
+                        put("type", "message")
+                        put("status", "in_progress")
+                        put("role", "assistant")
+                        put("content", JsonArray(emptyList()))
+                    }
+                },
+            )
+        }
+    }
+
+    /** The reasoning timing (Conduit's _stampReasoningTiming, Kotlin original):
+     *  the addressed slot's item mutates in the caller's list. JsonObjects are
+     *  immutable, so the stamped copy replaces the slot. */
+    private fun stampReasoningTiming(output: MutableList<JsonElement>) {
+        val now = System.currentTimeMillis() / 1000.0
+        for (i in output.indices) {
+            val item = output[i] as? JsonObject ?: continue
+            if ((item["type"] as? JsonPrimitive)?.content != "reasoning") continue
+            val started = (item["started_at"] as? JsonPrimitive)?.content?.toDoubleOrNull()
+            val updated = HashMap(item)
+            var touched = false
+            if (started == null || started <= 0.0) {
+                updated["started_at"] = JsonPrimitive(now)
+                touched = true
+            } else if (i != output.size - 1 && item["duration"] == null) {
+                updated["ended_at"] = JsonPrimitive(now)
+                updated["duration"] = JsonPrimitive((now - started).toInt().coerceAtLeast(0))
+                touched = true
+            }
+            if (touched) output[i] = JsonObject(updated)
+        }
+    }
+
+    /** One delta/done event folded INTO a NEW item (JsonObjects are immutable;
+     *  the caller replaces the slot). Returns the updated item. */
+    private fun applyDeltaToItem(type: String, family: String, item: JsonObject, event: JsonObject): JsonObject {
+        val delta = event["delta"]?.primitiveOrNull()?.content ?: ""
+        val slot = contentIndex(event)
+        val next = when {
+            family == "function_call_arguments" ->
+                JsonObject(item.toMap() + ("arguments" to JsonPrimitive(
+                    (item["arguments"]?.primitiveOrNull()?.content ?: "") + delta,
+                )))
+            family == "reasoning_summary_part" || family == "content_part" -> item
+            type.endsWith(".done") -> {
+                val doneText = (event["text"] ?: event["delta"])?.primitiveOrNull()?.content
+                if (!doneText.isNullOrEmpty()) withItemText(item, doneText, slot) else item
+            }
+            // output_text / reasoning_text / reasoning_summary_text: append.
+            else -> withItemText(item, (itemText(item, slot) ?: "") + delta, slot)
+        }
+        return JsonObject(next.toMap() + ("status" to JsonPrimitive("in_progress")))
+    }
+
+    private fun contentIndex(event: JsonObject): Int =
+        (event["content_index"] as? JsonPrimitive)?.content?.toIntOrNull() ?: 0
+
+    private fun itemText(item: JsonObject, slot: Int): String? =
+        (item["content"] as? JsonArray)
+            ?.toList()
+            ?.getOrNull(slot)
+            ?.let { part -> (part as? JsonObject)?.get("text")?.primitiveOrNull()?.content }
+
+    private fun withItemText(item: JsonObject, text: String, index: Int): JsonObject {
+        val parts = ((item["content"] as? JsonArray)?.toList() ?: emptyList()).toMutableList()
+        while (parts.size <= index) {
+            parts.add(buildJsonObject { put("type", "output_text"); put("text", "") })
+        }
+        val existing = (parts[index] as? JsonObject) ?: buildJsonObject { put("type", "output_text") }
+        parts[index] = JsonObject(existing.toMap() + ("text" to JsonPrimitive(text)))
+        return JsonObject(item.toMap() + ("content" to JsonArray(parts)))
+    }
+
+    /**
+     * Snapshot MERGE (Conduit's response.completed reducer): known items
+     * replace in place (id, or call_id+same-type), new items append; previous
+     * items the snapshot doesn't carry SURVIVE (earlier tool rounds).
+     */
+    private fun mergeOutput(previous: List<JsonElement>, incoming: List<JsonElement>): List<JsonElement> {
+        val merged = previous.toMutableList()
+        for (raw in incoming) {
+            val item = raw as? JsonObject ?: continue
+            val index = findItem(merged, item)
+            if (index >= 0) merged[index] = item else merged.add(item)
+        }
+        stampReasoningTiming(merged)
+        return merged
     }
 
     /** OpenAI-style transport frames + meta fields (choices/output/usage/sources/content). */
@@ -305,10 +476,11 @@ class OwuiStreamParser(
         }
 
         // Top-level output snapshot is authoritative even when empty (§17)
-        (obj["output"] as? JsonArray)?.let {
+        (obj["output"] as? JsonArray)?.let { out ->
+            val merged = mergeOutput(responseOutput.toList(), out.toList())
             responseOutput.clear()
-            responseOutput.addAll(it.toList())
-            events.add(StreamEvent.OutputSnapshot(it.toList()))
+            responseOutput.addAll(merged)
+            events.add(StreamEvent.OutputSnapshot(merged))
         }
 
         // Meta fields (agent.md §6.2 #6)

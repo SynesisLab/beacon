@@ -84,10 +84,32 @@ data class SocketEnvelope(
                 null -> org.json.JSONObject.NULL
                 is Map<*, *> -> orgJson(v)
                 is List<*> -> org.json.JSONArray(v.map { if (it is Map<*, *>) orgJson(it) else (it ?: org.json.JSONObject.NULL) })
+                is kotlinx.serialization.json.JsonObject -> orgJson(v) // kotlinx maps ARE Maps
+                is kotlinx.serialization.json.JsonNull -> org.json.JSONObject.NULL
+                is kotlinx.serialization.json.JsonPrimitive ->
+                    if (v.isString) org.json.JSONObject.wrap(v.content)
+                    else org.json.JSONObject.wrap(
+                        v.content.toIntOrNull() ?: v.content.toLongOrNull()
+                            ?: v.content.toDoubleOrNull() ?: (v.content == "true"),
+                    )
+                is kotlinx.serialization.json.JsonArray ->
+                    org.json.JSONArray(v.map { jsonElementToOrg(it) })
                 else -> v
             })
         }
         return obj
+    }
+
+    private fun jsonElementToOrg(any: Any?): Any = when (any) {
+        null -> org.json.JSONObject.NULL
+        is kotlinx.serialization.json.JsonNull -> org.json.JSONObject.NULL
+        is kotlinx.serialization.json.JsonObject -> orgJson(any)
+        is kotlinx.serialization.json.JsonPrimitive ->
+            if (any.isString) any.content
+            else any.content.toIntOrNull() ?: any.content.toLongOrNull()
+                ?: any.content.toDoubleOrNull() ?: (any.content == "true")
+        is kotlinx.serialization.json.JsonArray -> org.json.JSONArray(any.map { jsonElementToOrg(it) })
+        else -> any
     }
 }
 
@@ -113,7 +135,9 @@ private fun orgJson(any: Any?): org.json.JSONObject {
 }
 
 @Singleton
-class OwuiSocket @Inject constructor() {
+class OwuiSocket @Inject constructor(
+    private val executeSandbox: ExecuteSandbox,
+) {
 
     private val _health = MutableStateFlow<SocketHealth>(SocketHealth.Idle)
     val health: StateFlow<SocketHealth> = _health
@@ -269,6 +293,9 @@ class OwuiSocket @Inject constructor() {
         // Blocking calls we do not support are refused immediately so the
         // server-side tool doesn't wait out its timeout. INTERACTIVE ones
         // (request:user_input) keep their ack and surface on the UI.
+        // `execute` IS answered now (the sandboxed client-evaluation): tools
+        // probe the active client — Frontier UI's theme read — and its
+        // fallback for a silent client bakes dark cards into a light app.
         if (ack != null && type in UNSUPPORTED_CALLS) {
             val reply = orgJson(UNSUPPORTED_CALLS[type])
             runCatching { ack.call(reply) }
@@ -281,6 +308,9 @@ class OwuiSocket @Inject constructor() {
             data = data,
             ack = ack.takeIf { type !in UNSUPPORTED_CALLS },
         )
+        if (envelope.canReply()) {
+            executeSandbox.tryAnswer(envelope)
+        }
         Timber.d("events envelope chat=%s msg=%s type=%s", envelope.chatId, envelope.messageId, type)
         _events.tryEmit(envelope)
     }
@@ -347,10 +377,6 @@ class OwuiSocket @Inject constructor() {
          * `request:user_input` is answered by the chat UI instead.
          */
         val UNSUPPORTED_CALLS: Map<String, Map<String, Any?>> = mapOf(
-            "execute" to mapOf(
-                "error" to "Beacon does not support client-side JavaScript execution.",
-                "client" to "beacon-android",
-            ),
             "execute:python" to mapOf(
                 "stdout" to "",
                 "stderr" to "Beacon does not support client-side Python execution.",

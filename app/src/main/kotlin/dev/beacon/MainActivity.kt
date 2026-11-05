@@ -522,7 +522,14 @@ private fun BeaconChatSurface(
                 ChatsDrawer(
                     listViewModel = drawerVm,
                     surfaces = surfacesVm,
-                    onOpenChat = { chat -> nav.navigate("chat/${chat.chatId}") { launchSingleTop = true } },
+                    onOpenChat = { chat ->
+                        // NO launchSingleTop: on chat/{id} entries it re-launches
+                        // the top as a BLANK surface (device repro 2026-11-04 —
+                        // a same-args singleTop nuked the entry to the empty
+                        // new-chat hero and the "can't switch again" state).
+                        // A fresh entry paints Room-first and is instant.
+                        nav.navigate("chat/${chat.chatId}")
+                    },
                     // pop+push: launchSingleTop would dedup against the CURRENT
                     // chat/new entry (its VM keeps the old engine state — the
                     // button "did nothing"); a fresh entry every tap instead.

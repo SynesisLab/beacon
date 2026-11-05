@@ -25,6 +25,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
@@ -83,7 +84,11 @@ fun HtmlCardPane(
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .height(heightDp.coerceAtLeast(card.minHeightDp.dp)),
+                    .height(heightDp.coerceAtLeast(card.minHeightDp.dp))
+                    // Web parity: the card sits as a rounded block in the flow
+                    // (FullHeightIframe's rounded-2xl) — the clip shows the app
+                    // background at the corners, no hard rectangle seam.
+                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(16.dp)),
             ) {
                 CardWebView(
                     document = document,
@@ -127,6 +132,12 @@ private val ExpandedCap = 4000.dp
  * (maps/galleries) stay native: only a dominant-vertical drag returns false.
  */
 class BeaconCardWebView(context: Context) : WebView(context) {
+    init {
+        // §11/§7.2 seamlessness: the pre-paint surface = the app background, so
+        // a chat switch never flashes the WebView's default white first paint.
+        setBackgroundColor(android.graphics.Color.TRANSPARENT)
+    }
+
     private var lastY = 0f
     private var lastX = 0f
 

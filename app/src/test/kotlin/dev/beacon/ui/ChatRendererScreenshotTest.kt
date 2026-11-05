@@ -42,6 +42,41 @@ class ChatRendererScreenshotTest {
         capture("Chat/settled_light")
     }
 
+    /** The detail-group row (web ConsecutiveDetailsGroup parity): Explored line. */
+    @Test
+    fun detailGroup_light() {
+        render {
+            dev.beacon.feature.chat.PartsView(
+                parts = listOf(
+                    dev.beacon.core.render.ChatPart.Reasoning("Inspecting the pricing sources first."),
+                    dev.beacon.core.render.ChatPart.ToolCall(
+                        name = "render_frontier_ui",
+                        args = "{}",
+                        status = dev.beacon.core.render.ToolStatus.Done,
+                    ),
+                ),
+            )
+        }
+        capture("Chat/detail_group_light")
+    }
+
+    /** The running look: the spinner + Exploring. */
+    @Test
+    fun detailGroupExploring_dark() {
+        render {
+            dev.beacon.feature.chat.PartsView(
+                parts = listOf(
+                    dev.beacon.core.render.ChatPart.ToolCall(
+                        name = "run_tools_parallel",
+                        args = "{}",
+                        status = dev.beacon.core.render.ToolStatus.Running,
+                    ),
+                ),
+            )
+        }
+        capture("Chat/detail_group_exploring_dark")
+    }
+
     private fun render(content: @Composable () -> Unit) {
         composeRule.setContent { BeaconTheme { content() } }
     }

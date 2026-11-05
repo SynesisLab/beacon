@@ -1115,7 +1115,12 @@ class ChatEngine(
                 foldPartsFor(assistantMessageId) { it.copy(followUps = event.items) }
             is StreamEvent.SourceEmitted ->
                 foldPartsFor(assistantMessageId) { it.copy(sourceCount = it.sourceCount + 1) }
-            is StreamEvent.TitleUpdate -> chatId?.let { store.setChatTitle(it, event.title) }
+            is StreamEvent.TitleUpdate -> chatId?.let { chat ->
+                store.setChatTitle(chat, event.title)
+                // The topbar reads the ENGINE title; the room write alone left
+                // every chat created in-app titled "New chat" (2026-11-04).
+                _state.value = _state.value.copy(title = event.title)
+            }
             is StreamEvent.TagsUpdate -> chatId?.let { store.setChatTags(it, event.tags) }
             is StreamEvent.ChatListDiscovered -> adoptLearnedChat(event.chatId, assistantMessageId)
             is StreamEvent.Embeds -> {

@@ -52,6 +52,33 @@ class ExecuteSandbox @Inject constructor(
     private val jsonParser = Json { ignoreUnknownKeys = true }
     private var sandbox: WebView? = null
     private val busy = AtomicBoolean(false)
+    /** Keep the sandbox's localStorage.theme = the app scheme at all times —
+     *  the theme probe (3s server wait!) answers with ONE evaluation. */
+    private var seededScheme: String? = null
+
+    init {
+        scope.launch {
+            session.settings.collect {
+                val want = if (rendersDark()) "dark" else "light"
+                if (want != seededScheme) seedTheme(want)
+            }
+        }
+    }
+
+    private suspend fun seedTheme(scheme: String) = withContext(Dispatchers.Main) {
+        ensureSandbox()
+        runCatching {
+            kotlinx.coroutines.suspendCancellableCoroutine<Unit> { cont ->
+                sandbox?.evaluateJavascript(
+                    "try{localStorage.setItem('theme','$scheme')}catch(e){}1",
+                ) { _ ->
+                    seededScheme = scheme
+                    Timber.i("execute sandbox theme=%s", scheme)
+                    if (cont.isActive) cont.resume(Unit)
+                }
+            }
+        }
+    }
 
     /** True when this envelope type = execute; answers it asynchronously. */
     fun tryAnswer(envelope: SocketEnvelope): Boolean {
@@ -64,12 +91,15 @@ class ExecuteSandbox @Inject constructor(
             return true
         }
         val code = ((envelope.data["data"] as? JsonObject)?.get("code") as? JsonPrimitive)?.content
+        Timber.i("execute call: code=%s chars", code?.length ?: 0)
         scope.launch {
             try {
                 if (code.isNullOrBlank()) {
                     envelope.reply(buildJsonObject { put("error", "execute call carried no code.") })
                 } else {
+                    // The theme is pre-seeded (init collector); one evaluation.
                     val raw = withTimeoutOrNull(TIMEOUT_MS) { evaluate(code) }
+                    Timber.i("execute answer: %s", raw?.take(120))
                     val payload = when {
                         raw == null -> buildJsonObject { put("error", "execute timed out.") }
                         raw.isBlank() || raw.trim() == "null" -> buildJsonObject { put("error", "execute failed.") }
@@ -78,6 +108,7 @@ class ExecuteSandbox @Inject constructor(
                     envelope.reply(payload)
                 }
             } catch (t: Throwable) {
+                Timber.w(t, "execute failed")
                 envelope.reply(buildJsonObject { put("error", t.message ?: "execute failed.") })
             } finally {
                 busy.set(false)

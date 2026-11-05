@@ -58,6 +58,34 @@ sealed interface ChatPart {
     data class FollowUps(val items: List<String>) : ChatPart
 }
 
+/** UI-only grouping: consecutive [ChatPart.Reasoning]/[ChatPart.ToolCall] = one
+ *  status row (the web's ConsecutiveDetailsGroup: "Explored <names>"). */
+data class DetailRun(val parts: List<ChatPart>)
+
+internal fun detailRuns(parts: List<ChatPart>): List<Any> {
+    val out = ArrayList<Any>(parts.size)
+    var run = ArrayList<ChatPart>(2)
+    var runHasTool = false
+
+    fun flush() {
+        if (run.isNotEmpty()) {
+            if (runHasTool) out.add(DetailRun(run.toList())) else out.addAll(run)
+            run = ArrayList(2)
+            runHasTool = false
+        }
+    }
+
+    parts.forEach { part ->
+        when (part) {
+            is ChatPart.Reasoning -> run.add(part)
+            is ChatPart.ToolCall -> { run.add(part); runHasTool = true }
+            else -> { flush(); out.add(part) }
+        }
+    }
+    flush()
+    return out
+}
+
 enum class ToolStatus { Pending, Running, Done, Failed, Cancelled }
 
 /** display_file routing (agent.md §7.3 — mime → viewer table). */

@@ -15,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -23,6 +24,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -47,24 +49,121 @@ fun PartsView(
     iframeCsp: String? = null,
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        parts.forEach { part ->
-            when (part) {
-                is dev.beacon.core.render.ChatPart.Status -> StatusPill(part)
-                is dev.beacon.core.render.ChatPart.Reasoning -> ReasoningCard(part)
-                is dev.beacon.core.render.ChatPart.Markdown ->
-                    MiniMarkdown(markdown = part.md, streaming = part.streaming)
-                is dev.beacon.core.render.ChatPart.ToolCall -> ToolCallCard(part)
-                is dev.beacon.core.render.ChatPart.Citations -> CitationsPill(part)
-                is dev.beacon.core.render.ChatPart.FollowUps -> FollowUpRow(part, onFollowUp)
-                is dev.beacon.core.render.ChatPart.HtmlCard ->
-                    when {
-                        httpClient != null && (part.html != null || part.srcUrl != null) ->
-                            HtmlCardPane(part, httpClient, instanceUrl, iframeCsp)
-                        else -> HtmlCardPlaceholder(part)
-                    }
-                is dev.beacon.core.render.ChatPart.File -> FileChip(part, onOpenFile)
-                is dev.beacon.core.render.ChatPart.GeneratedImage -> Unit // M2: generation rendering next
+        val host = PartHost(
+            httpClient = httpClient,
+            instanceUrl = instanceUrl,
+            iframeCsp = iframeCsp,
+            onFollowUp = onFollowUp,
+            onOpenFile = onOpenFile,
+        )
+        dev.beacon.core.render.detailRuns(parts).forEach { chunk ->
+            when (chunk) {
+                is dev.beacon.core.render.DetailRun -> DetailGroupRow(chunk.parts, host)
+                else -> RenderPart(chunk as dev.beacon.core.render.ChatPart, host)
             }
+        }
+    }
+}
+
+/** The render-time environment for one bubble's parts. */
+private data class PartHost(
+    val httpClient: OkHttpClient? = null,
+    val instanceUrl: String? = null,
+    val iframeCsp: String? = null,
+    val onFollowUp: (String) -> Unit = {},
+    val onOpenFile: (fileId: String, name: String, mime: String, terminalServerId: String?, terminalPath: String?) -> Unit =
+        { _, _, _, _, _ -> },
+)
+
+/** One part, as before the grouping (the group's expanded view reuses this). */
+@Composable
+private fun RenderPart(
+    part: dev.beacon.core.render.ChatPart,
+    host: PartHost,
+) {
+    when (part) {
+        is dev.beacon.core.render.ChatPart.Status -> StatusPill(part)
+        is dev.beacon.core.render.ChatPart.Reasoning -> ReasoningCard(part)
+        is dev.beacon.core.render.ChatPart.Markdown ->
+            MiniMarkdown(markdown = part.md, streaming = part.streaming)
+        is dev.beacon.core.render.ChatPart.ToolCall -> ToolCallCard(part)
+        is dev.beacon.core.render.ChatPart.Citations -> CitationsPill(part)
+        is dev.beacon.core.render.ChatPart.FollowUps -> FollowUpRow(part, host.onFollowUp)
+        is dev.beacon.core.render.ChatPart.HtmlCard ->
+            when {
+                host.httpClient != null && (part.html != null || part.srcUrl != null) ->
+                    HtmlCardPane(part, host.httpClient!!, host.instanceUrl, host.iframeCsp)
+                else -> HtmlCardPlaceholder(part)
+            }
+        is dev.beacon.core.render.ChatPart.File -> FileChip(part, host.onOpenFile)
+        is dev.beacon.core.render.ChatPart.GeneratedImage -> Unit // M2: generation rendering next
+    }
+}
+
+/**
+ * Web parity (ConsecutiveDetailsGroup): consecutive thinking/tool tokens =
+ * ONE status row — "Exploring <names>" (spinner) while anything runs,
+ * "✓ Explored <names>" after; the chevron expands to the chips/thinking.
+ */
+@Composable
+private fun DetailGroupRow(
+    group: List<dev.beacon.core.render.ChatPart>,
+    host: PartHost,
+) {
+    val calls = group.filterIsInstance<dev.beacon.core.render.ChatPart.ToolCall>()
+    val active = calls.any { it.status == dev.beacon.core.render.ToolStatus.Running || it.status == dev.beacon.core.render.ToolStatus.Pending } ||
+        group.any { it is dev.beacon.core.render.ChatPart.Reasoning && it.streaming }
+    var open by rememberSaveable { mutableStateOf(false) }
+
+    val summary = remember(group) {
+        val counts = LinkedHashMap<String, Int>()
+        calls.forEach { counts[it.name] = (counts[it.name] ?: 0) + 1 }
+        counts.entries.joinToString(", ") { (name, n) -> if (n > 1) "$n× $name" else name }
+    }
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { open = !open },
+    ) {
+        if (active) {
+            CircularProgressIndicator(Modifier.size(14.dp))
+        } else {
+            Icon(
+                Icons.Outlined.CheckCircle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(15.dp),
+            )
+        }
+        Text(
+            if (active) "Exploring" else "Explored",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+        )
+        if (summary.isNotEmpty()) {
+            Text(
+                summary,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+        } else {
+            Box(Modifier.weight(1f))
+        }
+        Icon(
+            if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    AnimatedVisibility(open) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+            group.forEach { inner -> RenderPart(inner, host) }
         }
     }
 }

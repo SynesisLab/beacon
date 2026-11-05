@@ -111,6 +111,22 @@ object PartBuilder {
                 }
                 "message" -> {
                     val text = (item["content"] as? JsonArray).outputText()
+                    // message.embeds (middleware.py:3310): inline UI docs when
+                    // the server rows embeds onto the message item itself.
+                    (item["embeds"] as? JsonArray)
+                        ?.mapNotNull { part -> (part as? JsonPrimitive)?.takeIf { it.isString }?.content }
+                        ?.forEach { embedHtml ->
+                            add(
+                                ChatPart.HtmlCard(
+                                    id = "embed-" + embedHtml.hashCode().toUInt().toString(16),
+                                    html = embedHtml,
+                                    kind = CardKind.Embed,
+                                    title = null,
+                                    sandboxLevel = SandboxLevel.MEDIA,
+                                    minHeightDp = 160,
+                                ),
+                            )
+                        }
                     // Blank until the first delta; the streaming caret covers the gap.
                     if (text.isNotBlank() || item.statusInProgress()) {
                         add(ChatPart.Markdown(text, streaming = item.statusInProgress()))
@@ -135,8 +151,32 @@ object PartBuilder {
                     )
                 }
                 "function_call_output" -> {
+                    // THE app-frame channel (verified in chat 6fc19ae0's stored
+                    // outputJson, 2026-11-04): tools returning an inline
+                    // HTMLResponse (Frontier UI, MCP frames) put full HTML
+                    // documents on the function_call_output item as a SIBLING
+                    // of `output` — middleware.py:745-752 → the responses
+                    // pipeline rows them through (middleware.py:5844-5850).
+                    (item["embeds"] as? JsonArray)
+                        ?.mapNotNull { part -> (part as? JsonPrimitive)?.takeIf { it.isString }?.content }
+                        ?.forEach { embedHtml ->
+                            add(
+                                ChatPart.HtmlCard(
+                                    id = "embed-" + embedHtml.hashCode().toUInt().toString(16),
+                                    html = embedHtml,
+                                    kind = CardKind.Embed,
+                                    title = null,
+                                    // Server-provenanced (tool-emitted, §11) → MEDIA floor.
+                                    sandboxLevel = SandboxLevel.MEDIA,
+                                    minHeightDp = 160,
+                                ),
+                            )
+                        }
                     val callId = (item["call_id"] as? JsonPrimitive)?.content
-                    val result = item["output"]
+                    // OpenAI content-parts wrapper: [{type:'input_text',text:"…"}]
+                    // → the joined text (seen on-device; DisplayFile handles the
+                    // file leg the same way).
+                    val result = unwrapInputTextParts(item["output"])
                     val asFile = displayFile.parse(result, json)
                     // display_file results become FILE parts — never JSON text (§7.1).
                     if (asFile != null) {
@@ -175,6 +215,25 @@ private fun JsonArray?.outputText(): String =
             ""
         }
     }
+
+/**
+ * function_call_output results may arrive wrapped in an OpenAI content-parts
+ * array (`[{type:'input_text', text:"…"}]`) — unwrap to the joined text so
+ * the tool chip reads prose, not the wrapper. Anything else passes unchanged.
+ */
+internal fun unwrapInputTextParts(raw: JsonElement?): JsonElement {
+    if (raw == null) return kotlinx.serialization.json.JsonNull
+    val array = raw as? JsonArray ?: return raw
+    val parts = array.toList()
+    if (parts.isEmpty()) return array
+    val allText = parts.all { part ->
+        (part as? JsonObject)?.get("type")?.let { (it as? JsonPrimitive)?.content == "input_text" } == true
+    }
+    if (!allText) return array
+    return JsonPrimitive(parts.joinToString("") { part ->
+        ((part as JsonObject)["text"] as? JsonPrimitive)?.content.orEmpty()
+    })
+}
 
 private fun JsonObject.statusInProgress(): Boolean =
     (this["status"] as? JsonPrimitive)?.content == "in_progress"

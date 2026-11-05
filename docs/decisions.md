@@ -226,3 +226,34 @@ must not re-load — infinite loop risk), and the real instance origin for
 navigation policy (the old code passed null — instance-origin links wrongly
 opened external). AC (agent.md §15 M2): frontier card + chart + mermaid
 render inline on the dev instance — pending device verification.
+
+## ADR-0014 — The app-frame channel: function_call_output.embeds (Frontier UI cards)
+
+*Date:* 2026-11-04 · *Milestone:* M2-2 ride-along · *Requested:* by Anthony ("i want render_frontier_ui to work on our app too" + the tool export)
+
+**Decision.** `PartBuilder` folds an `embeds` key (full-HTML string list,
+SIBLING of `output`) on `function_call_output` AND on `message` output items
+— each string = one `CardKind.Embed` card (MEDIA floor). The card keeps its
+own document; the pane's bridge stays height-only for it, and height now ALSO
+measures host-side (`evaluateJavascript` at onPageFinished + 400/900/1600 ms
+re-measures) — the Frontier card carries its own nonce CSP
+(`script-src 'nonce-…' https://cdn.jsdelivr.net`), which blocks any injected
+inline shim: the host-side measure is CSP-immune.
+
+**Why.** The Frontier UI tool (`tool-frontier_ui-export-….json`, 1.3.0)
+returns `(HTMLResponse(Content-Disposition: inline), context)`; the middleware
+peels the response body into `tool_result_embeds` (middleware.py:748-752),
+emits an `embeds` chat-event for text-mode (:1179-1184) AND rows the same list
+through the responses output items (:5844-5850). The event channel was already
+folded (OwuiStreamParser "embeds"); the OUTPUT-ITEM channel is the one this
+server+model combination actually uses — device-verified in Beacon's own Room
+DB (chat 6fc19ae0 "GLM Flash vs Local LLMs": `fco.embeds[0] =
+"<!DOCTYPE html>…"` for `call_t1p1btmo`).
+
+**Consequences.** The tool's result TEXT ("…is rendered and visible to the
+user (blocks: …)") is model-facing prose and renders in the tool chip only;
+OpenAI content-parts arrays (`[{type:'input_text', text:"…"}]`) unwrap at
+PartBuilder so chips show prose, not the wrapper. The card's own theme
+(attribute-baked dark/light at render time) wins over the app scheme
+(server-side provenance); admin `ui.iframe_csp` still injects first-in-head
+when configured (web injectCsp parity).

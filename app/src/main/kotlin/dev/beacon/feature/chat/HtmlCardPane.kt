@@ -174,7 +174,7 @@ private fun CardWebView(
         webView.webChromeClient = PopupChromeClient(instanceUrl) { url ->
             mainViewNavigation(url, webView, instanceUrl, context)
         }
-        webView.webViewClient = EmbedWebViewClient(client, instanceUrl)
+        webView.webViewClient = EmbedWebViewClient(client, instanceUrl, onHeight)
         onDispose {
             webView.stopLoading()
             webView.destroy()
@@ -290,7 +290,43 @@ private class PopupChromeClient(
 private class EmbedWebViewClient(
     private val client: OkHttpClient,
     private val instanceUrl: String?,
+    /** Kotlin-side height measurement (the shim's CSP-proof fallback). */
+    private val onMeasuredHeight: ((Float) -> Unit)? = null,
 ) : WebViewClient() {
+    private val measureJs =
+        "(function(){var d=document.scrollingElement||document.documentElement;" +
+            "var b=document.body;" +
+            "return Math.max(d?d.scrollHeight:0, b?b.scrollHeight:0);})()"
+
+    /**
+     * nonce/hash-CSP'd cards (Frontier UI builds its own `script-src 'nonce-…'`
+     * policy) block ANY injected inline script — the shim can't run. The host
+     * measuring via evaluateJavascript is immune to document CSP: one measure
+     * at load + a few early re-measures for async layouts.
+     */
+    override fun onPageFinished(view: WebView, url: String?) {
+        super.onPageFinished(view, url)
+        val measure = {
+            runCatching {
+                view.evaluateJavascript(measureJs) { value ->
+                    val px = value
+                        ?.trim()
+                        ?.removeSurrounding("\"")
+                        ?.toFloatOrNull()
+                    if (px != null && px > 0f) onMeasuredHeight?.invoke(px)
+                }
+            }
+        }
+        runCatching { measure() }
+        if (onMeasuredHeight != null) {
+            longArrayOf(400, 900, 1600).forEach { delay ->
+                runCatching {
+                    view.postDelayed({ runCatching { measure() } }, delay)
+                }
+            }
+        }
+    }
+
     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
         val mainFrame = request.isForMainFrame
         val url = request.url.toString()

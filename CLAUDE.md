@@ -104,7 +104,7 @@ New feature rows this audit adds (not in the older table):
 | Comment threads on chats/notes/models/knowledge/prompts/tools (`ENABLE_COMMENTS`, v0.13.0) | NEW row — M5+ |
 | Notification INBOX aggregating comments/mentions/automations/calendar (`notifications.*`, v0.13.0) | The audit's user-notifications row already tracks the target surface; inbox = its read shape |
 | Side chats — temp side conversation via "/side" `/btw` (gated permission, off by default, v0.13.0) | NEW row — M5+, gate-hidden |
-| MCP app frames rendered inside chat with per-call confirmation (v0.13.0) | The apps row's render-side: tool embeds policy already exists (M2-2); confirmations reuse the resolve/confirm dialog |
+| MCP app frames rendered inside chat with per-call confirmation (v0.13.0) | **Landed** (2026-11-04): `function_call_output.embeds` / `message.embeds` → `CardKind.Embed` MEDIA cards (device DB proof: chat 6fc19ae0 carries the Frontier UI card in outputJson; middleware.py:745-752→:5844-5850); confirmations reuse the M4 resolve dialog |
 | 3D model previews GLB/glTF/STL/OBJ/PLY (v0.13.0) | NEW row — file-viewer surface, M5+ |
 | Model CONTROLS knobs (named controls like Thinking: L/M/H; v0.12.0) | The M4 params sheet's shape: `model_controls` already rides `params` on the wire |
 | Tools ON/OFF switches + tool creation from chat; skills versions/export | Workspace M4+ (view-only first, per the model-editor row) |

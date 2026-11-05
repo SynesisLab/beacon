@@ -122,4 +122,30 @@ class PartBuilderEmbedsTest {
         val single = kotlinx.serialization.json.JsonPrimitive("plain")
         assertEquals(single, unwrapInputTextParts(single))
     }
+
+    @Test
+    fun pendingAskUserChipsAreHidden() {
+        // Web parity (structuredOutput.ts:407-413): the pending ask_user
+        // renders as the dialog, never as a chip; the ANSWERED call keeps a chip.
+        fun askCall(status: String) = kotlinx.serialization.json.buildJsonObject {
+            put("type", kotlinx.serialization.json.JsonPrimitive("function_call"))
+            put("call_id", kotlinx.serialization.json.JsonPrimitive("ca1"))
+            put("name", kotlinx.serialization.json.JsonPrimitive("ask_user"))
+            put("arguments", kotlinx.serialization.json.JsonPrimitive("{}"))
+            put("status", kotlinx.serialization.json.JsonPrimitive(status))
+        }
+        assertTrue(
+            PartBuilder.build(FoldedMessage(outputSeen = true, outputItems = listOf(askCall("pending"))))
+                .filterIsInstance<ChatPart.ToolCall>().isEmpty(),
+        )
+        assertTrue(
+            PartBuilder.build(FoldedMessage(outputSeen = true, outputItems = listOf(askCall("in_progress"))))
+                .filterIsInstance<ChatPart.ToolCall>().isEmpty(),
+        )
+        // Answered: the chip survives.
+        assertTrue(
+            PartBuilder.build(FoldedMessage(outputSeen = true, outputItems = listOf(askCall("completed"))))
+                .filterIsInstance<ChatPart.ToolCall>().isNotEmpty(),
+        )
+    }
 }

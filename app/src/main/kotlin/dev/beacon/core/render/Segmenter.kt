@@ -34,6 +34,16 @@ object Segmenter {
         "<" + "details\\b([^>]*)>([\\s\\S]*?)</" + "details>",
         setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE),
     )
+    /** type="reasoning" details (the web's text-mode THINKING channel). */
+    private val reasoningDetails = Regex(
+        "<" + "details[^>]*type=[\"']reasoning[\"'][^>]*>" + "([\\s\\S]*?)" + "</" + "details>",
+        setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE),
+    )
+    /** type="code_interpreter" details — stripped from text-mode content. */
+    private val codeInterpreterDetails = Regex(
+        "<" + "details[^>]*type=[\"']code_interpreter[\"'][^>]*>[\\s\\S]*?</" + "details>",
+        setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE),
+    )
     private val titleComment = Regex("<!--\\s*title:\\s*(.+?)\\s*-->", RegexOption.IGNORE_CASE)
     private val titleTag = Regex("<" + "title[^>]*>(.*?)</" + "title>", RegexOption.IGNORE_CASE)
     private val rawHtmlBlob = Regex("<" + "div\\b[^>]*>[\\S\\n]{200,}", RegexOption.IGNORE_CASE)
@@ -50,6 +60,21 @@ object Segmenter {
         var remainder = contentMd
         detailsBlock.findAll(contentMd).forEach { match ->
             partsFromToolDetails(match).forEach { parts.add(it) }
+            remainder = remainder.replace(match.value, "")
+        }
+
+        // Text-mode reasoning/code-interpreter details (web parity:
+        // ContentRenderer.svelte:24-68 lifts ALL details out of the plain
+        // content; reasoning renders as its own collapsible — the think-tag
+        // twin — and code_interpreter's block stays server-channel-only for
+        // now). Stripped here BEFORE the blob pass, so their inner markup
+        // never leaks into MiniMarkdown like raw tags.
+        reasoningDetails.findAll(contentMd).forEach { match ->
+            val inner = match.groupValues[1].trim()
+            if (inner.isNotBlank()) parts.add(ChatPart.Reasoning(inner))
+            remainder = remainder.replace(match.value, "")
+        }
+        codeInterpreterDetails.findAll(contentMd).forEach { match ->
             remainder = remainder.replace(match.value, "")
         }
 

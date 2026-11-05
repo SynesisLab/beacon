@@ -140,12 +140,21 @@ object PartBuilder {
                 "function_call" -> {
                     val callId = (item["call_id"] as? JsonPrimitive)?.content
                         ?: (item["id"] as? JsonPrimitive)?.content
+                    val name = (item["name"] as? JsonPrimitive)?.content ?: "tool"
+                    val statusText = (item["status"] as? JsonPrimitive)?.content
+                    val pending = item.statusInProgress() || statusText == "pending"
+                    // Web parity (structuredOutput.ts:407-413): a pending /
+                    // in-progress ask_user never shows as a chip — the
+                    // interactive dialog IS its display.
+                    if (name == "ask_user" && pending) {
+                        return@forEach
+                    }
                     add(
                         ChatPart.ToolCall(
                             callId = callId,
-                            name = (item["name"] as? JsonPrimitive)?.content ?: "tool",
+                            name = name,
                             args = (item["arguments"] as? JsonPrimitive)?.content ?: "",
-                            status = if (item.statusInProgress()) ToolStatus.Running else ToolStatus.Done,
+                            status = if (pending) ToolStatus.Running else ToolStatus.Done,
                             result = pendingCalls[callId]?.result,
                         ),
                     )

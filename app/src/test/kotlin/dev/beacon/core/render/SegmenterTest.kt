@@ -103,4 +103,26 @@ class SegmenterTest {
         assertTrue(Segmenter.reasoningFromThinkBlocks(tagged).orEmpty().contains("inner thoughts"))
         assertTrue(Segmenter.reasoningFromThinkBlocks("no tags") == null)
     }
+
+    @Test
+    fun textModeReasoningDetailsBecomeThinking() {
+        // Web parity (ContentRenderer.svelte:24-68): text-mode details lift OUT
+        // of the plain content; type="reasoning" = the collapsible Thinking.
+        val md = "${'<'}" + """details type="reasoning">secret thoughts""" + "${'<'}/details>\nAnswer here"
+        val parts = Segmenter.build(md, streaming = false)
+        val reasoning = parts.filterIsInstance<ChatPart.Reasoning>().single()
+        assertTrue(reasoning.md.contains("secret thoughts"))
+        val answer = parts.filterIsInstance<ChatPart.Markdown>().single()
+        assertTrue(answer.md.contains("Answer here"))
+        assertTrue(!answer.md.contains("details"))
+    }
+
+    @Test
+    fun codeInterpreterDetailsStripped() {
+        val md = "${'<'}" + """details type="code_interpreter">code here""" + "${'<'}/details>\nFinal"
+        val parts = Segmenter.build(md, streaming = false)
+        assertTrue(parts.filterIsInstance<ChatPart.Markdown>().single().md.contains("Final"))
+        assertTrue(parts.none { it is ChatPart.HtmlCard })
+        assertTrue(parts.none { it is ChatPart.ToolCall })
+    }
 }

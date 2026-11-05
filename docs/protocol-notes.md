@@ -227,3 +227,23 @@ Beacon deltas (all client-side decisions, ADR-0013):
 | Nonce-CSP cards | the card own `script-src 'nonce-'` CSP blocks the injected shim; the host-side evaluateJavascript measures carry height instead |
 | Card subresources | maplibre-gl CDN css + storefront favicons 200 through the one OkHttp client (no credentials left the instance origin); a 404 favicon degrades to the empty response |
 | Code-interpreter request | the server routed `execute_code` TO the client (the Code chip!); Beacon answered not-supported; the model fell back to inline fences — the client-execution leg stays post-M5 |
+
+## Tool-call display/hide rules (2026-11-04, the "what renders vs hides" answer)
+
+The web decides at DISPLAY time (ContentRenderer.svelte + messages/structuredOutput.ts):
+
+| Rule | Behavior | Proof |
+| --- | --- | --- |
+| output[?].type = function_call | renders as a grouped collapsible tool chip (summary/args/result text inside the chip; consecutive same-kind tokens group) | structuredOutput.ts:97-104, 207-250, 358-387 (GROUPABLE_OUTPUT_TYPES + flushDetails) |
+| function_call_output | NEVER its own display — folded into the paired function_call chip by call_id; only display_file results inline as a file part | structuredOutput.ts:365-404 (getInlineFileFromToolOutput) |
+| ask_user pending/in_progress | HIDDEN as chip — the interactive dialog IS its display; ANSWERED ask_user keeps the chip | structuredOutput.ts:407-413 |
+| text-mode <details> blocks | ALL details lift out of plain content (depth-tracked extractor); type="tool_calls" = chips; type="reasoning" = collapsible thinking; type="code_interpreter" = its own card; the rest stripped in analysis paths | ContentRenderer.svelte:24-68, utils/index.ts:1074-1101, removeAllDetails |
+| message.embeds | FullHeightIframe per embed, allowScripts true / allowPopups TRUE / allowForms default-true / allowSameOrigin default-FALSE; HIDDEN in readOnly (shared/export rendering) | ResponseMessage.svelte:755-772 |
+| open_webui:context_compaction | its own summary label in the flow | structuredOutput.ts:423-431 |
+| reasoning_details output key | server-stripped before replay to the LLM (metadata-bound), never client-displayed from this key | middleware.py:1938-1940, 2210-2213 |
+
+Beacon alignment status (this session): pairing + grouping = ToolCall chip w/ result
+attach; pending ask_user hidden (parity); text-mode reasoning/code_interpreter
+details lifted/stripped in the Segmenter; embeds = CardKind.Embed cards
+(readOnly contexts do not exist client-side yet; the M4-landed share/export is
+client-built markdown/json).

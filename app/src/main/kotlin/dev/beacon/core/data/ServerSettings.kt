@@ -16,8 +16,6 @@ enum class ThemeMode { System, Light, Dark }
 data class ServerSettings(
     val serverUrl: String = "",
     val authMethod: AuthMethod = AuthMethod.None,
-    /** Static headers added by the user (org-routing, gateway keys) — sent to the instance only. */
-    val customHeaders: Map<String, String> = emptyMap(),
     /** Opt-in: trust user-added CAs (self-signed labs). agent.md §5.5. */
     val trustUserCa: Boolean = false,
     val serverVersion: String? = null,

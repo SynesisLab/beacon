@@ -134,3 +134,42 @@ inventory; the platform manager route reaches the same framework without it.)
 framework (autofilled or typed into hint-decorated fields) — verify on device with
 Google Password Manager in manual matrix. API-key auth never gets password-save
 treatment (not a password).
+## ADR-0012 — Custom headers editor: values in Keystore, Authorization reserved
+
+*Date:* 2026-11-04 · *Milestone:* M4 remainder · *Requested:* by Anthony (M4 remainder pick: headers editor + proxy-cookie)
+
+**Decision.** The Settings → Advanced → Custom headers editor writes the whole
+header map through one SecureStore (Keystore AES/GCM) blob under the
+`custom_headers` alias; the `customHeaders` field is REMOVED from
+`ServerSettings` (the plain settings JSON must never carry gateway-key
+credential values — §11 "credentials in Keystore only"). The map is cached hot
+in `SessionStore._customHeaders` (loaded off-main at construction, updated on
+write, wiped on sign-out); `AuthInterceptor` reads the snapshot, never disk.
+
+Rules (editor validate() AND `attachInstanceAuth` belt-and-braces; Conduit
+api_auth_interceptor.dart parity, read-as-spec):
+- field names are RFC 9110 tokens (letters/digits/`!#$%&'*+.^_`|~-`);
+- values with CR/LF/NUL are dropped before they reach OkHttp (OkHttp throws —
+  a dropped header must never crash a request, §11 origin-first rule);
+- `Authorization` is reserved in any case — Beacon's sign-in owns the
+  credential; a custom header may never override it;
+- `Cookie` is intentionally allowed: a pasted reverse-proxy session cookie is
+  the simple form of proxy-cookie auth. The full WebView capture flow
+  (Conduit proxy_auth_page.dart: capture cookies + JWT on the instance origin)
+  remains an M4+ follow-up, not done here.
+
+**Why.** The M0 scaffolding pre-placed `customHeaders` on `ServerSettings`, but
+its documented contract ("no secrets — those live in SecureStore only") makes
+gateway keys un-store-able there; an editor writing values would have shipped
+the first real violation. Settings JSON keeps `ignoreUnknownKeys`, so the
+removed field degrades to ignored on read — no migration needed (the field was
+never populated: no UI wrote it).
+
+**Consequences.** `SettingsViewModel` combines the settings flow with the new
+`session.customHeaders` StateFlow for the count display; the headers editor
+screen (`HeadersEditorScreen` + `HeadersViewModel`, pure `HeadersEditorState`
+rules) routes at `settings/headers`. Values render as plain text fields
+(single user, own device, own secrets — same trade as ADR-0009's MFA manual
+key). Screenshot tests cover populated + error states in both schemes;
+`CustomHeadersTest`/`HeadersEditorStateTest`/`InterceptorRulesTest` cover the
+rules tables.

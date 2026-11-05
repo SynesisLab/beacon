@@ -44,6 +44,39 @@ class InterceptorRulesTest {
     }
 
     @Test
+    fun customHeadersCannotOverrideBearerAuthorization() {
+        // Conduit parity: the credential Beacon manages is never overridable.
+        val result = request("$instance/api/config")
+            .attachInstanceAuth(
+                instance,
+                "sk-abc",
+                mapOf("authorization" to "Bearer evil", "AUTHORIZATION" to "also-evil"),
+            )
+        assertEquals("Bearer sk-abc", result.header("Authorization"))
+    }
+
+    @Test
+    fun injectionHeadersWithLineBreaksAreDropped() {
+        // OkHttp throws on CR/LF in a name or value — the gate must drop them first.
+        val result = request("$instance/api/config")
+            .attachInstanceAuth(
+                instance,
+                null,
+                mapOf("X-Evil\nInjected" to "v", "X-Evil" to "a\nb", "X-Ok" to "v"),
+            )
+        assertNull(result.header("X-Evil\nInjected"))
+        assertNull(result.header("X-Evil"))
+        assertEquals("v", result.header("X-Ok"))
+    }
+
+    @Test
+    fun cookieHeaderIsAllowedForProxyFlows() {
+        val result = request("$instance/api/config")
+            .attachInstanceAuth(instance, "sk-abc", mapOf("Cookie" to "cf_access=abc"))
+        assertEquals("cf_access=abc", result.header("Cookie"))
+    }
+
+    @Test
     fun noInstanceMeansNoCredentials() {
         val result = request("$instance/api/config")
             .attachInstanceAuth(null, "sk-abc", emptyMap())

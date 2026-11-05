@@ -11,6 +11,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.net.URI
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -78,6 +80,41 @@ class SessionStore @Inject constructor(
 
     fun settingsSnapshot(): ServerSettings = snapshot.value
 
+    /**
+     * M4 headers editor: custom headers are credentials (gateway keys), so the
+     * blob lives in SecureStore — not the settings DataStore (§11). Loaded once
+     * at construction (off-main), updated on [setCustomHeaders], wiped by
+     * [signOut]; interceptors read the hot snapshot, never the disk.
+     */
+    private val _customHeaders = MutableStateFlow<Map<String, String>>(emptyMap())
+    val customHeaders: StateFlow<Map<String, String>> = _customHeaders.asStateFlow()
+
+    init {
+        scope.launch {
+            val stored = withContext(Dispatchers.IO) {
+                runCatching {
+                    CustomHeaders.decode(secure.read(SecureStore.HEADERS_ALIAS))
+                }.getOrDefault(emptyMap())
+            }
+            _customHeaders.value = stored
+        }
+    }
+
+    fun customHeadersSnapshot(): Map<String, String> = _customHeaders.value
+
+    /** Editor write path: re-writes the whole encrypted blob (validated upstream). */
+    suspend fun setCustomHeaders(map: Map<String, String>) {
+        val sanitized = CustomHeaders.sanitize(map)
+        withContext(Dispatchers.IO) {
+            if (sanitized.isEmpty()) {
+                secure.delete(SecureStore.HEADERS_ALIAS)
+            } else {
+                secure.store(SecureStore.HEADERS_ALIAS, CustomHeaders.encode(sanitized))
+            }
+        }
+        _customHeaders.value = sanitized
+    }
+
     fun instanceUrlSnapshot(): String? = snapshot.value.serverUrl.takeIf { it.isNotBlank() }
 
     suspend fun current(): ServerSettings = dataStore.data.first()
@@ -111,6 +148,7 @@ class SessionStore @Inject constructor(
     suspend fun signOut() {
         secure.deleteAll()
         clearAuthExpired()
+        _customHeaders.value = emptyMap()
         update { ServerSettings() }
     }
 }

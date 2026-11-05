@@ -197,7 +197,22 @@ private fun BeaconNavHost(permanentSidebar: Boolean) {
                         state = vm.state.collectAsStateWithLifecycle().value,
                         onSignOut = vm::signOut,
                         onThemeMode = vm::setThemeMode,
+                        onOpenHeaders = { nav.navigate("settings/headers") },
                         onClose = { nav.popBackStack() },
+                    )
+                }
+                // M4 advanced auth: name/value editor for instance-bound headers
+                // (org-routing / gateway keys / reverse-proxy Cookie).
+                composable("settings/headers") {
+                    val vm: dev.beacon.feature.settings.HeadersViewModel = hiltViewModel()
+                    dev.beacon.feature.settings.HeadersEditorScreen(
+                        state = vm.state.collectAsStateWithLifecycle().value,
+                        onSave = vm::save,
+                        onAdd = vm::addDraft,
+                        onRemove = vm::removeDraft,
+                        onName = vm::setName,
+                        onValue = vm::setValue,
+                        onBack = { nav.popBackStack() },
                     )
                 }
                 // M4-d1 drawer surfaces (read-only): folders / notes / channels /

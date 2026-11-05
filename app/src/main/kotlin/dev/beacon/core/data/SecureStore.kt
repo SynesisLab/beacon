@@ -65,7 +65,16 @@ class SecureStore @Inject constructor(
         }
     }
 
-    private fun aliases(): List<String> = listOf(API_KEY_ALIAS, AUTH_TOKEN_ALIAS)
+    /** Removes one secret (ciphertext file + its Keystore key). */
+    fun delete(alias: String) {
+        File(dir(), "$alias.bin").delete()
+        try {
+            keystore.deleteEntry(alias)
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun aliases(): List<String> = listOf(API_KEY_ALIAS, AUTH_TOKEN_ALIAS, HEADERS_ALIAS)
 
     private fun dir(): File = File(context.filesDir, "beacon/secrets").apply { mkdirs() }
 
@@ -94,5 +103,8 @@ class SecureStore @Inject constructor(
 
         const val API_KEY_ALIAS = "api_key"
         const val AUTH_TOKEN_ALIAS = "auth_token"
+
+        /** The custom-headers JSON blob (M4 headers editor; values are gateway credentials). */
+        const val HEADERS_ALIAS = "custom_headers"
     }
 }

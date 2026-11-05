@@ -1,5 +1,6 @@
 package dev.beacon.feature.settings
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -37,6 +38,7 @@ fun SettingsScreen(
     state: SettingsViewModel.UiState,
     onSignOut: () -> Unit,
     onThemeMode: (dev.beacon.core.data.ThemeMode) -> Unit,
+    onOpenHeaders: () -> Unit = {},
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -100,11 +102,23 @@ fun SettingsScreen(
                 },
             )
             state.signedInEmail?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            if (state.customHeaders.isNotEmpty()) {
-                Text(
-                    "Custom headers: ${state.customHeaders.size}",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+        }
+        HorizontalDivider()
+        SettingSection("Advanced") {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onOpenHeaders() }
+                    .padding(vertical = 6.dp),
+            ) {
+                Column {
+                    Text("Custom headers")
+                    Text(
+                        state.customHeaders.let { if (it.isEmpty()) "None — sent to the instance only" else "${it.size} set — sent to the instance only" },
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
             }
         }
         HorizontalDivider()

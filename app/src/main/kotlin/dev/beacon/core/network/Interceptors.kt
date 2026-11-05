@@ -14,6 +14,12 @@ private const val AUTHORIZATION = "Authorization"
  * Single place encoding the credential/rules from agent.md §11:
  * auth header + user headers attach to same-origin requests only; never to
  * third-party hosts (HtmlCard WebViews and previews reuse this client).
+ *
+ * Reserved names (Conduit api_auth_interceptor.dart parity): `Authorization`
+ * is the credential Beacon manages — a user header may never override it.
+ * Names/values with control characters are dropped defensively here even
+ * though the editor validates them: OkHttp would throw, and a request must
+ * never crash the caller.
  */
 internal fun Request.attachInstanceAuth(
     instanceUrl: String?,
@@ -27,9 +33,12 @@ internal fun Request.attachInstanceAuth(
         builder.header(AUTHORIZATION, "Bearer $bearer")
     }
     headers.forEach { (name, value) ->
-        if (name.isNotBlank()) {
-            builder.header(name, value)
-        }
+        val trimmedName = name.trim()
+        if (trimmedName.isEmpty()) return@forEach
+        if (dev.beacon.core.data.CustomHeaders.isReserved(trimmedName)) return@forEach
+        if (!dev.beacon.core.data.CustomHeaders.isValidName(trimmedName)) return@forEach
+        if (!dev.beacon.core.data.CustomHeaders.isValidValue(value)) return@forEach
+        builder.header(trimmedName, value.trim())
     }
     return builder.build()
 }
@@ -49,7 +58,7 @@ class AuthInterceptor @Inject constructor(
         val instanceUrl = session.instanceUrlSnapshot()
         val bearer = instanceUrl?.let { session.credentialFor(it) }
         val response = chain.proceed(
-            chain.request().attachInstanceAuth(instanceUrl, bearer, session.settingsSnapshot().customHeaders),
+            chain.request().attachInstanceAuth(instanceUrl, bearer, session.customHeadersSnapshot()),
         )
         // A 401 on a call that CARRIED credentials = dead token/key (M4
         // session-expiry surfacing). Permission denials ride 403, sign-in

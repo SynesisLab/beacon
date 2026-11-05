@@ -73,6 +73,7 @@ until its milestone — add the gate/route when the milestone lands.
 | Reconciler + flick-to-refetch | M3 |
 | Prompt-autocomplete task (`task.autocomplete.enable`) | **MISSING — add M4+** |
 | MFA sign-in flows (`mfa.py`; SigninResult MFA branch) | M4 ✓ (verify + recovery-code + enroll landed; `recover` keeps a typed message — admin reset token only) |
+| Custom headers editor (agent.md M4 "custom headers + proxy-cookie") | **Landed M4** (2026-11-04): Settings → Advanced → Custom headers; SecureStore blob (`custom_headers` alias), `Authorization` reserved, CR/LF-guarded, same-origin-only (ADR-0012). Proxy-cookie = pasted `Cookie` header today; the WebView capture flow stays a follow-up |
 | Socket.IO transports (taskSocket/chat-events/confirmations) | M4 |
 | Workspace screens (models/knowledge/prompts/tools/TOOL SERVERS/skills) — capability-gated | M4 (+ tool-servers listing) |
 | **Memories** (`memories.py`; `memories.enable`) — user memory view/edit | M4 ✓ (view/add/edit/delete + wipe, gated `enable_memories`) |

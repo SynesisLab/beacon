@@ -205,11 +205,17 @@ object CardDocument {
      */
     internal const val BOOTSTRAP =
         "(function () {" +
+            "  function measure() {" +
+            "    var d = document.documentElement;" +
+            "    var b = document.body;" +
+            "    var h = Math.max(d ? d.scrollHeight : 0, b ? b.scrollHeight : 0);" +
+            "    var r = b ? b.firstElementChild : null;" +
+            "    if (r) { h = Math.max(h, r.scrollHeight, Math.ceil(r.getBoundingClientRect().height)); }" +
+            "    return h;" +
+            "  }" +
             "  function report() {" +
             "    try {" +
-            "      var d = document.documentElement;" +
-            "      var b = document.body;" +
-            "      var h = Math.max(d ? d.scrollHeight : 0, b ? b.scrollHeight : 0);" +
+            "      var h = measure();" +
             "      if (window.Beacon && Beacon.height) { Beacon.height(h); }" +
             "    } catch (err) {}" +
             "  }" +

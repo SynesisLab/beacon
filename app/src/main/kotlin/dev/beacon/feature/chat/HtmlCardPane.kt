@@ -118,7 +118,41 @@ fun HtmlCardPane(
     }
 }
 
-private val ExpandedCap = 460.dp
+private val ExpandedCap = 4000.dp
+
+/**
+ * The seamlessness rule (the web's iframe in the page): vertical scrolls over
+ * a card belong to the CHAT list — the WebView hands them to the Compose
+ * scroll instead of eating them. Taps, links and horizontal gestures
+ * (maps/galleries) stay native: only a dominant-vertical drag returns false.
+ */
+class BeaconCardWebView(context: Context) : WebView(context) {
+    private var lastY = 0f
+    private var lastX = 0f
+
+    override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
+        when (event.actionMasked) {
+            android.view.MotionEvent.ACTION_DOWN -> {
+                lastX = event.x
+                lastY = event.y
+                // let inner content (buttons, links) claim the stream first
+                return super.onTouchEvent(event)
+            }
+            android.view.MotionEvent.ACTION_MOVE -> {
+                val dy = event.y - lastY
+                val dx = event.x - lastX
+                lastX = event.x
+                lastY = event.y
+                if (kotlin.math.abs(dy) > kotlin.math.abs(dx)) {
+                    // dominant vertical drag → the chat list scrolls
+                    return false
+                }
+                return super.onTouchEvent(event)
+            }
+            else -> return super.onTouchEvent(event)
+        }
+    }
+}
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -132,7 +166,7 @@ private fun CardWebView(
     val context = LocalContext.current
 
     val webView = remember {
-        WebView(context).apply {
+        BeaconCardWebView(context).apply {
             settings.javaScriptEnabled = true
             // §7.2 levels: UI = JS + styles; MEDIA/TRUSTED (server-provenanced
             // embeds) also get DOM storage (app code that keeps state).
@@ -148,6 +182,10 @@ private fun CardWebView(
             settings.setSupportMultipleWindows(true)
             settings.javaScriptCanOpenWindowsAutomatically = true
             settings.isAlgorithmicDarkeningAllowed = true
+            // Web parity: the card = a full-height rectangle in the flow; the
+            // CHAT list scrolls, the card doesn't (vertical bar off; the
+            // subclass hands vertical drags to the Compose scroll).
+            isVerticalScrollBarEnabled = false
             setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
         }
     }
@@ -296,7 +334,10 @@ private class EmbedWebViewClient(
     private val measureJs =
         "(function(){var d=document.scrollingElement||document.documentElement;" +
             "var b=document.body;" +
-            "return Math.max(d?d.scrollHeight:0, b?b.scrollHeight:0);})()"
+            "var h=Math.max(d?d.scrollHeight:0, b?b.scrollHeight:0);" +
+            "var r=b?b.firstElementChild:null;" +
+            "if(r){h=Math.max(h, r.scrollHeight, Math.ceil(r.getBoundingClientRect().height));}" +
+            "return h;})()"
 
     /**
      * nonce/hash-CSP'd cards (Frontier UI builds its own `script-src 'nonce-…'`

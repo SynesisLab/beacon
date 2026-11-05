@@ -236,6 +236,8 @@ class InMemoryChatStore : ChatStore {
         titles[chatId] = title
     }
 
+    override suspend fun chatTitle(chatId: String): String? = titles[chatId]
+
     override suspend fun setChatTags(chatId: String, tags: List<String>) {
         this.tags[chatId] = tags
     }

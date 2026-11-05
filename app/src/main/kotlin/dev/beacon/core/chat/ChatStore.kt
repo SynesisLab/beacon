@@ -45,6 +45,10 @@ interface ChatStore {
     )
     suspend fun activePath(chatId: String): List<MessageEntity>
 
+    /** The ROOM row's title (the server-set title rides chat:title events) —
+     *  the room-first paint's topbar source. */
+    suspend fun chatTitle(chatId: String): String?
+
     /** All nodes of the chat (tree, not just the active path). */
     suspend fun messages(chatId: String): List<MessageEntity>
 

@@ -96,6 +96,10 @@ class ChatRepository @Inject constructor(
 
     override suspend fun upsertServerChat(payload: ChatPayload) = upsertPayload(payload)
 
+    override suspend fun chatTitle(chatId: String): String? = withContext(Dispatchers.IO) {
+        db.chats().byId(chatId)?.title?.takeIf { it.isNotBlank() }
+    }
+
     override suspend fun chatCurrentMessageId(chatId: String): String? = withContext(Dispatchers.IO) {
         db.chats().byId(chatId)?.currentMessageId
     }

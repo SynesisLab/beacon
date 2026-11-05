@@ -217,8 +217,13 @@ class ChatEngine(
     suspend fun paintFromStore(chatId: String) {
         val path = store.activePath(chatId)
         val byId = store.messages(chatId).associateBy { it.messageId }
+        // The topbar title rides the ROOM ROW (the chat:title event writes
+        // there) — the fresh-VM paint has no engine title yet, and a failed
+        // adopt no longer strands the topbar at "New chat" (2026-11-04).
+        val roomTitle = runCatching { store.chatTitle(chatId) }.getOrNull()
         _state.value = ChatUiModel(
             chatId = chatId,
+            title = roomTitle ?: _state.value.title,
             messages = path.map { row ->
                 // §4 version count: a node's siblings = its PARENT's childrenIds
                 // (the assistant versions under the user turn); the index = this

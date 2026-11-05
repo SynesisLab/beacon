@@ -27,8 +27,36 @@ class SegmenterTest {
             streaming = false,
         )
         assertEquals(2, parts.size) // mermaid card | chart card
-        assertTrue((parts[0] as ChatPart.HtmlCard).html.orEmpty().contains("class=\"mermaid\""))
-        assertTrue((parts[1] as ChatPart.HtmlCard).html.orEmpty().contains("new Chart"))
+        val mermaid = parts[0] as ChatPart.HtmlCard
+        val chart = parts[1] as ChatPart.HtmlCard
+        assertTrue(mermaid.html.orEmpty().contains("class=\"mermaid\""))
+        assertEquals(CardKind.Mermaid, mermaid.kind)
+        // Chart config rides an application/json script tag (bootstrap renders
+        // it) — `</script` in a config string can never close the wrapper.
+        assertTrue(chart.html.orEmpty().contains("beacon-chart-config"))
+        assertEquals(CardKind.Chart, chart.kind)
+    }
+
+    @Test
+    fun mermaidCodeIsTextEscaped() {
+        val parts = Segmenter.build(
+            "```mermaid\nflowchart A-->B[\"x<y & z\"]\n```",
+            streaming = false,
+        )
+        val card = parts.single() as ChatPart.HtmlCard
+        assertTrue(card.html.orEmpty().contains("x&lt;y &amp; z"))
+    }
+
+    @Test
+    fun chartConfigSurvivesScriptCloseInjection() {
+        val parts = Segmenter.build("```chart\n{\"labels\":[\"</script>\"]}\n```", streaming = false)
+        val html = (parts.single() as ChatPart.HtmlCard).html.orEmpty()
+        // The config's `</script>` escapes as `<\/script>` (valid JSON), so the
+        // wrapper stays closed exactly once.
+        assertTrue(html.contains("<\\/script>"))
+        assertTrue(html.contains("beacon-chart-config"))
+        // The wrapper's own terminator is the LAST one.
+        assertEquals(1, Regex("<\\/script>").findAll(html).count())
     }
 
     @Test
@@ -42,13 +70,16 @@ class SegmenterTest {
     }
 
     @Test
-    fun mathWrappedIntoKatexSpans() {
+    fun mathStaysRawInMarkdownParts() {
+        // The old beacon-katex span wrapping leaked literal HTML into bubbles
+        // (MiniMarkdown renders parts, not the card shell) — removed; raw math
+        // text waits on a compose renderer (M5).
         val parts = Segmenter.build("Euler: \$e^{i\\pi}+1=0\$", streaming = false)
         val md = parts.single() as ChatPart.Markdown
-        assertTrue(md.md.contains("beacon-katex"))
-        assertTrue(md.md.contains("data-block=\"inline\""))
-        val display = (Segmenter.build("\$\$x^2\$\$", false).single() as ChatPart.Markdown).md
-        assertTrue(display.contains("data-block=\"display\""))
+        assertTrue(md.md.contains("\$e^{i\\pi}+1=0\$"))
+        assertTrue(!md.md.contains("beacon-katex"))
+        val display = Segmenter.build("\$\$x^2\$\$", false).single() as ChatPart.Markdown
+        assertTrue(display.md.contains("\$\$x^2\$\$"))
     }
 
     @Test
@@ -61,7 +92,9 @@ class SegmenterTest {
         assertEquals("make_chart", call.name)
         assertEquals("c1", call.callId)
         assertEquals(ToolStatus.Done, call.status)
-        assertTrue(parts.filterIsInstance<ChatPart.HtmlCard>().single().html.orEmpty().contains("ui!"))
+        val embed = parts.filterIsInstance<ChatPart.HtmlCard>().single()
+        assertEquals(CardKind.Embed, embed.kind)
+        assertTrue(embed.html.orEmpty().contains("ui!"))
     }
 
     @Test

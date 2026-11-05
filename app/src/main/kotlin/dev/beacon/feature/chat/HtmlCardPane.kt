@@ -2,7 +2,9 @@ package dev.beacon.feature.chat
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.os.Message
 import android.webkit.JavascriptInterface
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
@@ -24,25 +26,39 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import dev.beacon.core.render.CardDocument
 import dev.beacon.core.render.ChatPart
-import dev.beacon.core.render.policy.NavigationDecision
+import dev.beacon.core.render.SandboxLevel
 import dev.beacon.core.render.policy.EmbedPolicy
+import dev.beacon.core.render.policy.NavigationDecision
+import dev.beacon.ui.theme.LocalBeaconDark
 import okhttp3.OkHttpClient
 
 /**
- * The sandboxed inline WebView pane for [ChatPart.HtmlCard] (agent.md §7.2):
+ * The sandboxed inline WebView pane for [ChatPart.HtmlCard] (agent.md §7.2) —
+ * the mobile port of the web's Artifacts/FullHeightIframe pair (M2-2):
  *
- * - loads our bundled shell (mermaid/KaTeX/chart.js from assets — no CDN);
- * - base = the shell's asset URL, so network subresources are intercepted and
- *   served through the app's OkHttp client — whose AuthInterceptor attaches
- *   Authorization for the instance origin ONLY (§11: the WebView shares the rule);
- * - blocked schemes (file/content/intent/data/javascript) never load;
- * - one origin-checked JS bridge: height/copy/link (links → policy → external);
- * - height = intrinsic scrollHeight via bridge + MutationObserver, grows live;
- * - dark mode: prefers-color-scheme in the shell + algorithmic darkening allowed;
- * - "Expand" affordance at the height cap → full-screen modal (artifact style).
+ * - one WebView per card; the document is built by [CardDocument.build]
+ *   (card's own HTML + beacon bootstrap; vendored mermaid/KaTeX/chart.js from
+ *   assets for the Beacon-built/Beacon-detected cases — no CDN there);
+ * - base = the vendor asset root so subresources flow through the app's OkHttp
+ *   client — whose AuthInterceptor attaches Authorization for the instance
+ *   origin ONLY (§11: the WebView shares the rule);
+ * - [SandboxLevel] → WebView settings (§7.2: UI = JS+styles; MEDIA/TRUSTED
+ *   = server-provenanced embeds also get DOM storage);
+ * - bridge = full (height/copy/link) only for Beacon-built docs; model or
+ *   server documents get the HEIGHT-ONLY bridge (shim) — no clipboard/link
+ *   surface for arbitrary HTML;
+ * - links: main-frame user navigations open external unless instance-origin;
+ *   popups (window.open/target=_blank) route through [onCreateWindow] policy —
+ *   external via the OS chooser, instance targets load back in the card;
+ * - height = the shim's reports (MutationObserver + load/resize); dark mode =
+ *   the app scheme injected as a body class for Beacon-built docs, with
+ *   algorithmic darkening allowed for foreign docs;
+ * - "Expand" affordance at the height cap → bottom-sheet full view.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,39 +66,55 @@ fun HtmlCardPane(
     card: ChatPart.HtmlCard,
     client: OkHttpClient,
     instanceUrl: String?,
+    iframeCsp: String? = null,
 ) {
+    val dark = LocalBeaconDark.current
     var heightDp by remember(card.id) { mutableStateOf(card.minHeightDp.dp) }
     var expanded by remember(card.id) { mutableStateOf(false) }
-
-    Column {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(heightDp.coerceAtLeast(card.minHeightDp.dp)),
-        ) {
-            CardWebView(
-                card = card,
-                client = client,
-                instanceUrl = instanceUrl,
-                onHeight = { px -> heightDp = (px / 2.5).dp.coerceIn(60.dp, ExpandedCap) },
-            )
-        }
-        if (heightDp >= ExpandedCap) {
-            TextButton(onClick = { expanded = true }) { Text("Expand ⤢") }
-        }
+    val density = LocalDensity.current
+    // Streaming repaints grow the html; rebuilding per delta keeps previews
+    // honest (§7.1). The document remembers on the WHOLE card value.
+    val document = remember(card, instanceUrl, iframeCsp, dark) {
+        CardDocument.build(card, instanceUrl, iframeCsp, dark)
     }
 
-    if (expanded) {
-        ModalBottomSheet(onDismissRequest = { expanded = false }) {
-            Box(Modifier.fillMaxWidth().height(640.dp)) {
+    if (document != null) {
+        Column {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(heightDp.coerceAtLeast(card.minHeightDp.dp)),
+            ) {
                 CardWebView(
-                    card = card,
+                    document = document,
                     client = client,
                     instanceUrl = instanceUrl,
-                    onHeight = { },
+                    sandboxLevel = card.sandboxLevel,
+                    onHeight = { px ->
+                        heightDp = with(density) { px.toDp().coerceIn(card.minHeightDp.dp, ExpandedCap) }
+                    },
                 )
             }
+            if (heightDp >= ExpandedCap) {
+                TextButton(onClick = { expanded = true }) { Text("Expand ⤢") }
+            }
         }
+
+        if (expanded) {
+            ModalBottomSheet(onDismissRequest = { expanded = false }) {
+                Box(Modifier.fillMaxWidth().height(640.dp)) {
+                    CardWebView(
+                        document = document,
+                        client = client,
+                        instanceUrl = instanceUrl,
+                        sandboxLevel = card.sandboxLevel,
+                        onHeight = { },
+                    )
+                }
+            }
+        }
+    } else {
+        HtmlCardPlaceholder(card)
     }
 }
 
@@ -91,94 +123,197 @@ private val ExpandedCap = 460.dp
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 private fun CardWebView(
-    card: ChatPart.HtmlCard,
+    document: CardDocument.Document,
     client: OkHttpClient,
     instanceUrl: String?,
+    sandboxLevel: SandboxLevel,
     onHeight: (Float) -> Unit,
 ) {
     val context = LocalContext.current
-    val shell = remember { loadShell(context) }
 
     val webView = remember {
         WebView(context).apply {
             settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
+            // §7.2 levels: UI = JS + styles; MEDIA/TRUSTED (server-provenanced
+            // embeds) also get DOM storage (app code that keeps state).
+            settings.domStorageEnabled = sandboxLevel != SandboxLevel.UI
             settings.allowFileAccess = false
             settings.allowContentAccess = false
             settings.setAllowFileAccessFromFileURLs(false)
             settings.setAllowUniversalAccessFromFileURLs(false)
             settings.mediaPlaybackRequiresUserGesture = true
             settings.cacheMode = WebSettings.LOAD_DEFAULT
+            // Popups reach PopupChromeClient (policy-gated: external for user
+            // gestures, instance-origin reloads in-frame, else dead).
+            settings.setSupportMultipleWindows(true)
+            settings.javaScriptCanOpenWindowsAutomatically = true
             settings.isAlgorithmicDarkeningAllowed = true
             setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
         }
     }
 
-    DisposableEffect(card.id) {
-        val bridge = object {
-            @JavascriptInterface
-            fun height(px: Float) {
-                onHeight(px)
-            }
-
-            @JavascriptInterface
-            fun copy(text: String) {
-                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                cm.setPrimaryClip(android.content.ClipData.newPlainText("beacon", text))
-            }
-
-            @JavascriptInterface
-            fun link(rawUrl: String) {
-                val decision = EmbedPolicy.navigationDecision(
-                    rawUrl,
-                    isUserGesture = true,
-                    isPopup = true,
-                    instanceUrl = instanceUrl,
+    DisposableEffect(document.fullBridge, sandboxLevel) {
+        // §7.2: ONE bridge NAME, methods by document class — full (height/copy/
+        // link) for Beacon-built docs; height-only for model/server documents.
+        // Named public classes: the JS bridge requires public methods.
+        webView.addJavascriptInterface(
+            if (document.fullBridge) {
+                FullCardBridge(
+                    onHeight = onHeight,
+                    onCopy = { text ->
+                        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        cm.setPrimaryClip(android.content.ClipData.newPlainText("beacon", text))
+                    },
+                    onLink = { url -> mainViewNavigation(url, webView, instanceUrl, context) },
                 )
-                if (decision == NavigationDecision.OpenExternal) {
-                    runCatching {
-                        context.startActivity(
-                            android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(rawUrl)),
-                        )
-                    }
-                }
-            }
+            } else {
+                HeightOnlyBridge(onHeight = onHeight)
+            },
+            "Beacon",
+        )
+        webView.webChromeClient = PopupChromeClient(instanceUrl) { url ->
+            mainViewNavigation(url, webView, instanceUrl, context)
         }
-        webView.addJavascriptInterface(bridge, "Beacon")
-        webView.webViewClient = EmbedWebViewClient(client)
+        webView.webViewClient = EmbedWebViewClient(client, instanceUrl)
         onDispose {
             webView.stopLoading()
             webView.destroy()
         }
     }
 
+    // Height events (and plain recompositions) must NOT reload the page —
+    // the shim would re-report after every reload, looping forever.
+    var renderedKey by remember { mutableStateOf<Any?>(null) }
     AndroidView(
         factory = { webView },
         modifier = Modifier.fillMaxWidth(),
         update = { view ->
-            val html = shell.replace("__BEACON_CARD_HTML__", card.html ?: "")
-            view.loadDataWithBaseURL("file:///android_asset/vendor/", html, "text/html", "utf-8", null)
+            val key: Any = document.url ?: document.html
+            if (renderedKey != key) {
+                renderedKey = key
+                val url = document.url
+                if (url != null) {
+                    view.loadUrl(url)
+                } else {
+                    view.loadDataWithBaseURL(document.baseUrl, document.html, "text/html", "utf-8", null)
+                }
+            }
         },
     )
 }
 
-private fun loadShell(context: Context): String = try {
-    context.assets.open("vendor/shell.html").bufferedReader().use { it.readText() }
-} catch (_: Exception) {
-    "<html><body>card shell missing</body></html>"
+/** Named public classes so the JS bridge sees visible `@JavascriptInterface` methods. */
+class HeightOnlyBridge(private val onHeight: (Float) -> Unit) {
+    @JavascriptInterface
+    fun height(px: Float) {
+        onHeight(px)
+    }
+}
+
+class FullCardBridge(
+    private val onHeight: (Float) -> Unit,
+    private val onCopy: (String) -> Unit,
+    private val onLink: (String) -> Unit,
+) {
+    @JavascriptInterface
+    fun height(px: Float) {
+        onHeight(px)
+    }
+
+    @JavascriptInterface
+    fun copy(text: String) {
+        onCopy(text)
+    }
+
+    @JavascriptInterface
+    fun link(rawUrl: String) {
+        onLink(rawUrl)
+    }
+}
+
+/** The single §11 origin rule for card navigations (client + bridge + popups). */
+private fun openByPolicy(
+    rawUrl: String,
+    instanceUrl: String?,
+    context: Context,
+    mainFrameNavigation: ((String) -> Unit)?,
+) {
+    when (EmbedPolicy.navigationDecision(rawUrl, isUserGesture = true, isPopup = mainFrameNavigation != null, instanceUrl = instanceUrl)) {
+        NavigationDecision.OpenExternal -> runCatching {
+            context.startActivity(
+                android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(rawUrl)),
+            )
+        }
+        NavigationDecision.LoadInFrame -> mainFrameNavigation?.invoke(rawUrl)
+        NavigationDecision.Block -> Unit
+    }
+}
+
+private fun mainViewNavigation(url: String, webView: WebView, instanceUrl: String?, context: Context) {
+    openByPolicy(url, instanceUrl, context, mainFrameNavigation = { target -> webView.loadUrl(target) })
+}
+
+/**
+ * `window.open`/`target=_blank` from a card (web: allow-popups → external).
+ * A throwaway WebView receives the popup URL; its first navigation decides
+ * external-open vs instance-reload, then the throwaway dies. Automatic
+ * (gesture-less) popups never leave the card — the §7.2 rule is explicitly
+ * for user-activated popups.
+ */
+private class PopupChromeClient(
+    private val instanceUrl: String?,
+    private val decide: (String) -> Unit,
+) : WebChromeClient() {
+    override fun onCreateWindow(
+        view: WebView,
+        isDialog: Boolean,
+        isUserGesture: Boolean,
+        resultMsg: Message,
+    ): Boolean = runCatching {
+        val popup = WebView(view.context)
+        popup.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(p: WebView, request: WebResourceRequest): Boolean {
+                if (isUserGesture) {
+                    decide(request.url.toString())
+                }
+                return true // popups are never adopted into the pane
+            }
+        }
+        (resultMsg.obj as WebView.WebViewTransport).setWebView(popup)
+        resultMsg.sendToTarget()
+        view.postDelayed({ popup.destroy() }, 1500)
+        true
+    }.getOrDefault(false)
 }
 
 /** Subresource serving through the ONE app client (auth = same-origin only). */
 private class EmbedWebViewClient(
     private val client: OkHttpClient,
+    private val instanceUrl: String?,
 ) : WebViewClient() {
-    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
-        EmbedPolicy.navigationDecision(
-            request.url.toString(),
-            isUserGesture = request.isForMainFrame && true,
+    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+        val mainFrame = request.isForMainFrame
+        val url = request.url.toString()
+        // Main-frame = a user navigation inside the card; subframe (iframe/img)
+        // requests are programmatic — the §7.2 rule keys off both.
+        val decision = EmbedPolicy.navigationDecision(
+            url,
+            isUserGesture = mainFrame,
             isPopup = false,
-            instanceUrl = null,
-        ) == NavigationDecision.OpenExternal
+            instanceUrl = instanceUrl,
+        )
+        return when (decision) {
+            NavigationDecision.OpenExternal -> {
+                runCatching {
+                    view.context.startActivity(
+                        android.content.Intent(android.content.Intent.ACTION_VIEW, request.url),
+                    )
+                }
+                true
+            }
+            NavigationDecision.LoadInFrame, NavigationDecision.Block -> false // frame handles it (blocked ones 404)
+        }
+    }
 
     override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
         val url = request.url.toString()

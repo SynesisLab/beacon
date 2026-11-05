@@ -33,6 +33,8 @@ sealed interface ChatPart {
         val html: String? = null,
         val srcUrl: String? = null,
         val title: String? = null,
+        /** What built the card — drives the WebView document + bridge level (§7.2). */
+        val kind: CardKind = CardKind.Artifact,
         val sandboxLevel: SandboxLevel = SandboxLevel.UI,
         val minHeightDp: Int = 120,
         val interactive: Boolean = true,
@@ -65,3 +67,10 @@ enum class FileViewer { Image, Pdf, Text, AudioVideo, Download }
 data class Source(val title: String?, val url: String?)
 
 enum class SandboxLevel { UI, MEDIA, TRUSTED }
+
+/**
+ * Which builder produced an [ChatPart.HtmlCard] — the WebView-document switch:
+ * Artifact/Embed = the model's or server's own HTML (isolated doc, height-only
+ * bridge); Mermaid/Chart = Beacon-built vendor docs (full bridge), §7.2.
+ */
+enum class CardKind { Artifact, Mermaid, Chart, Embed }

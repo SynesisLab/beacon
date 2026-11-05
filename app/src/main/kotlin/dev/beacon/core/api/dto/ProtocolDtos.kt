@@ -28,9 +28,16 @@ data class AppConfig(
     val onboarding: Boolean? = null,
     val features: Features? = null,
     val default_models: String? = null,
+    /** ui.* — stores/index.ts:437-446 (iframe_csp = the admin's artifact-embed CSP). */
+    val ui: UiConfig? = null,
 ) {
     val hasFeatures: Boolean get() = features != null
 }
+
+@Serializable
+data class UiConfig(
+    val iframe_csp: String? = null,
+)
 
 /** features.* keys verified in main.py features block (M0 subset). */
 @Serializable

@@ -54,7 +54,12 @@ class ProtocolDecodeTest {
                 "future_gates_and_more": [1, 2, 3],
                 "models": [{"id": "irrelevant"}]
               },
-              "default_models": "llama-3.1:70b"
+              "default_models": "llama-3.1:70b",
+              "ui": {
+                "default_interface_settings": {},
+                "iframe_csp": "default-src 'self'",
+                "unrelated_future_key": true
+              }
             }
             """.trimIndent(),
         )
@@ -62,6 +67,8 @@ class ProtocolDecodeTest {
         assertTrue(config.features!!.enable_folders == true)
         assertTrue(config.features!!.enable_channels == false)
         assertEquals("llama-3.1:70b", config.default_models)
+        // ui.iframe_csp — stores/index.ts:437-446 (§7.2 card CSP, admin-configured)
+        assertEquals("default-src 'self'", config.ui?.iframe_csp)
     }
 
     // POST /api/v1/auths/signin — models/auths.py:96-133

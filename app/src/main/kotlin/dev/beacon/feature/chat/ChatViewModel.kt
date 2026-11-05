@@ -54,6 +54,8 @@ class ChatViewModel @Inject constructor(
         /** HtmlCard panes share the app client (same-origin auth, §11). */
         val httpClient: okhttp3.OkHttpClient? = null,
         val instanceUrl: String? = null,
+        /** The admin's artifact-embed CSP (`ui.iframe_csp`), if the server sends one. */
+        val iframeCsp: String? = null,
         /** §9.1: a background sync found changes — show the Updated pill. */
         val updatedPill: Boolean = false,
         val attachments: List<Attachment> = emptyList(),
@@ -90,6 +92,8 @@ class ChatViewModel @Inject constructor(
      *  only paints when another input happens to re-emit afterwards
      *  (the vanishing toggle chips, 2026-11-03). */
     private val configFeaturesFlow = MutableStateFlow<dev.beacon.core.api.dto.Features?>(null)
+    /** ui.iframe_csp (admin CSP for artifact/embed cards) rides the /api/config fetch. */
+    private val iframeCspFlow = MutableStateFlow<String?>(null)
     private var serverDefault: String? = null
     private val httpClient = api.publicClient()
     private val instanceUrl = session.instanceUrlSnapshot()
@@ -109,6 +113,7 @@ class ChatViewModel @Inject constructor(
             micState,
             micError,
             configFeaturesFlow,
+            iframeCspFlow,
         ) { values ->
             @Suppress("UNCHECKED_CAST")
             UiState(
@@ -127,6 +132,7 @@ class ChatViewModel @Inject constructor(
                 featuresGate = values[12] as dev.beacon.core.api.dto.Features?,
                 mic = values[10] as MicState,
                 micError = values[11] as String?,
+                iframeCsp = values[13] as String?,
                 // §8.5: the mic STAYS visible; the tap requests the permission
                 // (a hidden mic would never produce the prompt).
                 micAvailable = true,
@@ -178,6 +184,8 @@ class ChatViewModel @Inject constructor(
                 serverDefault = it.default_models
                     ?.split(',')?.firstOrNull()?.trim()
                     ?.takeIf { id -> id.isNotEmpty() }
+                // §7.2: honor the admin's artifact-embed CSP when present.
+                iframeCspFlow.value = it.ui?.iframe_csp?.takeIf { csp -> csp.isNotBlank() }
             }
             global.await()?.let { globalDefaultFeatureIds = it.orEmpty() }
             settings.await()?.let { userSettingsSnapshot = it }

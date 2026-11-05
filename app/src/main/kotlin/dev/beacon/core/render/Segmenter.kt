@@ -11,12 +11,16 @@ import java.net.URLDecoder
  * - fenced ```html blocks → [ChatPart.HtmlCard] (artifact title via a
  *   "title:"-comment or a title-tag; partial open fences render live above the
  *   size threshold §7.1);
- * - ```mermaid fences → a mermaid HtmlCard (shell: pre.mermaid, securityLevel loose);
- * - ```chart fences (JSON config) → a chart.js canvas HtmlCard;
- * - math ($…$ / $$…$$) → KaTeX span wrappers for the shell;
+ * - ```mermaid fences → a mermaid HtmlCard (pre.mermaid, code text-escaped;
+ *   mermaid runs in our bundled vendor doc, securityLevel default=strict);
+ * - ```chart fences (JSON config) → a chart.js canvas HtmlCard (config rides
+ *   an application/json script tag — `</script`-proof; bootstrap renders it);
  * - '<details type="tool_calls" …>' blocks → [ChatPart.ToolCall] (attributes are
  *   URI-encoded, verified against the web's decodeString = decodeURIComponent;
  *   the embeds attribute carries URI-encoded HTML embed lists).
+ * - math in bubbles stays RAW text: the old beacon-katex span wrapping leaked
+ *   literal HTML into MiniMarkdown bubbles (span handling lives in card docs
+ *   only); a compose-side math renderer is a separate follow-up.
  *
  * NOTE: the details/think markup below is assembled from string fragments on
  * purpose — raw block-level HTML tags inside these literals kept tripping tooling.
@@ -30,8 +34,6 @@ object Segmenter {
         "<" + "details\\b([^>]*)>([\\s\\S]*?)</" + "details>",
         setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE),
     )
-    private val displayMath = Regex("\\$\\$([^$\n]{1,800}?)\\$\\$")
-    private val inlineMath = Regex("(?<![\\\\\\w$])\\$([^$\\n$]{1,400}?)\\$(?![\\w$])")
     private val titleComment = Regex("<!--\\s*title:\\s*(.+?)\\s*-->", RegexOption.IGNORE_CASE)
     private val titleTag = Regex("<" + "title[^>]*>(.*?)</" + "title>", RegexOption.IGNORE_CASE)
     private val rawHtmlBlob = Regex("<" + "div\\b[^>]*>[\\S\\n]{200,}", RegexOption.IGNORE_CASE)
@@ -57,6 +59,7 @@ object Segmenter {
                 ChatPart.HtmlCard(
                     id = "blob-" + match.value.hashCode().toUInt().toString(16),
                     html = match.value,
+                    kind = CardKind.Artifact,
                     title = titleTag.find(match.value)?.groupValues?.get(1)?.trim(),
                     sandboxLevel = SandboxLevel.UI,
                     minHeightDp = 120,
@@ -82,7 +85,7 @@ object Segmenter {
 
         fun flushParagraph() {
             val text = paragraph.toString().trim('\n')
-            if (text.isNotBlank()) parts.add(mathWrapped(text, masterStreaming))
+            if (text.isNotBlank()) parts.add(ChatPart.Markdown(text, streaming = masterStreaming))
             paragraph.setLength(0)
         }
 
@@ -145,21 +148,10 @@ object Segmenter {
         return parts
     }
 
-    /** Wraps KaTeX math into shell-render spans; text otherwise intact. */
-    private fun mathWrapped(text: String, streaming: Boolean): ChatPart {
-        var wrapped = displayMath.replace(text) { m ->
-            "<span class=\"beacon-katex\" data-block=\"display\">" + m.groupValues[1] + "</span>"
-        }
-        wrapped = inlineMath.replace(wrapped) { m ->
-            "<span class=\"beacon-katex\" data-block=\"inline\">" + m.groupValues[1] + "</span>"
-        }
-        return ChatPart.Markdown(wrapped, streaming = streaming)
-    }
-
     private fun htmlCard(html: String, streaming: Boolean = false): ChatPart = ChatPart.HtmlCard(
         id = "card-" + html.hashCode().toUInt().toString(16),
         html = html,
-        srcUrl = null,
+        kind = CardKind.Artifact,
         title = titleComment.find(html)?.groupValues?.get(1)
             ?: titleTag.find(html)?.groupValues?.get(1)?.trim(),
         sandboxLevel = SandboxLevel.UI,
@@ -169,7 +161,8 @@ object Segmenter {
 
     private fun mermaidCard(code: String): ChatPart = ChatPart.HtmlCard(
         id = "mermaid-" + code.hashCode().toUInt().toString(16),
-        html = "<pre class=\"mermaid\">" + code + "</pre>",
+        html = "<pre class=\"mermaid\">" + escapeHtml(code) + "</pre>",
+        kind = CardKind.Mermaid,
         title = null,
         sandboxLevel = SandboxLevel.UI,
         minHeightDp = 140,
@@ -177,16 +170,29 @@ object Segmenter {
 
     private fun chartCard(jsonConfig: String): ChatPart = ChatPart.HtmlCard(
         id = "chart-" + jsonConfig.hashCode().toUInt().toString(16),
-        html = chartWrapperHtml(jsonConfig),
+        html = chartMarkup(jsonConfig),
+        kind = CardKind.Chart,
         title = null,
         sandboxLevel = SandboxLevel.UI,
         minHeightDp = 220,
     )
 
-    internal fun chartWrapperHtml(jsonConfig: String): String =
+    /**
+     * chart.js canvas + config: the JSON rides an application/json script tag
+     * (textContent + JSON.parse in the card bootstrap) — a model-authored
+     * config containing `</script>` can never close the wrapper early.
+     */
+    internal fun chartMarkup(jsonConfig: String): String =
         "<div class=\"beacon-chart\"><canvas></canvas></div>\n" +
-            "<script>try { new Chart(document.querySelector('.beacon-chart canvas'), " +
-            jsonConfig + "); } catch (e) { document.querySelector('.beacon-chart').textContent = 'chart.js error: ' + e; }</script>"
+            "<script type=\"application/json\" id=\"beacon-chart-config\">" +
+            jsonConfig.trim().replace("</", "<\\/") +
+            "</script>"
+
+    /** Text-escape for code that must READ as text (mermaid sources). */
+    internal fun escapeHtml(raw: String): String = raw
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
 
     /** '<' + "think">…< + "/think"> blocks → reasoning body (stored messages). */
     fun reasoningFromThinkBlocks(md: String): String? {
@@ -220,6 +226,7 @@ object Segmenter {
                     ChatPart.HtmlCard(
                         id = "embed-" + html.hashCode().toUInt().toString(16),
                         html = html,
+                        kind = CardKind.Embed,
                         title = titleTag.find(html)?.groupValues?.get(1)?.trim(),
                         // Embedded UI results are server-provenanced (tool-emitted, §11) —
                         // the web allows same-origin only when trusted; Beacon: MEDIA floor.

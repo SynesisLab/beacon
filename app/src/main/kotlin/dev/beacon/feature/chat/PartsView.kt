@@ -33,7 +33,7 @@ import okhttp3.OkHttpClient
 /**
  * Renders the engine's part list inside a bubble (agent.md §4 contract).
  * Reasoning = collapsible card; ToolCall = chip w/ args/result; citations;
- * follow-ups. HtmlCard/File views land with M2-2/M2-3.
+ * follow-ups; HtmlCard = the sandboxed WebView pane (M2-2).
  */
 @Composable
 fun PartsView(
@@ -44,6 +44,7 @@ fun PartsView(
         { _, _, _, _, _ -> },
     httpClient: OkHttpClient? = null,
     instanceUrl: String? = null,
+    iframeCsp: String? = null,
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         parts.forEach { part ->
@@ -58,7 +59,7 @@ fun PartsView(
                 is dev.beacon.core.render.ChatPart.HtmlCard ->
                     when {
                         httpClient != null && (part.html != null || part.srcUrl != null) ->
-                            HtmlCardPane(part, httpClient, instanceUrl)
+                            HtmlCardPane(part, httpClient, instanceUrl, iframeCsp)
                         else -> HtmlCardPlaceholder(part)
                     }
                 is dev.beacon.core.render.ChatPart.File -> FileChip(part, onOpenFile)
@@ -276,9 +277,9 @@ private fun FollowUpRow(
     }
 }
 
-/** M2-2 replaces this with the sandboxed WebView pane (§7.2). */
+/** M2-2 fallback (only for callers without the shared client — legacy rows/tests). */
 @Composable
-private fun HtmlCardPlaceholder(part: dev.beacon.core.render.ChatPart.HtmlCard) {
+internal fun HtmlCardPlaceholder(part: dev.beacon.core.render.ChatPart.HtmlCard) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant,
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,

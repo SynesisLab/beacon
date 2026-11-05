@@ -181,3 +181,40 @@ NoteForm rejects pages at :474); files list carries meta.content_type (files.py:
 | `GET /api/v1/notes/pinned` | list pinned rows (unused for now; list already carries `is_pinned` per user via pinned ids :135-141) | routers/notes.py:156-182 |
 | timestamps in list/get/update | `created_at`/`updated_at` are epoch **nanoseconds** — `int(time.time_ns())` on insert (models/notes.py:553-554); stale "timestamp in epoch" comment at :445-446. Beacon normalizes ns→ms by magnitude (feature/surfaces `noteUpdatedAtMs`). | models/notes.py:553-554 |
 | `GET /api/v1/notes/{id}` | also returns `is_pinned` + `write_access` (admin/owner/grant, :309-320) | routers/notes.py:278-326 |
+
+## Inline HTML cards (2026-11-04, M2-2 â€” Artifacts/FullHeightIframe port)
+
+Web ground truth for the `frontier-UI` inline rendering (model HTML apps inside chat):
+
+| Web surface | Behavior | Proof |
+| --- | --- | --- |
+| Artifacts panel iframe | `srcdoc` = the artifact's own document + `injectCsp(content, config.ui.iframe_csp)`; sandbox built from user settings — defaults: `allow-scripts allow-downloads allow-forms`, **allow-same-origin FALSE** (opt-in `iframeSandboxAllowSameOrigin`) | Artifacts.svelte:252-270; stores/index.ts:437-446 |
+| FullHeightIframe (inline embeds) | URL-vs-raw-HTML auto-detect (`^(https?:)?//`); sandbox flags from the same settings (scripts on, forms/popup defaults off); height = the card's `postMessage {type:'iframe:height', height}` OR a same-origin contentDocument measure (cross-origin docs are NOT measurable) | FullHeightIframe.svelte:41-53, 143-180 |
+| CSP injection | `<meta http-equiv="Content-Security-Policy">` inserted right after `<head>` — comment: "First CSP meta tag wins per spec, so any existing CSP in the HTML is effectively overridden" | csp.ts:6-12 |
+| Dependency injection | Chart.js/Alpine are injected into the srcdoc ONLY when `allowSameOrigin` is on (Chart via a `parent.Chart` hand-off); no vendor injection otherwise | FullHeightIframe.svelte:91-141 |
+| Chat-inline HTML tokens | DOMPurify-sanitized tokens render same-document (document mode); special-cased `<video>`/`<audio>`/YouTube-embed/plain-`<iframe src>` (native iframe, `sandbox` attr, height via a same-origin measure + 20px) | HTMLToken.svelte:17-135 |
+| ui.iframe_csp | optional admin string on `GET /api/config` inside the `ui` object (absent by default → no CSP injected) | stores/index.ts:437-446 |
+
+Beacon deltas (all client-side decisions, ADR-0013):
+
+- **WebView-per-card instead of iframe-srcdoc** (Compose WebView ≈ the sandboxed
+  frame): opaque navigation scope, `settings` = the sandbox gates — UI level: JS
+  on, DOM storage OFF; MEDIA/TRUSTED (server-provenanced embeds): DOM storage on.
+- **Height without iframes**: the shim (Beacon bootstrap) reports
+  `Beacon.height(scrollHeight)` via the same-document bridge + MutationObserver —
+  the web's `iframe:height` postMessage protocol maps onto it; cross-origin
+  measuring is impossible either way, EXPAND (fullscreen sheet) is the fallback
+  at the height cap.
+- **Bridge by document class**: Artifact/Embed docs get the height-ONLY bridge
+  (no clipboard/link API for arbitrary HTML); Beacon-built Mermaid/Chart docs get
+  the full bridge (their content is ours).
+- **Vendors by reference, not by default**: foreign docs get a vendor script tag
+  only when the HTML references mermaid/Chart/beacon-katex (mermaid 12.1.0,
+  chart.js 4.6.1, KaTeX 0.19.1 from assets — never CDN); chart configs ride an
+  `application/json` script tag (`</`-escaped) parsed by the bootstrap.
+- The superseded `assets/vendor/shell.html` (CSP-blocked its own inline
+  bootstrap — never device-verified) is deleted; `CardDocument` builds the
+  documents in Kotlin now (JVM-tested).
+- Math in BUBBLES stays raw text: the old `beacon-katex` span wrapping leaked
+  literal HTML into MiniMarkdown bubbles; a compose-side math renderer is a
+  separate follow-up (M5).

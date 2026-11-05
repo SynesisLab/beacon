@@ -62,7 +62,7 @@ until its milestone — add the gate/route when the milestone lands.
 | display_file instance files → viewers | M2-3 (landed) |
 | Terminal (`Open Terminal`) file inline view (`terminals.py`; proxy `/api/v1/terminals/{id}/files/read`) | **Landed M2-t** (files/* shapes verified vs `src/lib/apis/terminal/index.ts`; Files TAB opens the terminal surface 2026-11-03; gotcha: `/api/v1/terminals//` (double slash) falls into the SPA history-fallback = 200 HTML — always single-slash; entries have NO path field — compose cwd+name; upload = `?directory=` query, not a header) |
 | Terminal interactive sessions / commands | post-M5 (not planned — revisit) |
-| HtmlCard WebView pane + policy + bundles (mermaid/KaTeX/chart) | M2-2 (next) |
+| HtmlCard WebView pane + policy + bundles (mermaid/KaTeX/chart) | **Landed M2-2** (2026-11-04): WebView-per-card via `CardDocument` (Artifact/Embed docs = the card's own HTML + height shim + admin `ui.iframe_csp`; Mermaid/Chart = Beacon-built vendored docs); popups → policy; sandbox levels = settings gates. NOT device-verified yet (AC: frontier card + chart + mermaid inline on the dev instance) |
 | Composer feature toggles (web search / image gen / code interpreter) (`features.*` in the request) | **MISSING — add in M3** (request field exists; no UI) |
 | Message feedback/rating, continue | M3 (per agent.md §9.3) |
 | Attachments/upload queue, share-target | M3 |

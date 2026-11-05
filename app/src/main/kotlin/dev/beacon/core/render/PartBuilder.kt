@@ -73,6 +73,7 @@ object PartBuilder {
                 ChatPart.HtmlCard(
                     id = "embed-" + html.hashCode().toUInt().toString(16),
                     html = html,
+                    kind = CardKind.Embed,
                     title = null,
                     // Tool-provided embeds are server-provenanced (§11) → MEDIA floor.
                     sandboxLevel = SandboxLevel.MEDIA,

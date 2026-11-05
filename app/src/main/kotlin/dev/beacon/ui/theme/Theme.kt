@@ -56,6 +56,8 @@ private val LightScheme = lightColorScheme(
 /**
  * Claude-warm brand scheme is the default; dynamic color stays opt-in (agent.md §3).
  */
+val LocalBeaconDark = androidx.compose.runtime.compositionLocalOf { false }
+
 @Composable
 fun BeaconTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
@@ -69,9 +71,13 @@ fun BeaconTheme(
         darkTheme -> DarkScheme
         else -> LightScheme
     }
-    MaterialTheme(
-        colorScheme = scheme,
-        typography = BeaconTypography,
-        content = content,
-    )
+    // Forced Appearance modes (user request 2026-11-03) ride here: WebView
+    // cards read LocalBeaconDark instead of the system flag (HtmlCardPane).
+    androidx.compose.runtime.CompositionLocalProvider(LocalBeaconDark provides darkTheme) {
+        MaterialTheme(
+            colorScheme = scheme,
+            typography = BeaconTypography,
+            content = content,
+        )
+    }
 }

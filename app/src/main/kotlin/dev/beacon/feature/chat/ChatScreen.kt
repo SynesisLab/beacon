@@ -403,6 +403,7 @@ fun ChatScreen(
                         onOpenFile = actions.onOpenFile,
                         httpClient = state.httpClient,
                         instanceUrl = state.instanceUrl,
+                        iframeCsp = state.iframeCsp,
                         onRegenerate = { actions.onRegenerate(messages[index].id) },
                         onReadAloud = actions.onReadAloud,
                         onRate = actions.onRate,
@@ -769,6 +770,7 @@ private fun MessageBubble(
     onOpenFile: (fileId: String, name: String, mime: String, terminalServerId: String?, terminalPath: String?) -> Unit,
     httpClient: okhttp3.OkHttpClient?,
     instanceUrl: String?,
+    iframeCsp: String? = null,
     onRegenerate: () -> Unit = {},
     onReadAloud: (messageId: String, text: String) -> Unit = { _, _ -> },
     onRate: (messageId: String, rating: Int) -> Unit = { _, _ -> },
@@ -819,6 +821,7 @@ private fun MessageBubble(
                         modifier = Modifier,
                         httpClient = httpClient,
                         instanceUrl = instanceUrl,
+                        iframeCsp = iframeCsp,
                     )
                 }
             }

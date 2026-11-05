@@ -173,3 +173,56 @@ rules) routes at `settings/headers`. Values render as plain text fields
 key). Screenshot tests cover populated + error states in both schemes;
 `CustomHeadersTest`/`HeadersEditorStateTest`/`InterceptorRulesTest` cover the
 rules tables.
+
+## ADR-0013 â€” HtmlCard inline rendering: WebView-per-card documents (M2-2)
+
+*Date:* 2026-11-04 · *Milestone:* M2-2 · *Requested:* by Anthony ("inline rendering system for things like frontier-ui within the chat window")
+
+**Decision.** The `assets/vendor/shell.html` approach is REPLACED by
+`CardDocument` (core/render, pure + JVM-tested) — the document for every
+`ChatPart.HtmlCard` is built in Kotlin and loaded per card:
+
+- **Artifacts/Embeds** (model ```html fences, raw div blobs, tool `embeds`):
+  the card's own HTML stays the document; we inject (a) the admin
+  `ui.iframe_csp` right after `<head>` when the server sends one (`GET
+  /api/config.ui.iframe_csp`, stores/index.ts:437-446 — first-CSP-wins, csp.ts
+  parity), (b) vendor script tags ONLY for content the HTML references
+  (mermaid 12.1.0 / chart.js 4.6.1 / KaTeX 0.19.1 — assets, never CDN),
+  (c) the bootstrap (height shim + vendor init) before `</body>`. Fragments
+  (no `<head>`) get a charset/viewport/transparent-bg prepend.
+  Bridge = **height-only** (model/server HTML gets no clipboard/link API).
+- **Synthetics** (segmenter-built mermaid/chart): our document — escaped
+  diagram text, the chart JSON riding an `application/json` script tag
+  (`</`-escaped; the old direct `new Chart(..., config)` interpolation died),
+  warm light/dark palette by `LocalBeaconDark`. Bridge = FULL (height/copy/
+  link) because the content is ours.
+- **srcUrl cards**: resolved by FullHeightIframe rules (`//` → https:,
+  instance-relative "/" + origin; else placeholder).
+- **SandboxLevel = WebView settings** (no iframe): UI → DOM storage off;
+  MEDIA/TRUSTED (server-provenanced) → DOM storage on. JS always (even UI:
+  §7.2 "UI = JS + styles").
+- **Popups**: `setSupportMultipleWindows` + `WebChromeClient.onCreateWindow`
+  with a throwaway WebView — user-gesture popups open external unless
+  instance-origin (loads back in the card); automatic `window.open` dies
+  in-place (§7.2 says "user-activated").
+
+**Why.** The shipped shell.html embedded the card into the shell document
+under `script-src 'self' data: blob:` — that CSP blocked the shell's own
+inline bootstrap (no height reporting, no vendor rendering, ever) while ALSO
+giving model HTML direct bridge access + no isolation. The web's two-surface
+model (Artifacts sandbox iframe; FullHeightIframe) measures differently on
+mobile: no `<iframe>` inside Compose — the per-card WebView IS the sandbox;
+height works through the same-document bridge; `iframe:height` senders are
+tolerated but unnecessary.
+
+**Consequences.** `ChatPart.HtmlCard` gains `kind: CardKind {Artifact,
+Mermaid, Chart, Embed}` (persistence is derivational — no partsJson yet —
+so legacy rows default Artifact and render correctly); segmenter changes:
+mermaid code text-escaped, chart config JSON-scripted, math wrapping
+REMOVED (spans leaked literal HTML into MiniMarkdown bubbles — compose math
+renderer is a separate M5 follow-up). `HtmlCardPane` uses the real density
+for px→dp (the old hardcoded /2.5 was wrong), a reload guard (height events
+must not re-load — infinite loop risk), and the real instance origin for
+navigation policy (the old code passed null — instance-origin links wrongly
+opened external). AC (agent.md §15 M2): frontier card + chart + mermaid
+render inline on the dev instance — pending device verification.

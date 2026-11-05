@@ -91,22 +91,25 @@ class ExecuteSandbox @Inject constructor(
             return true
         }
         val code = ((envelope.data["data"] as? JsonObject)?.get("code") as? JsonPrimitive)?.content
-        Timber.i("execute call: code=%s chars", code?.length ?: 0)
+        if (code.isNullOrBlank()) {
+            busy.set(false)
+            Timber.w("execute call carried no code")
+            envelope.reply(buildJsonObject { put("error", "execute call carried no code.") })
+            return true
+        }
+        Timber.i("execute call: code=%s chars head=%s", code.length, code.take(150))
         scope.launch {
             try {
-                if (code.isNullOrBlank()) {
-                    envelope.reply(buildJsonObject { put("error", "execute call carried no code.") })
-                } else {
-                    // The theme is pre-seeded (init collector); one evaluation.
-                    val raw = withTimeoutOrNull(TIMEOUT_MS) { evaluate(code) }
-                    Timber.i("execute answer: %s", raw?.take(120))
-                    val payload = when {
-                        raw == null -> buildJsonObject { put("error", "execute timed out.") }
-                        raw.isBlank() || raw.trim() == "null" -> buildJsonObject { put("error", "execute failed.") }
-                        else -> buildJsonObject { put("result", jsResultValue(raw)) }
-                    }
-                    envelope.reply(payload)
+                // The theme is pre-seeded (init collector); one evaluation.
+                val raw = withTimeoutOrNull(TIMEOUT_MS) { evaluate(code) }
+                Timber.i("execute answer raw=%s", raw?.take(160))
+                val payload = when {
+                    raw == null -> buildJsonObject { put("error", "execute timed out.") }
+                    raw.isBlank() || raw.trim() == "null" -> buildJsonObject { put("error", "execute failed.") }
+                    else -> buildJsonObject { put("result", jsResultValue(raw)) }
                 }
+                Timber.i("execute reply=%s", payload.toString().take(160))
+                envelope.reply(payload)
             } catch (t: Throwable) {
                 Timber.w(t, "execute failed")
                 envelope.reply(buildJsonObject { put("error", t.message ?: "execute failed.") })

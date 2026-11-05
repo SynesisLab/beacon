@@ -89,15 +89,46 @@ class CardDocumentTest {
     fun artifactFragmentGetsPrependAndAppend() {
         val html = "<div>hi</div>"
         val doc = CardDocument.build(card(CardKind.Artifact, html), null, null, dark = false)!!
-        // No <head>/<body> in the fragment: the meta+style payload PREPENDS,
-        // the bootstrap appends — and the background stays transparent so the
-        // app's scheme shows through.
-        assertTrue(doc.html.startsWith("<meta charset=\"utf-8\">"))
+        // No <head>/<body> in the fragment: the payload PREPENDS (theme seed
+        // FIRST — parse-position zero), the bootstrap appends — and the
+        // background stays transparent so the app's scheme shows through.
+        assertTrue(doc.html.startsWith(CardDocument.THEME_SEED.format("light", false, false)))
+        assertTrue(doc.html.contains("<meta charset=\"utf-8\">"))
         assertTrue(doc.html.contains("<div>hi</div>"))
         assertTrue(doc.html.endsWith("<script>${CardDocument.BOOTSTRAP}</script>"))
         assertTrue(doc.html.contains("background: transparent"))
         assertFalse(doc.html.contains("#FAF9F5"))
         assertFalse(doc.fullBridge)
+    }
+
+    @Test
+    fun foreignCardSeedsSchemeBeforeCardOwnThemeFollow() {
+        // The Frontier-tool shape: theme baked on <html>, its own "theme
+        // follow" bootstrap reading parent.localStorage later in the document.
+        val html = "<html lang=\"en\" data-theme=\"dark\" class=\"dark\"><head>" +
+            "<style>:root{--fg:#0d0d0d}html.dark{--fg:#ececec}</style></head>" +
+            "<body><script>applyTheme(det());</script><div>card</div></body></html>"
+        val doc = CardDocument.build(card(CardKind.Embed, html, level = SandboxLevel.MEDIA), null, null, dark = false)!!
+        val seedAt = doc.html.indexOf("localStorage.setItem('theme','light')")
+        // Parse order decides: the seed (theme = the app scheme) strictly
+        // precedes the card's own bootstrap, so applyTheme() adopts it.
+        assertTrue(seedAt >= 0)
+        assertTrue(seedAt < doc.html.indexOf("applyTheme"))
+
+        // With an injected admin CSP the seed still precedes the policy —
+        // nothing is declared at the seed's parse position.
+        val cspDoc = CardDocument.build(card(CardKind.Embed, html, level = SandboxLevel.MEDIA), null, "default-src 'self'", dark = false)!!
+        assertTrue(cspDoc.html.indexOf("localStorage.setItem('theme','light')") < cspDoc.html.indexOf("Content-Security-Policy"))
+    }
+
+    @Test
+    fun foreignCardSeedFollowsScheme() {
+        val dark = CardDocument.build(card(CardKind.Embed, "<div>x</div>", level = SandboxLevel.MEDIA), null, null, dark = true)!!
+        assertTrue(dark.html.contains("localStorage.setItem('theme','dark')"))
+        assertTrue(dark.html.contains("classList.toggle('dark',true)"))
+        val light = CardDocument.build(card(CardKind.Embed, "<div>x</div>", level = SandboxLevel.MEDIA), null, null, dark = false)!!
+        assertTrue(!light.html.contains("localStorage.setItem('theme','dark')"))
+        assertTrue(light.html.contains("classList.toggle('dark',false)"))
     }
 
     @Test

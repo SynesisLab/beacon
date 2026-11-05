@@ -37,6 +37,7 @@ import dev.beacon.core.render.policy.EmbedPolicy
 import dev.beacon.core.render.policy.NavigationDecision
 import dev.beacon.ui.theme.LocalBeaconDark
 import okhttp3.OkHttpClient
+import timber.log.Timber
 
 /**
  * The sandboxed inline WebView pane for [ChatPart.HtmlCard] (agent.md §7.2) —
@@ -188,17 +189,27 @@ private fun CardWebView(
             settings.setAllowUniversalAccessFromFileURLs(false)
             settings.mediaPlaybackRequiresUserGesture = true
             settings.cacheMode = WebSettings.LOAD_DEFAULT
+            // Force Dark OFF: the card carries its OWN theme (the seed +
+            // baked data-theme). System-dark + light app made the WebView's
+            // algorithmic darkening INVERT light content at paint — DOM
+            // computed light, raster dark (the 2026-11-05 mismatch).
+            settings.isAlgorithmicDarkeningAllowed = false
             // Popups reach PopupChromeClient (policy-gated: external for user
             // gestures, instance-origin reloads in-frame, else dead).
             settings.setSupportMultipleWindows(true)
             settings.javaScriptCanOpenWindowsAutomatically = true
-            settings.isAlgorithmicDarkeningAllowed = true
             // Web parity: the card = a full-height rectangle in the flow; the
             // CHAT list scrolls, the card doesn't (vertical bar off; the
             // subclass hands vertical drags to the Compose scroll).
             isVerticalScrollBarEnabled = false
-            setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
+            // NO LAYER_TYPE_HARDWARE here: WebView is already hardware-composited
+            // and an extra view HardwareLayer can freeze its surface against
+            // attribute-driven restyles (the 2026-11-05 dark-raster stale frame).
         }
+    }
+    // Debug builds only: inspectable card WebViews (chrome://inspect).
+    if (dev.beacon.BuildConfig.DEBUG) {
+        runCatching { WebView.setWebContentsDebuggingEnabled(true) }
     }
 
     DisposableEffect(document.fullBridge, sandboxLevel) {
@@ -358,6 +369,14 @@ private class EmbedWebViewClient(
      */
     override fun onPageFinished(view: WebView, url: String?) {
         super.onPageFinished(view, url)
+        // Debug probe: the card's live theme state (storage + forced palette)
+        // — one line per card page, enough to diagnose theme-bake mismatches.
+        runCatching {
+            view.evaluateJavascript(
+                "(function(){try{return localStorage.getItem('theme')+' | '+document.documentElement.className" +
+                    "+' | '+document.documentElement.getAttribute('data-theme');}catch(e){return 'ERR '+String(e);}})()",
+            ) { v -> Timber.i("card theme state: %s", v) }
+        }
         val measure = {
             runCatching {
                 view.evaluateJavascript(measureJs) { value ->

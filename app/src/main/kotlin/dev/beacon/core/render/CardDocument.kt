@@ -46,6 +46,23 @@ object CardDocument {
     private const val KATEX_CSS = "<link rel=\"stylesheet\" href=\"katex/0.19.1/katex.min.css\">"
     private const val KATEX_TAG = "<script src=\"katex/0.19.1/katex.min.js\"></script>"
 
+    /**
+     * The card-side theme seed + FORCE (the scheme must win even when storage
+     * is unavailable). Values match the exact strings the web's theme readers
+     * compare (the Frontier tool's bootstrap: `s.indexOf('dark')>=0` → dark,
+     * `s==='light'||s==='her'` → light, else class/matchMedia fallbacks). The
+     * direct class flip covers the opaque/file-origin WebView case where
+     * localStorage silently won't — the tool's own later applyTheme(det())
+     * then re-derives the same value either way.
+     */
+    internal const val THEME_SEED =
+        "<script>(function(){var set=function(){" +
+            "var r=document.documentElement;" +
+            "try{localStorage.setItem('theme','%s');}catch(e){}" +
+            "try{r.classList.toggle('dark',%b);" +
+            "r.setAttribute('data-theme',%b?'dark':'light');}catch(e){}};" +
+            "set();window.addEventListener('load',set);setTimeout(set,300);})();</script>"
+
     fun build(
         card: ChatPart.HtmlCard,
         instanceUrl: String?,
@@ -70,6 +87,7 @@ object CardDocument {
                 CardKind.Artifact, CardKind.Embed -> foreignDoc(
                     html = html,
                     iframeCsp = iframeCsp,
+                    dark = dark,
                     interactive = card.interactive,
                 )
             }
@@ -147,10 +165,20 @@ object CardDocument {
         return Document(VENDOR_BASE, html, fullBridge = true)
     }
 
-    private fun foreignDoc(html: String, iframeCsp: String?, interactive: Boolean): Document {
+    private fun foreignDoc(html: String, iframeCsp: String?, dark: Boolean, interactive: Boolean): Document {
         val fragment = !headOpen.containsMatchIn(html)
         var out = html
         val head = buildString {
+            // Theme seed (FIRST element of the document — inline scripts execute
+            // in parse order, so nothing is declared/policy-active yet): most
+            // tool cards carry a web-iframe "theme follow" bootstrap that reads
+            // `parent.localStorage.theme`; in the WebView-per-card there is no
+            // parent frame (parent = the card itself), so it falls back to the
+            // theme BAKED at generation time — a card generated on a dark
+            // session stays dark (white-on-light text) forever. Seeding the
+            // card's own localStorage with the app scheme makes that bootstrap
+            // follow Beacon's scheme instead — old baked cards included.
+            append(THEME_SEED.format(if (dark) "dark" else "light", dark, dark))
             // injectCsp parity (csp.ts:6-12): ours first in <head> → first CSP
             // wins, so the card's own CSP (if any) is effectively overridden —
             // exactly the web's documented behavior.

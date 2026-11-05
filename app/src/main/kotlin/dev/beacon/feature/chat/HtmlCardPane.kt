@@ -27,7 +27,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import dev.beacon.core.render.CardDocument
@@ -73,7 +72,6 @@ fun HtmlCardPane(
     val dark = LocalBeaconDark.current
     var heightDp by remember(card.id) { mutableStateOf(card.minHeightDp.dp) }
     var expanded by remember(card.id) { mutableStateOf(false) }
-    val density = LocalDensity.current
     // Streaming repaints grow the html; rebuilding per delta keeps previews
     // honest (§7.1). The document remembers on the WHOLE card value.
     val document = remember(card, instanceUrl, iframeCsp, dark) {
@@ -97,7 +95,12 @@ fun HtmlCardPane(
                     instanceUrl = instanceUrl,
                     sandboxLevel = card.sandboxLevel,
                     onHeight = { px ->
-                        heightDp = with(density) { px.toDp().coerceIn(card.minHeightDp.dp, ExpandedCap) }
+                        // The measure/bridge report CSS pixels; the WebView's
+                        // CSS scale (devicePixelRatio) equals the app density,
+                        // so a CSS px height IS the dp height — Float.toDp()
+                        // would divide a second time (the 2026-11-05 clip:
+                        // 1111css content → 456dp box, one viewport tall).
+                        heightDp = px.dp.coerceIn(card.minHeightDp.dp, ExpandedCap)
                     },
                 )
             }
@@ -361,11 +364,19 @@ private class EmbedWebViewClient(
             "if(r){h=Math.max(h, r.scrollHeight, Math.ceil(r.getBoundingClientRect().height));}" +
             "return h;})()"
 
+    // Stability loop state: nonce-CSP'd cards (Frontier) can't run the injected
+    // height shim, and their content lands LATE (staggered block animations +
+    // live-data re-renders) — a fixed 400/900/1600ms ladder measured too early
+    // and the WebView kept the stale (short) height, clipping the card. Keep
+    // measuring past load until the height holds across two rounds (~10s cap).
+    private var round = 0
+    private var prevHeight = 0f
+    private var stableRounds = 0
+
     /**
      * nonce/hash-CSP'd cards (Frontier UI builds its own `script-src 'nonce-…'`
      * policy) block ANY injected inline script — the shim can't run. The host
-     * measuring via evaluateJavascript is immune to document CSP: one measure
-     * at load + a few early re-measures for async layouts.
+     * measuring via evaluateJavascript is immune to document CSP.
      */
     override fun onPageFinished(view: WebView, url: String?) {
         super.onPageFinished(view, url)
@@ -377,25 +388,31 @@ private class EmbedWebViewClient(
                     "+' | '+document.documentElement.getAttribute('data-theme');}catch(e){return 'ERR '+String(e);}})()",
             ) { v -> Timber.i("card theme state: %s", v) }
         }
-        val measure = {
-            runCatching {
-                view.evaluateJavascript(measureJs) { value ->
-                    val px = value
-                        ?.trim()
-                        ?.removeSurrounding("\"")
-                        ?.toFloatOrNull()
-                    if (px != null && px > 0f) onMeasuredHeight?.invoke(px)
+        if (onMeasuredHeight == null) return
+        round = 0
+        prevHeight = 0f
+        stableRounds = 0
+        measureLoop(view)
+    }
+
+    private fun measureLoop(view: WebView) {
+        if (round++ > MEASURE_MAX_ROUNDS) return
+        runCatching {
+            view.evaluateJavascript(measureJs) { value ->
+                val px = value?.trim()?.removeSurrounding("\"")?.toFloatOrNull()
+                if (px != null && px > 0f) onMeasuredHeight?.invoke(px)
+                if (px == prevHeight) stableRounds += 1 else stableRounds = 0
+                prevHeight = px ?: -1f
+                if (px != null && stableRounds < 2) {
+                    runCatching { view.postDelayed({ measureLoop(view) }, MEASURE_INTERVAL_MS) }
                 }
             }
         }
-        runCatching { measure() }
-        if (onMeasuredHeight != null) {
-            longArrayOf(400, 900, 1600).forEach { delay ->
-                runCatching {
-                    view.postDelayed({ runCatching { measure() } }, delay)
-                }
-            }
-        }
+    }
+
+    private companion object {
+        const val MEASURE_MAX_ROUNDS = 24
+        const val MEASURE_INTERVAL_MS = 350L
     }
 
     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {

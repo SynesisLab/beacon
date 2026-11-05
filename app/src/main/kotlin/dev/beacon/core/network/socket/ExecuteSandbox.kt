@@ -100,8 +100,8 @@ class ExecuteSandbox @Inject constructor(
         Timber.i("execute call: code=%s chars head=%s", code.length, code.take(150))
         scope.launch {
             try {
-                // The theme is pre-seeded (init collector); one evaluation.
-                val raw = withTimeoutOrNull(TIMEOUT_MS) { evaluate(code) }
+                // The theme is re-seeded inside the expression; one bridge round.
+                val raw = withTimeoutOrNull(ANSWER_WAIT_MS) { evaluate(code) }
                 Timber.i("execute answer raw=%s", raw?.take(160))
                 val payload = when {
                     raw == null -> buildJsonObject { put("error", "execute timed out.") }
@@ -120,28 +120,36 @@ class ExecuteSandbox @Inject constructor(
         return true
     }
 
-    /** The seed + run: (1) localStorage.theme = the app scheme now; (2) eval. */
+    /**
+     * evaluateJavascript does NOT await promises — an async code would deliver
+     * the promise object itself ("{}"). So: the expression RESOLVES the async
+     * result and posts the settled value back through ONE narrow bridge (a
+     * single result method — the sandbox keeps no file/network/credential
+     * surface; the bridge = returning a string to Kotlin). The theme is
+     * re-seeded on every run (about:blank localStorage may not persist).
+     */
     private suspend fun evaluate(code: String): String? = withContext(Dispatchers.Main) {
         val view = ensureSandbox()
         val scheme = if (rendersDark()) "dark" else "light"
-        suspendCancellableCoroutine { cont ->
-            val seedAndRun: () -> Unit = {
-                runCatching {
-                    view.evaluateJavascript(
-                        "try{localStorage.setItem('theme','$scheme')}catch(e){}1",
-                    ) { _ ->
-                        runCatching {
-                            view.evaluateJavascript(EXPRESSION_OPEN + code + EXPRESSION_CLOSE) { result ->
-                                cont.resume(result)
-                            }
-                        }.onFailure { cont.resume(null) }
-                    }
-                }.onFailure { cont.resume(null) }
-            }
-            if (view.url == "about:blank") seedAndRun() else {
-                view.post { seedAndRun() }
+        val settled = kotlinx.coroutines.CompletableDeferred<String?>()
+        val bridge = object {
+            @android.webkit.JavascriptInterface
+            fun result(json: String) {
+                settled.complete(if (json.isNullOrBlank()) "null" else json)
             }
         }
+        runCatching { view.addJavascriptInterface(bridge, RESULTS_BRIDGE_NAME) }
+        val expression =
+            "(function(){try{localStorage.setItem('theme','$scheme')}catch(e){}" +
+                "var p=(async () => {" + code + " })();" +
+                "p.then(function(v){try{ClientExec.result(JSON.stringify(v))}catch(e){ClientExec.result('null')}},function(e){" +
+                "try{ClientExec.result(JSON.stringify({error:String(e)}))}catch(e2){ClientExec.result('null')}});})()"
+        runCatching { view.evaluateJavascript(expression) { } }
+            .onFailure {
+                // script error: nothing will call the bridge
+                settled.complete(null)
+            }
+        withTimeoutOrNull(ANSWER_WAIT_MS) { settled.await() }
     }
 
     @MainThread
@@ -193,8 +201,8 @@ class ExecuteSandbox @Inject constructor(
 
     companion object {
         const val EXECUTE_TYPE = "execute"
-        private const val TIMEOUT_MS = 10_000L
-        private const val EXPRESSION_OPEN = "(async () => { "
-        private const val EXPRESSION_CLOSE = " })()"
+        /** The tool's probe waits 3s — reply-or-error inside 2.5s. */
+        private const val ANSWER_WAIT_MS = 2_500L
+        private const val RESULTS_BRIDGE_NAME = "ClientExec"
     }
 }

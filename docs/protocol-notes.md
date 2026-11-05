@@ -218,3 +218,12 @@ Beacon deltas (all client-side decisions, ADR-0013):
 - Math in BUBBLES stays raw text: the old `beacon-katex` span wrapping leaked
   literal HTML into MiniMarkdown bubbles; a compose-side math renderer is a
   separate follow-up (M5).
+
+## Device pass (2026-11-04, Pixel 10 Pro Fold, server v0.13.0)
+
+| What | Result |
+| --- | --- |
+| render_frontier_ui embeds (chat 6fc19ae0) | the card renders INLINE between tool chips (its own dark theme baked server-side); 460dp cap + the Expand sheet (640dp, scrollable, pricing table intact) — the `embeds` sibling key on function_call_output is the channel this tool uses |
+| Nonce-CSP cards | the card own `script-src 'nonce-'` CSP blocks the injected shim; the host-side evaluateJavascript measures carry height instead |
+| Card subresources | maplibre-gl CDN css + storefront favicons 200 through the one OkHttp client (no credentials left the instance origin); a 404 favicon degrades to the empty response |
+| Code-interpreter request | the server routed `execute_code` TO the client (the Code chip!); Beacon answered not-supported; the model fell back to inline fences — the client-execution leg stays post-M5 |

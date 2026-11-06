@@ -404,17 +404,22 @@ fun ChatScreen(
                                     text = "Temporary chat",
                                     style = MaterialTheme.typography.headlineLarge,
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth(),
                                 )
                                 Text(
                                     text = "This chat stays out of your history and search, and nothing is saved to your server.",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth(),
                                 )
                             } else {
                                 LandingCritter(size = 96.dp)
-                                // Time-aware greeting (mockup 01: "Late night,
-                                // Anthony?") with the signed-in name.
+                                // Time-aware TWO-LINE greeting, centered (mockup 01:
+                                // "Late night, Anthony?<br>Ready when you are").
+                                // fillMaxWidth + textAlign=Center — a bare Text in
+                                // the column rendered left-shifted on device
+                                // (user report 2026-11-06).
                                 val hour = testHourOverride
                                     ?: java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
                                 val part = when (hour) {
@@ -431,13 +436,17 @@ fun ChatScreen(
                                     ?.takeIf { it.isNotBlank() }
                                     ?: "there"
                                 Text(
-                                    text = "Good $part, $name?",
+                                    text = "Good $part, $name?\nReady when you are",
                                     style = MaterialTheme.typography.headlineLarge,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth(),
                                 )
                                 Text(
                                     text = "Ask ${state.modelLabel ?: "your model"} anything — everything runs on your server.",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth(),
                                 )
                             }
                         }

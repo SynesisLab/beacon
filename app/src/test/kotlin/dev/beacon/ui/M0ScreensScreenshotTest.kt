@@ -12,6 +12,7 @@ import dev.beacon.core.data.local.ChatEntity
 import dev.beacon.feature.chat.ChatActions
 import dev.beacon.feature.chat.ChatScreen
 import dev.beacon.feature.chat.ChatViewModel
+import dev.beacon.feature.chat.testDayOfYearOverride
 import dev.beacon.feature.chat.testHourOverride
 import dev.beacon.feature.onboarding.OnboardingActions
 import dev.beacon.feature.onboarding.OnboardingScreen
@@ -105,11 +106,13 @@ class M0ScreensScreenshotTest {
         // The boot/new-chat surface: greeting hero + composer (interface copy).
         // The empty UiState = no engine messages → the hero renders.
         testHourOverride = 20 // pin the time-aware greeting for a stable golden
+        testDayOfYearOverride = 1 // pin the rotating second line
         render {
             // The empty UiState = no engine messages → the hero renders.
             ChatScreen(bootState, chatActionsAll, showModelPicker = false, onDismissPicker = {}, onPickModel = {})
         }
         testHourOverride = null
+        testDayOfYearOverride = null
         capture("Chat/boot_light")
     }
 

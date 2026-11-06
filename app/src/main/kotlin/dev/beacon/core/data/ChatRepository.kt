@@ -325,5 +325,10 @@ private fun StoredMessage.toEntity(chatId: String): MessageEntity = MessageEntit
     outputJson = output?.toString(),
     done = done ?: true,
     timestamp = updatedAt ?: createdAt ?: timestamp,
-    meta = buildMap { contextSummary?.takeIf { it.isNotBlank() }?.let { put("contextSummary", it) } },
+    meta = buildMap {
+        contextSummary?.takeIf { it.isNotBlank() }?.let { put("contextSummary", it) }
+        followUps?.takeIf { it.isNotEmpty() }?.let {
+            put("followUps", kotlinx.serialization.json.buildJsonArray { it.forEach { add(kotlinx.serialization.json.JsonPrimitive(it)) } }.toString())
+        }
+    },
 )

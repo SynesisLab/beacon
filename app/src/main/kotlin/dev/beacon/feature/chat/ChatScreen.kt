@@ -124,6 +124,9 @@ private const val PULL_TRIGGER_DP = 96
 /** Test hook: pins the time-aware greeting's hour so goldens are stable. */
 internal var testHourOverride: Int? = null
 
+/** Test hook: pins the rotating greeting second line's day-of-year. */
+internal var testDayOfYearOverride: Int? = null
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
@@ -436,8 +439,22 @@ fun ChatScreen(
                                     ?.substringBefore(' ')
                                     ?.takeIf { it.isNotBlank() }
                                     ?: "there"
+                                // Rotating second line (user ask 2026-11-06 —
+                                // not always "Ready when you are"); rotates by
+                                // day-of-year so it changes daily but is stable
+                                // within a day.
+                                val secondLines = listOf(
+                                    "Ready when you are",
+                                    "What are we working on?",
+                                    "Ask me anything",
+                                    "Here when you need me",
+                                    "Let's figure something out",
+                                )
+                                val dayOfYear = testDayOfYearOverride
+                                    ?: java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_YEAR)
+                                val second = secondLines[dayOfYear % secondLines.size]
                                 Text(
-                                    text = "Good $part, $name?\nReady when you are",
+                                    text = "Good $part, $name?\n$second",
                                     style = MaterialTheme.typography.headlineLarge,
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                                     modifier = Modifier.fillMaxWidth(),
@@ -491,7 +508,10 @@ fun ChatScreen(
                     )
                 }
                 }
-                if (syncing || refetching) {
+                if (syncing || refetching || pullAccum > 0f) {
+                    // Visible during the PULL itself (user report 2026-11-06:
+                    // the loading pill only appeared once the network call ran —
+                    // too subtle), while the bounce plays, and while syncing.
                     Box(Modifier.align(Alignment.BottomCenter)) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,

@@ -127,4 +127,19 @@ class ProtocolDecodeTest {
         // The client-visible models list de-duplicates on id (OwuiApi.models()).
         assertEquals(2, page.copy(items = page.items.distinctBy { it.id }).items.size)
     }
+
+    @Test
+    fun storedMessageDecodesFollowUpsAndContextSummary() {
+        // middleware.py:3646 writes followUps onto the stored message;
+        // context_compaction.py upserts contextSummary (2026-11-06 fix: the DTO
+        // dropped followUps, so old chats lost their follow-up chips).
+        val msg = kotlinx.serialization.json.Json.decodeFromString(
+            dev.beacon.core.api.dto.StoredMessage.serializer(),
+            """{"id":"m1","role":"assistant","content":"hi","done":true,
+                "followUps":["Summarize this","Translate to Chinese"],
+                "contextSummary":"Earlier: UI audit"}""".trimIndent(),
+        )
+        assertEquals(listOf("Summarize this", "Translate to Chinese"), msg.followUps)
+        assertEquals("Earlier: UI audit", msg.contextSummary)
+    }
 }

@@ -328,6 +328,15 @@ class ChatEngine(
                             reasoningActive = !entity.done && entity.content.isNullOrBlank(),
                             outputItems = outputItems,
                             outputSeen = outputItems.isNotEmpty(),
+                            // Stored follow-ups ride the message's followUps field
+                            // (middleware.py:3646) → meta JSON (2026-11-06: old
+                            // chats lost them because the DTO dropped the field).
+                            followUps = entity.meta["followUps"]?.let { raw ->
+                                runCatching {
+                                    (json.parseToJsonElement(raw) as? kotlinx.serialization.json.JsonArray)
+                                        ?.mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+                                }.getOrNull().orEmpty()
+                            } ?: emptyList(),
                             streaming = !entity.done,
                         ),
                     ),

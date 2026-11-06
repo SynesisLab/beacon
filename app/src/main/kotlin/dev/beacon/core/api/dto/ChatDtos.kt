@@ -95,6 +95,9 @@ data class StoredMessage(
     /** Native context-compaction checkpoint (context_compaction.py:127-138 upserts
      *  it onto the checkpoint message; web renders ContextCompactionLabel). */
     val contextSummary: String? = null,
+    /** Stored follow-up prompts (middleware.py:3646 writes followUps onto the
+     *  message; the web renders them under the last assistant turn). */
+    val followUps: List<String>? = null,
 )
 
 /** POST /api/v1/chats/new — ChatForm {chat, variables?, folder_id?} (chats.py:303-306). */

@@ -4,7 +4,7 @@ import kotlinx.serialization.json.JsonElement
 
 /**
  * The render-part model — the contract between the chat engine and the UI
- * (agent.md §4: "everything else hangs off this"). The engine resolves the
+ * . The engine resolves the
  * active branch into a flat part list; every part renders as a composable and
  * persists as normalized JSON in Room (M2 adds the partsJson column).
  */
@@ -97,7 +97,7 @@ internal fun detailRuns(parts: List<ChatPart>): List<Any> {
 
 enum class ToolStatus { Pending, Running, Done, Failed, Cancelled }
 
-/** display_file routing (agent.md §7.3 — mime → viewer table). */
+/** display_file routing . */
 enum class FileViewer { Image, Pdf, Text, AudioVideo, Download }
 
 /** Source payload for citations (source/citation envelopes + meta sources). */

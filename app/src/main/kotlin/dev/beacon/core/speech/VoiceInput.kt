@@ -15,13 +15,13 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * Voice input (agent.md §8) — two engines:
+ * Voice input  — two engines:
  *
  * 1. On-device [SpeechRecognizer] (default) with **partial results** streaming
  *    into the composer; permission denial = graceful disabled state, never a
  *    crash loop (§8.5).
  * 2. Server mode: AudioRecord @16 kHz mono → WAV → POST /audio/transcriptions,
- *    capped at **20 MiB / 10 min** (verified server ceiling, agent.md §17).
+ *    capped at **20 MiB / 10 min** (verified server ceiling,).
  */
 class VoiceInput(private val context: Context) {
 

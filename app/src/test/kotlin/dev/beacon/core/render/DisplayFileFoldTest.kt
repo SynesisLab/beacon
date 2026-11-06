@@ -44,7 +44,7 @@ class DisplayFileFoldTest {
         assertTrue(file.mime == "text/markdown")
         assertTrue(file.terminalServerId == "b8e5d3a4-71de-498b-b5ab-3fbc866aedbe")
         assertTrue(file.terminalPath == "/home/user/beacon-ui-design.md")
-        assertTrue("display_file must render a File part, never JSON text (agent.md 7.1)", parts.none { it is ChatPart.Markdown && it.md.contains("\"terminal_selector\"") })
+        assertTrue("display_file must render a File part, never JSON text ", parts.none { it is ChatPart.Markdown && it.md.contains("\"terminal_selector\"") })
     }
 
     @Test

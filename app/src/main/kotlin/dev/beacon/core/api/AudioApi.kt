@@ -15,7 +15,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Server audio (agent.md §8):
+ * Server audio :
  * - TTS: POST /api/v1/audio/speech (JSON body; the RESPONSE = audio bytes —
  *   verified routers/audio: `body = await request.body()`-decoded dict)
  * - STT: POST /api/v1/audio/transcriptions (multipart file + language)
@@ -27,7 +27,7 @@ class AudioApi @Inject constructor(
     private val json: Json,
     private val source: InstanceSource,
 ) {
-    /** The TTS engines the server exposes (agent.md §8.4: gate read-aloud on this). */
+    /** The TTS engines the server exposes . */
     suspend fun models(): JsonObject? = withContext(Dispatchers.IO) {
         try {
             val request = Request.Builder()

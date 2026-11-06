@@ -5,7 +5,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Table tests for the fold→part pipeline (agent.md §16.3, §6.2 precedence). */
+/** Table tests for the fold→part pipeline . */
 class PartBuilderTest {
     private val json = Json
 

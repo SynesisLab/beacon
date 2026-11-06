@@ -8,7 +8,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Fixture replay (agent.md §13): the payload captured LIVE from Anthony's
+ * Fixture replay : the payload captured LIVE from Anthony's
  * terminal server round 2026-11-03 (files/list?directory=/home/user) — the
  * entry `modified`/`created` are FRACTIONAL epoch-seconds doubles, which a
  * Long-typed field rejected and killed the whole listing ("Failed to parse

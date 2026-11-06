@@ -54,7 +54,7 @@ private val LightScheme = lightColorScheme(
 )
 
 /**
- * Claude-warm brand scheme is the default; dynamic color stays opt-in (agent.md §3).
+ * Claude-warm brand scheme is the default; dynamic color stays opt-in .
  */
 val LocalBeaconDark = androidx.compose.runtime.compositionLocalOf { false }
 

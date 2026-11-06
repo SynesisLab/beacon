@@ -30,7 +30,7 @@ suspend fun Call.await(): Response = suspendCancellableCoroutine { continuation 
 
 /**
  * Decodes a JSON body; failures type to [OwuiApiException] with a short body
- * excerpt so UI surfaces stay diagnosable (agent.md §16.6: never crash on variance).
+ * excerpt so UI surfaces stay diagnosable .
  */
 internal suspend inline fun <reified T> Response.decodeJson(json: Json): T = use {
     if (!isSuccessful) {

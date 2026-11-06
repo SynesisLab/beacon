@@ -26,7 +26,7 @@ interface UploadGraph {
 }
 
 /**
- * Upload queue (agent.md §10): WorkManager-backed, retry + exponential backoff,
+ * Upload queue : WorkManager-backed, retry + exponential backoff,
  * network-constrained. The send flow awaits the upload ids before completion.
  */
 @Singleton

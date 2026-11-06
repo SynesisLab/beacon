@@ -38,7 +38,7 @@ import androidx.compose.ui.unit.dp
 import dev.beacon.core.data.AuthMethod
 import dev.beacon.ui.theme.Paddings
 
-/** State+callbacks hoisted for screenshot determinism (agent.md §16.4). */
+/** State+callbacks hoisted for screenshot determinism . */
 data class OnboardingActions(
     val setUrlDraft: (String) -> Unit,
     val probeServer: () -> Unit,
@@ -63,7 +63,7 @@ fun OnboardingScreen(
     actions: OnboardingActions,
     modifier: Modifier = Modifier,
 ) {
-    // Password-manager save hook (agent.md §9.3-parity; ADR-0011): when the user
+    // Password-manager save hook : when the user
     // finished password sign-in (step transitioned to Models with a password present),
     // commit the Android autofill save — Google Password Manager prompts to save.
     val context = LocalContext.current

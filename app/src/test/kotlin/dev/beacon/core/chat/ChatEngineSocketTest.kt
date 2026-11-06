@@ -22,7 +22,7 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * The taskSocket leg (M4-d3, agent.md §6.1): with a socket session id in the
+ * The taskSocket leg (M4-d3,): with a socket session id in the
  * request, the server answers {status, task_ids, chat_id} (main.py:1916) and
  * the stream rides socket `events`; the engine folds them and ends on the
  * terminal chat:completion {done:true} (middleware.py:6341). A socket that

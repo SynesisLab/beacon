@@ -3,7 +3,7 @@ package dev.beacon.core.chat
 import dev.beacon.core.data.local.MessageEntity
 
 /**
- * Idempotent reconciliation between server state and local rows (agent.md §9.2).
+ * Idempotent reconciliation between server state and local rows .
  * Runs on resume/foreground, flick-to-refetch, post-stream crash recovery, and
  * (M4) socket reconnect.
  *

@@ -6,7 +6,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Table-driven reconciler rules (agent.md §9.2, §13). */
+/** Table-driven reconciler rules . */
 class ChatReconcilerTest {
     private fun local(
         id: String,

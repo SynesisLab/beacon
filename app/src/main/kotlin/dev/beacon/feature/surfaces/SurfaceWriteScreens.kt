@@ -454,7 +454,7 @@ private fun NoteRowMenu(pinned: Boolean, onPin: () -> Unit, onDelete: () -> Unit
  * OWUI surfaces disagree on timestamp units: notes store epoch NANoseconds
  * (`int(time.time_ns())`, models/notes.py:553-554) while memories store epoch
  * SECONDS (`int(time.time())`, models/memories.py:61) — normalize by magnitude
- * to millis (agent.md §17 timestamp gotcha).
+ * to millis .
  */
 internal fun epochToMillis(t: Long?): Long? {
     val v = t ?: return null

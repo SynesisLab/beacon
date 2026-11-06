@@ -54,7 +54,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * Conduit's terminal-FILES page, copied function-for-function (original
+ * 's terminal-FILES page, copied function-for-function (original
  * implementation; GPL read): the current-path card with go-up, the listing
  * card with file/folder rows + per-row menus (preview / download / rename /
  * delete), create-folder FAB, and the SAF upload. Terminal servers ride the
@@ -106,7 +106,7 @@ class TerminalViewModel @Inject constructor(
     }
 
     fun loadDirectory(serverId: String, dir: String) = viewModelScope.launch {
-        // Conduit's normalizeTerminalPath parity: backslashes → slashes,
+        // 's normalizeTerminalPath parity: backslashes → slashes,
         // collapse runs, blank = root.
         val clean = run {
             var v = dir.trim().replace('\\', '/')
@@ -224,7 +224,7 @@ fun TsFileEntry.subtitle(): String {
     }
     val ms = modified?.let { m ->
         // Live upstream sends fractional epoch SECONDS (1777343786.22…);
-        // Conduit truncates num→seconds—magnitude rule keeps ms intact too.
+        // magnitude rule keeps ms intact too.
         (if (m >= 100_000_000_000.0) m.toLong() else (m * 1_000.0).toLong())
     }
     val date = ms?.let {

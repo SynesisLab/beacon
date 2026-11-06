@@ -3,8 +3,7 @@ package dev.beacon.core.render
 import java.net.URLDecoder
 
 /**
- * The markdown → [ChatPart] segmenter (agent.md §7.1; concept-port of Conduit's
- * markdown pipeline, original code). Runs on the CONTENT accumulation (text-mode
+ * The markdown → [ChatPart] segmenter . Runs on the CONTENT accumulation (text-mode
  * messages).
  *
  * Handled segment types, evidence-verified (docs/protocol-notes.md M2):
@@ -78,7 +77,7 @@ object Segmenter {
             remainder = remainder.replace(match.value, "")
         }
 
-        // Raw HTML blobs (unfenced div trees) become cards (agent.md §7.1).
+        // Raw HTML blobs (unfenced div trees) become cards .
         rawHtmlBlob.findAll(remainder).forEach { match ->
             parts.add(
                 ChatPart.HtmlCard(

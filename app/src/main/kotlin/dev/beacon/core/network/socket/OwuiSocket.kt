@@ -33,15 +33,14 @@ import javax.inject.Singleton
  *   `get_verified_user_by_token` (utils/auth.py:576-586) resolves the user and
  *   the server enters room `user:{user_id}` (socket/main.py:611-641).
  * - Legacy path: `user-join` with `{auth:{token}}` (socket/main.py:638-676);
- *   Conduit emits it after connect — we do the same.
+ *   Emitted after connect.
  * - Server→client events ride the `events` event into the user room as
  *   `{chat_id, message_id, data:{type,…}}` envelopes (socket/main.py:1626-1673).
- * - Heartbeat: `@sio.on('heartbeat')` (socket/main.py:723); Conduit pings every
- *   30s. We match.
+ * - Heartbeat: `@sio.on('heartbeat')` (socket/main.py:723); ping every 30s.
  * - Blocking `sio.call` requests aimed at THIS session (execute /
  *   execute:python / request:terminal / request:elicitation) must be answered
- *   or a server-side tool waits forever; M4 answers Conduit's refusals, full
- *   confirmations dialogs are a later slice.
+ *   or a server-side tool waits forever; unsupported calls get a refusal; full
+ *   confirmation dialogs are a later slice.
  */
 sealed interface SocketHealth {
     data object Idle : SocketHealth
@@ -367,13 +366,13 @@ class OwuiSocket @Inject constructor(
     companion object {
         /** Server→client chat events (primary name today). */
         const val SERVER_EVENTS = "events"
-        /** Conduit listens to both (older servers). */
+        /** Older servers use the legacy name. */
         const val LEGACY_EVENTS = "chat-events"
         val EVENT_NAMES = listOf(SERVER_EVENTS, LEGACY_EVENTS, "events:channel", "channel-events")
 
         /**
          * Blocking host calls we refuse so the server-side tool completes
-         * (Conduit: docs/open-webui-functions.md). The INTERACTIVE
+         * (docs/open-webui-functions.md). The INTERACTIVE
          * `request:user_input` is answered by the chat UI instead.
          */
         val UNSUPPORTED_CALLS: Map<String, Map<String, Any?>> = mapOf(

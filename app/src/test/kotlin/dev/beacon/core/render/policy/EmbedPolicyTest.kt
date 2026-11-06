@@ -5,7 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** agent.md §7.2/§11 policy rules — pure tests (the WebView client is a thin shell). */
+/** /§11 policy rules — pure tests (the WebView client is a thin shell). */
 class EmbedPolicyTest {
     @Test
     fun sourceDetectsUrlVsHtml() {
@@ -64,7 +64,7 @@ class EmbedPolicyTest {
         assertEquals(EmbedPolicy.Level.UI, EmbedPolicy.levelFor("<div>x</div>", provenance = false, mediaFlag = false))
         assertEquals(EmbedPolicy.Level.MEDIA, EmbedPolicy.levelFor("<div>x</div>", provenance = true, mediaFlag = true))
         assertEquals(EmbedPolicy.Level.TRUSTED, EmbedPolicy.levelFor("<div>x</div>", provenance = true, mediaFlag = false))
-        // No provenance → never above UI even with flags (agent.md §11).
+        // No provenance → never above UI even with flags .
         assertEquals(EmbedPolicy.Level.UI, EmbedPolicy.levelFor("<div>x</div>", provenance = false, mediaFlag = true))
     }
 

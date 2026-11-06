@@ -14,9 +14,7 @@ import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 
 /**
- * M4 headers editor (agent.md "custom headers + proxy-cookie": the editor is
- * the simple form — a pasted `Cookie` header covers reverse-proxy flows; the
- * full WebView capture stays a follow-up).
+ * M4 headers editor .
  *
  * Rows live in [UiState.drafts] as a working copy; Save runs [HeadersEditorState.validate]
  * (pure, table-tested) and writes the whole map through [SessionStore.setCustomHeaders]
@@ -87,7 +85,7 @@ class HeadersViewModel @Inject constructor(
 
 /**
  * Pure editor rules (JVM table-tested in HeadersEditorStateTest). Mirrors
- * CustomHeaders + Conduit's api_auth_interceptor.dart reserved-name check.
+ * CustomHeaders + dart reserved-name check.
  */
 object HeadersEditorState {
 

@@ -1,6 +1,6 @@
 # How Beacon captures server fixtures
 
-Placeholder for M1 (agent.md §13): the procedure for recording real SSE/socket
+The procedure for recording real SSE/socket
 transcripts from a dev instance into `app/src/test/fixtures/`.
 
 Planned procedure:

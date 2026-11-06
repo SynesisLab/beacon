@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ChatDao {
-    /** Cold start = Room-first paint (agent.md §10); page cursor via LIMIT offset. */
+    /** Cold start = Room-first paint ; page cursor via LIMIT offset. */
     @Query(
         """
         SELECT * FROM chats

@@ -12,7 +12,7 @@ import timber.log.Timber
 
 /**
  * Typed stream events the chat engine consumes (per-frame; the engine owns the
- * accumulated message shape — same parser/dispatch split as Conduit, no code copy).
+ * accumulated message shape — same parser/dispatch split, no code copy).
  */
 sealed interface StreamEvent {
     data class Content(val text: String) : StreamEvent
@@ -65,7 +65,7 @@ sealed interface StreamEvent {
     /**
      * Authoritative output snapshot — from a top-level `output:` in the payload or a
      * `chat:completion`/`response.*` fold (utils/response.py:405+). Presence gates
-     * rendering even when empty (agent.md §6.2 #5, §17).
+     * rendering even when empty .
      */
     data class OutputSnapshot(val items: List<JsonElement>) : StreamEvent
 
@@ -90,7 +90,7 @@ sealed interface StreamEvent {
  *   chat:completion envelopes;
  * - error mid-stream frame: `data: {"error": …}` (middleware.py:6527).
  *
- * Precedence per agent.md §6.2: envelopes → error → response.* → choices deltas →
+ * Precedence per envelopes → error → response.* → choices deltas →
  * output snapshot → meta. Malformed/unknown frames never throw — they resolve to
  * [StreamEvent.Deferred] or are dropped (heartbeat semantics).
  */
@@ -105,7 +105,7 @@ class OwuiStreamParser(
     }
 
     fun onFrame(frame: SseFrameScanner.Frame): List<StreamEvent> {
-        if (frame.isHeartbeat) return emptyList() // agent.md §17: heartbeats are never decoded
+        if (frame.isHeartbeat) return emptyList() // heartbeats are never decoded
 
         val data = frame.data ?: return emptyList()
         if (data == DONE_SENTINEL) return listOf(StreamEvent.StreamDone)
@@ -225,7 +225,7 @@ class OwuiStreamParser(
                     events.add(StreamEvent.ErrorSurface(message, err))
                 }
                 (body["output"] as? JsonArray)?.let { out ->
-                    // Conduit-faithful MERGE (their openwebui_response_stream):
+                    // MERGE (per response.completed):
                     // snapshots accumulate BY ID (+call_id+type) so tool-call
                     // rounds and reasoning survive; never clear+replace.
                     val merged = mergeOutput(responseOutput.toList(), out.toList())
@@ -262,7 +262,7 @@ class OwuiStreamParser(
             }
         }
 
-        // 3. Responses-API passthrough (fold, don't reject — agent.md §17)
+        // 3. Responses-API passthrough (fold, don't reject —)
         if (type != null && type.startsWith("response.")) {
             return foldResponsesEvent(type, obj)
         }
@@ -271,8 +271,7 @@ class OwuiStreamParser(
     }
 
     /**
-     * Conduit-faithful output accumulator (their openwebui_response_stream,
-     * ORIGINAL code; GPL read as spec): per-token deltas MUTATE the item in
+     * output accumulator: per-token deltas MUTATE the item in
      * place and every mutation emits a fresh Snapshot, so one list renders
      * everything — text, reasoning, tool calls — as it grows. Snapshots MERGE
      * by id (+call_id+same-type: a function_call_output shares the call's
@@ -362,7 +361,7 @@ class OwuiStreamParser(
     /**
      * The slot an incoming ITEM updates: same id, or same call_id AND type — a
      * function_call_output shares the call's call_id and must never replace
-     * the call (Conduit issue #751; the web checks the type too).
+     * the call (the web checks the type too).
      */
     private fun findItem(output: List<JsonElement>, item: JsonObject): Int {
         val id = item["id"]?.primitiveOrNull()?.content
@@ -405,7 +404,7 @@ class OwuiStreamParser(
         }
     }
 
-    /** The reasoning timing (Conduit's _stampReasoningTiming, Kotlin original):
+    /** The reasoning timing (client-side stamping):
      *  the addressed slot's item mutates in the caller's list. JsonObjects are
      *  immutable, so the stamped copy replaces the slot. */
     private fun stampReasoningTiming(output: MutableList<JsonElement>) {
@@ -469,7 +468,7 @@ class OwuiStreamParser(
     }
 
     /**
-     * Snapshot MERGE (Conduit's response.completed reducer): known items
+     * Snapshot MERGE (response.completed): known items
      * replace in place (id, or call_id+same-type), new items append; previous
      * items the snapshot doesn't carry SURVIVE (earlier tool rounds).
      */
@@ -502,7 +501,7 @@ class OwuiStreamParser(
                 events.add(StreamEvent.Content(content))
             }
 
-            // All three provider key spellings (middleware.py:3474; agent.md §17)
+            // All three provider key spellings (middleware.py:3474;)
             val reasoning = (
                 body["reasoning_content"]
                     ?: body["reasoning"]
@@ -521,7 +520,7 @@ class OwuiStreamParser(
             events.add(StreamEvent.OutputSnapshot(merged))
         }
 
-        // Meta fields (agent.md §6.2 #6)
+        // Meta fields
         (obj["usage"])?.takeIf { it !is JsonNull }?.let { usage ->
             events.add(StreamEvent.UsageUpdate(usage, obj["timings"]))
         }

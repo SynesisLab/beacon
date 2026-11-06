@@ -4,7 +4,7 @@ import dev.beacon.core.data.local.MessageEntity
 
 /**
  * Resolves the visible thread: walk from the current leaf up through parents,
- * bottom-up — the OWUI tree semantics (agent.md §6.4; §17: history is a tree).
+ * bottom-up — the OWUI tree semantics .
  * Pure function; Room wiring stays in the repository. Cycle-safe (corrupt data).
  */
 fun activePathFrom(

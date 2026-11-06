@@ -5,7 +5,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Tree-path semantics (agent.md §6.4/§17) — the thread is a parent-walk, never an array. */
+/** Tree-path semantics  — the thread is a parent-walk, never an array. */
 class BranchPathTest {
     private fun node(id: String, parent: String?, role: String = MessageEntity.ROLE_ASSISTANT, ts: Long = 0) =
         MessageEntity(

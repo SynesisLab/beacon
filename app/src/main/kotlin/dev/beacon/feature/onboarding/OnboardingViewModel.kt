@@ -18,7 +18,7 @@ import javax.inject.Inject
 /**
  * M0 onboarding: instance URL → auth (API key or password) → model pick.
  * All network probes fail soft: they surface text, never crash, and reconnect
- * freely once connectivity returns (agent.md §15 M0 AC).
+ * freely once connectivity returns .
  */
 @HiltViewModel
 class OnboardingViewModel @Inject constructor(

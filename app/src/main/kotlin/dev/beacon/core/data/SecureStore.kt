@@ -15,7 +15,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Keystore-backed secret storage (agent.md §5/§11). AES-256/GCM; one hardware-backed
+ * Keystore-backed secret storage . AES-256/GCM; one hardware-backed
  * key per secret alias; ciphertext held in app-private storage with the random IV
  * prepended. Deliberately hand-rolled instead of androidx.security-crypto, which was
  * deprecated upstream (ADR-0003). Secrets are API keys / JWTs — never logged, and

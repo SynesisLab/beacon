@@ -18,7 +18,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Room-first data access for chats (agent.md §10): all screens read Room; network
+ * Room-first data access for chats : all screens read Room; network
  * actions write through. Mutations mirror OWUI endpoints BEFORE optimistic-local
  * application when the device is online (§6.4). Implements [ChatStore] for the engine.
  */

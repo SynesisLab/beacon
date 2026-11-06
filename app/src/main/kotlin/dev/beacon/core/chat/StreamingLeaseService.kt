@@ -12,7 +12,7 @@ import android.os.IBinder
 import dev.beacon.R
 
 /**
- * The streaming lease (agent.md §6.3/§12): a foreground service of type
+ * The streaming lease : a foreground service of type
  * `dataSync` holding the stream alive while the app is backgrounded. Started
  * by [ChatEngine] on send, stopped on finalize/stop. Data-min notification:
  * no message content leaves into the notification surface (§11).

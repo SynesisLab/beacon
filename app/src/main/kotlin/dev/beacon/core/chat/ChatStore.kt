@@ -7,8 +7,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.put
 
 /**
- * Persistence surface the [ChatEngine] writes through (agent.md §10: write-through
- * Room, network actions mirror endpoints first). Interface keeps the engine testable
+ * Persistence surface the [ChatEngine] writes through . Interface keeps the engine testable
  * without Room on the JVM (MockWebServer fixture replay drives the real fold).
  */
 

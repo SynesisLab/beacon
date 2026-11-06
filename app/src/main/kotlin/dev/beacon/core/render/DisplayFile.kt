@@ -5,7 +5,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
 /**
- * display_file → [ChatPart.File] (agent.md §7.1: "never dump it as JSON text").
+ * display_file → [ChatPart.File] .
  * Result shape verified in backend/open_webui/tools/builtin.py `display_file`:
  * `{type:'file', exists, displayed, path:'/api/v1/files/<id>/content',
  *   name, content_type/mime_type, [page]}` — returned as a JSON *string* in the
@@ -60,7 +60,7 @@ object DisplayFile {
         )
     }
 
-    /** agent.md §7.3 mime → viewer table (office family falls through to Download). */
+    /** mime → viewer table (office family falls through to Download). */
     fun viewerForMime(mime: String): FileViewer = when {
         mime.startsWith("image/") -> FileViewer.Image
         mime == "application/pdf" -> FileViewer.Pdf

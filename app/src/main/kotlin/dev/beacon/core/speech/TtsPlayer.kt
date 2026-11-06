@@ -8,7 +8,7 @@ import dev.beacon.core.api.AudioApi
 import java.io.File
 
 /**
- * Server TTS read-aloud (agent.md §8.4 P1→M3): POST /api/v1/audio/speech →
+ * Server TTS read-aloud : POST /api/v1/audio/speech →
  * the shared session player. Gated on the server's engines (/audio/models).
  */
 class TtsPlayer(private val api: AudioApi) {
@@ -50,7 +50,7 @@ class TtsPlayer(private val api: AudioApi) {
     }
 }
 
-/** Biometric app-lock gate (agent.md §9.3): resumes behind a credential check. */
+/** Biometric app-lock gate : resumes behind a credential check. */
 class AppLock(private val activity: androidx.fragment.app.FragmentActivity) {
     private val prompt = androidx.biometric.BiometricPrompt(
         activity,

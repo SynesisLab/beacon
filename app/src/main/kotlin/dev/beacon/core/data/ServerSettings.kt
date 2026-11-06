@@ -16,7 +16,7 @@ enum class ThemeMode { System, Light, Dark }
 data class ServerSettings(
     val serverUrl: String = "",
     val authMethod: AuthMethod = AuthMethod.None,
-    /** Opt-in: trust user-added CAs (self-signed labs). agent.md §5.5. */
+    /** Opt-in: trust user-added CAs (self-signed labs). */
     val trustUserCa: Boolean = false,
     val serverVersion: String? = null,
     val selectedModelId: String? = null,
@@ -66,7 +66,7 @@ fun ServerSettings.modelNameFor(modelId: String?): String? {
 
 /**
  * Normalizes a user-typed instance URL into an origin (scheme://host[:port], no trailing slash).
- * Adds https:// when no scheme is present (matches Conduit's connection-form behavior).
+ * Adds https:// when no scheme is present (matches the usual connection-form behavior).
  */
 fun normalizeInstanceUrl(raw: String): String {
     val trimmed = raw.trim().trimEnd('/')

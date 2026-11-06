@@ -37,7 +37,7 @@ private const val CONTENT_TYPE = "Content-Type"
 private const val JSON_TYPE = "application/json; charset=utf-8"
 
 /**
- * The chat engine — the heart of Beacon (agent.md §4): owns transport + fold +
+ * The chat engine — the heart of Beacon : owns transport + fold +
  * persistence wiring behind intents (`send`, `stop`); UI consumes immutable
  * [ChatUiModel]. One instance per open chat session; the store keeps Room as
  * the single render source (§10).
@@ -673,7 +673,7 @@ class ChatEngine(
             else -> visible
         }
 
-        // The user turn the response hangs from (tree semantics, agent.md §6.4).
+        // The user turn the response hangs from (tree semantics,).
         // A sibling branch attaches to the user turn BEFORE the replaced assistant.
         val lastAssistantIndex = visiblePath.indexOfLast { it.role == MessageEntity.ROLE_ASSISTANT }
         val userTurnId: String? = when {

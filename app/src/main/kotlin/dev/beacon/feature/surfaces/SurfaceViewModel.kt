@@ -99,7 +99,7 @@ class WorkspaceApisLoader @Inject constructor(
     fun refresh() {
         scope.launch {
             _state.value = _state.value.copy(loading = true, error = null)
-            // Gates from /api/config (the verified keys; agent.md §16.6).
+            // Gates from /api/config (the verified keys;).
             configGateJob = scope.launch {
                 try {
                     val features = api.config().features

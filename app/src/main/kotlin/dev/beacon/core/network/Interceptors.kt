@@ -11,11 +11,10 @@ import javax.inject.Singleton
 private const val AUTHORIZATION = "Authorization"
 
 /**
- * Single place encoding the credential/rules from agent.md §11:
- * auth header + user headers attach to same-origin requests only; never to
+ * Single place encoding the credential/rules from * auth header + user headers attach to same-origin requests only; never to
  * third-party hosts (HtmlCard WebViews and previews reuse this client).
  *
- * Reserved names (Conduit api_auth_interceptor.dart parity): `Authorization`
+ * Reserved names: `Authorization`
  * is the credential Beacon manages — a user header may never override it.
  * Names/values with control characters are dropped defensively here even
  * though the editor validates them: OkHttp would throw, and a request must

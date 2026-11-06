@@ -5,11 +5,10 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
- * Table-driven (agent.md §13): OWUI surfaces disagree on timestamp units —
+ * Table-driven : OWUI surfaces disagree on timestamp units —
  * notes store epoch NANOseconds (models/notes.py:553-554, `int(time.time_ns())`)
  * while memories store epoch SECONDS (models/memories.py:61). `epochToMillis`
- * must normalize all three units to MILLIS at the boundary (agent.md §17
- * timestamp gotcha — the Chat sort bug 2026-11-02).
+ * must normalize all three units to MILLIS at the boundary .
  */
 class EpochNormalizerTest {
 

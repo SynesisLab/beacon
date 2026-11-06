@@ -4,14 +4,14 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 /**
- * The user's custom HTTP headers (org-routing / gateway keys, agent.md M4):
+ * The user's custom HTTP headers (org-routing / gateway keys, M4):
  * validation, sanitizing and the encrypted-at-rest blob codec.
  *
  * Storage lives in SecureStore (Keystore, §11 "credentials in Keystore only")
  * under [SecureStore.HEADERS_ALIAS] — the values are gateway credentials, so
  * they must never sit in the plain-JSON settings DataStore. Wiped on sign-out.
  *
- * Rules (Conduit api_auth_interceptor.dart parity — read as spec):
+ * Rules:
  *  - field names are RFC 9110 `token`s (no whitespace/colon);
  *  - values may not contain CR/LF (injection guard);
  *  - `Authorization` is reserved — Beacon's sign-in owns it, a custom header

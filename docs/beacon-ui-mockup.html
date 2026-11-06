@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Beacon · UI Mockup v3 (sidebar nav)</title>
+<style>
+:root{
+  --bg:#F9F9F7; --surface:#FFFFFF; --drawer:#F3F3F0;
+  --ink:#131313; --ink2:#56544E; --muted:#817F7A; --faint:#B5B2A9;
+  --coral:#D97757; --coral-press:#C96545; --coral-tint:#F6EBE4;
+  --blue:#3565F2; --hair:#E8E5DF; --hair2:#DEDBD3; --danger:#B3313B; --live:#3AA76D;
+  --serif:Georgia,'Times New Roman',serif;
+  --sans:-apple-system,'Segoe UI',Roboto,'Helvetica Neue',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#191817;color:#EAE8E3;font-family:var(--sans);padding:28px 18px 60px}
+.pagehead{max-width:1100px;margin:0 auto 26px}
+.pagehead h1{font-family:var(--serif);font-size:28px;font-weight:600;letter-spacing:.2px}
+.pagehead .sub{color:var(--muted);font-size:13.5px;margin-top:6px}
+.tokens{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.tok{display:flex;align-items:center;gap:7px;background:#232220;border:1px solid #35332F;border-radius:999px;padding:5px 12px 5px 6px;font-size:11.5px;color:#C9C6BF}
+.sw{width:18px;height:18px;border-radius:50%;border:1px solid rgba(255,255,255,.15)}
+
+.strip{display:flex;gap:34px;overflow-x:auto;scroll-snap-type:x proximity;padding:10px 4px 26px;max-width:1190px;margin:0 auto}
+.frame{scroll-snap-align:center;flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:10px}
+.phone{width:330px;height:706px;background:var(--bg);border:1px solid #4A4741;border-radius:34px;overflow:hidden;position:relative;display:flex;flex-direction:column;box-shadow:0 22px 50px rgba(0,0,0,.5)}
+.flabel{font-size:13px;color:#8F8C86}
+.fnote{font-size:11px;color:#5F5C57;max-width:330px;text-align:center;line-height:1.45}
+.pill{width:120px;height:5px;border-radius:3px;background:#3A3835;margin:7px auto 0}
+
+.sbar{display:flex;justify-content:space-between;align-items:center;padding:8px 20px 2px;font-size:11px;color:var(--ink2);font-weight:600}
+.sbar .dots{letter-spacing:2px;color:var(--muted);font-size:9px}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;min-height:52px}
+.ib{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--ink);flex:0 0 40px}
+.ib.white{background:var(--surface);border:1px solid var(--hair);box-shadow:0 1px 3px rgba(40,38,33,.07)}
+.ib.dashb{border:1.4px dashed var(--coral);background:var(--coral-tint)}
+.ib.dashb svg{stroke:var(--coral)}
+.chipmid{max-width:184px;overflow:hidden;background:var(--surface);border:1px solid var(--hair);border-radius:999px;padding:9px 14px;font-size:14px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:5px;box-shadow:0 1px 3px rgba(40,38,33,.07)}
+.chipmid .n{overflow:hidden;text-ellipsis;white-space:nowrap}
+
+.hero{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:0 26px;text-align:center}
+.hero .greet{font-size:23px;line-height:1.3;color:var(--ink);font-weight:550;letter-spacing:-.2px}
+.pchips{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;padding:0 20px 14px}
+.pchip{background:var(--coral-tint);border:1px solid #EBC9B9;color:var(--ink);border-radius:999px;padding:8px 13px;font-size:12px;font-weight:600}
+.pchip i{color:var(--coral-press);font-style:normal;margin-right:5px}
+
+.composer{margin:0 12px 10px;background:var(--surface);border:1px solid var(--hair);border-radius:26px;padding:7px 8px;box-shadow:0 2px 8px rgba(40,38,33,.05);display:flex;align-items:center;gap:8px}
+input.hint{flex:1;border:0;background:transparent;font-size:14px;color:var(--ink);min-width:0}
+input.hint::placeholder{color:var(--faint)}
+.plus{flex:0 0 auto;width:32px;height:32px;border-radius:50%;background:var(--drawer);border:1px solid var(--hair);display:flex;align-items:center;justify-content:center;color:var(--ink2)}
+.send{flex:0 0 auto;width:36px;height:36px;border-radius:50%;background:var(--ink);display:flex;align-items:center;justify-content:center}
+.meter{margin:0 12px 6px}
+.meter .rail{height:2px;background:var(--hair);border-radius:2px;position:relative}
+.meter .fill{position:absolute;inset:0;width:9%;background:var(--coral);border-radius:2px}
+.meter .cap{font-size:10.5px;color:var(--faint);margin:4px 2px 0}
+
+.conv{flex:1;overflow:hidden;padding:8px 14px 4px;display:flex;flex-direction:column;gap:10px}
+.msg.user{align-self:flex-end;max-width:82%;background:var(--surface);border:1px solid var(--hair);border-radius:18px 18px 6px 18px;padding:10px 13px;font-size:13.5px;line-height:1.45;color:var(--ink);box-shadow:0 1px 2px rgba(40,38,33,.04)}
+.drun{align-self:flex-start;display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink2);background:var(--drawer);border:1px solid var(--hair);border-radius:999px;padding:5px 11px}
+.drun .ok{color:var(--coral)}
+.think{align-self:flex-start;font-size:11.5px;color:var(--ink2);border-bottom:1px dashed var(--hair2);padding-bottom:2px}
+.toolrow{align-self:flex-start;display:flex;align-items:center;gap:8px;border:1px solid var(--hair);background:var(--surface);border-radius:12px;padding:8px 11px;font-size:12px;color:var(--ink)}
+.toolrow code{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink2)}
+.toolrow .st{color:var(--coral)}
+.acolor{font-size:13.5px;line-height:1.55;color:var(--ink)}
+.tfoot{align-self:flex-start;display:flex;align-items:center;gap:12px;color:var(--muted)}
+.pg{border:1px solid var(--hair);border-radius:999px;padding:2px 9px;font-size:11px;color:var(--ink2);background:var(--surface);font-weight:600}
+.fu{display:flex;gap:8px;flex-wrap:wrap}
+.fuchip{border:1px solid var(--hair);background:var(--surface);border-radius:14px;padding:7px 11px;font-size:11.5px;color:var(--ink2)}
+.cit{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;font-size:9.5px;border-radius:5px;background:var(--coral-tint);color:var(--coral-press);font-weight:700;margin:0 1px}
+
+.inlinechart{align-self:stretch;width:100%;position:relative}
+.inlinechart .cb{display:flex;align-items:flex-end;gap:8px;height:118px;padding:2px 0}
+.inlinechart .barw{flex:1;border-radius:5px 5px 0 0;background:var(--coral-tint)}
+.inlinechart .barw.on{background:var(--coral)}
+.hscroll{overflow-x:auto;scrollbar-width:none;-webkit-mask-image:linear-gradient(90deg,transparent 0,#000 20px,#000 calc(100% - 20px),transparent);mask-image:linear-gradient(90deg,transparent 0,#000 20px,#000 calc(100% - 20px),transparent)}
+.hscroll::-webkit-scrollbar{display:none}
+.inlinechart.hscroll .barw{flex:0 0 52px}
+.hintrow{font-size:10.5px;color:var(--faint);padding-top:5px;display:flex;justify-content:space-between}
+.toolhead{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--muted);padding-top:6px}
+.toolhead .tn{font-weight:700;color:var(--coral-press)}
+.actbar{display:flex;gap:7px}
+.act{border:1px solid var(--hair);border-radius:999px;padding:5px 11px;font-size:11px;color:var(--ink2);background:var(--surface);white-space:nowrap;font-weight:600}
+.wtable{background:var(--surface);border-radius:12px;padding:4px 12px;min-width:470px;font-size:11.5px;color:var(--ink2)}
+.wtable table{border-collapse:collapse;width:100%}
+.wtable th{font-size:10px;letter-spacing:.5px;text-transform:uppercase;color:var(--faint);text-align:left;font-weight:700;padding:7px 8px 5px;border-bottom:1px solid var(--hair);white-space:nowrap}
+.wtable td{padding:7px 8px;border-bottom:1px solid var(--hair);white-space:nowrap}
+.wtable tr:last-child td{border-bottom:0}
+.wtable td b{color:var(--ink)}
+.galrow{display:flex;gap:8px}
+.gph{flex:0 0 46%;aspect-ratio:1.25;border-radius:12px;background:var(--drawer);border:1px solid var(--hair);display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--coral)}
+
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--surface);border-radius:24px 24px 0 0;padding:6px 16px 20px;box-shadow:0 -12px 40px rgba(30,28,25,.18)}
+.handle{width:32px;height:4px;border-radius:2px;background:var(--hair2);margin:6px auto 10px}
+.shead{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.shead b{font-size:17px;font-weight:700;color:var(--ink)}
+.x{color:var(--muted);font-size:16px}
+.mrow{display:flex;align-items:center;gap:11px;padding:11px 4px;border-bottom:1px solid var(--hair)}
+.mrow:last-child{border-bottom:0}
+.av{width:34px;height:34px;border-radius:10px;background:#EFF3FE;border:1px solid var(--hair);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:var(--blue)}
+.minfo{flex:1}
+.minfo b{display:block;font-size:14px;font-weight:600;color:var(--ink)}
+.minfo span{font-size:11px;color:var(--muted)}
+.mk{color:var(--coral);font-weight:700}
+.tiles{display:flex;gap:10px}
+.tile{flex:1;background:var(--drawer);border:1px solid var(--hair);border-radius:14px;padding:16px 0 12px;display:flex;flex-direction:column;align-items:center;gap:8px;font-size:12px;color:var(--ink);font-weight:600}
+.tile .tic{width:38px;height:38px;border-radius:50%;background:var(--surface);border:1px solid var(--hair);display:flex;align-items:center;justify-content:center;color:var(--ink2)}
+.shrow{display:flex;align-items:center;gap:11px;padding:12px 4px;border-bottom:1px solid var(--hair);font-size:14px;color:var(--ink);font-weight:550}
+.gr{margin-left:auto;display:flex;align-items:center;min-width:44px;justify-content:flex-end}
+.tog{width:42px;height:25px;border-radius:13px;background:var(--coral);position:relative}
+.tog::after{content:'';position:absolute;width:21px;height:21px;border-radius:50%;background:#fff;top:2px;right:2px}
+.tog.off{background:var(--hair2)}
+.tog.off::after{left:2px;right:auto}
+.capt{font-size:10.5px;color:var(--faint);padding:8px 4px 0}
+
+/* ---- sidebar (v3) ---- */
+.ghost{position:absolute;right:0;top:0;bottom:0;width:14%;background:var(--bg);filter:blur(.2px)}
+.sb{position:absolute;left:0;top:0;bottom:0;width:86%;background:var(--drawer);border-right:1px solid var(--hair);display:flex;flex-direction:column;padding:14px 16px 16px}
+.wordmark{display:flex;align-items:baseline;gap:8px}
+.wordmark b{font-family:var(--serif);font-size:22px;color:var(--ink);font-weight:600;letter-spacing:.2px}
+.wordmark span{font-size:10.5px;color:var(--faint)}
+.dsearch{margin:12px 0 4px;background:var(--surface);border:1px solid var(--hair);border-radius:12px;padding:9px 12px;font-size:13px;color:var(--faint);display:flex;gap:8px;align-items:center}
+.dh{font-size:10.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--muted);font-weight:700;margin:13px 0 3px;display:flex;align-items:center}
+.dh .a{margin-left:auto;color:var(--coral);font-size:13px;font-weight:700}
+.drow{display:flex;align-items:center;gap:12px;padding:9px 2px;font-size:14.5px;color:var(--ink2);font-weight:550}
+.drow .q{color:var(--muted);width:18px;text-align:center}
+.drow.on{color:var(--ink);font-weight:650}
+.drow .k{margin-left:auto;font-size:9px;letter-spacing:.6px;text-transform:uppercase;font-weight:800;color:var(--coral);background:var(--coral-tint);border-radius:6px;padding:2px 7px}
+.drow .km{margin-left:auto;color:var(--muted);letter-spacing:2px;font-size:12px}
+.sbbot{margin-top:auto;display:flex;align-items:center;gap:10px;border-top:1px solid var(--hair);padding-top:10px}
+.sbbot .ab{width:34px;height:34px;border-radius:50%;background:var(--coral);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;position:relative}
+.sbbot .ab i{position:absolute;right:-1px;bottom:-1px;width:10px;height:10px;border-radius:50%;background:var(--live);border:2px solid var(--drawer)}
+.sbbot b{font-size:13.5px;color:var(--ink)}
+.role{font-size:9px;letter-spacing:.5px;text-transform:uppercase;font-weight:800;color:var(--muted);border:1px solid var(--hair2);border-radius:6px;padding:2px 6px}
+.newchatr{margin-left:auto;background:var(--ink);color:#FFF9F5;border-radius:999px;padding:10px 14px;font-size:13px;font-weight:650;display:flex;gap:7px;align-items:center;box-shadow:0 5px 14px rgba(20,19,18,.3)}
+
+.pagehead2{display:flex;align-items:center;padding:6px 12px 2px}
+.ptitle{font-family:var(--serif);font-size:19px;color:var(--ink);flex:1;text-align:center;font-weight:600}
+.icolink{color:var(--muted);font-size:15px}
+.search{margin:10px 14px;background:var(--surface);border:1px solid var(--hair);border-radius:999px;padding:10px 14px;font-size:13px;color:var(--faint);display:flex;gap:9px}
+.sect{font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--muted);font-weight:700;margin:12px 16px 4px}
+.lrow{display:flex;align-items:center;gap:12px;padding:11px 16px;font-size:14px}
+.lrow .li{color:var(--muted);width:20px;text-align:center;flex:0 0 20px}
+.linfo{flex:1}
+.linfo b{display:block;font-weight:600;color:var(--ink);font-size:13.8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.linfo span{font-size:11px;color:var(--muted)}
+.linfo small{display:block;font-weight:500;color:var(--muted);font-size:11.5px;margin-top:1px}
+.kebab{color:var(--muted);letter-spacing:2px;font-size:13px}
+.pin{color:var(--coral)}
+.fab{position:absolute;right:16px;bottom:26px;background:var(--ink);color:#FFF9F5;border-radius:999px;padding:12px 18px;font-size:14px;font-weight:600;display:flex;gap:8px;align-items:center;box-shadow:0 6px 18px rgba(20,19,18,.3)}
+.chipsrow{display:flex;gap:8px;margin:4px 14px 8px;flex-wrap:wrap}
+.scardgrp{margin:10px 14px;background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:2px 14px}
+.srow{display:flex;align-items:center;gap:12px;padding:12px 2px;border-bottom:1px solid var(--hair);font-size:14px;color:var(--ink)}
+.srow:last-child{border-bottom:0}
+.srow .ic{color:var(--ink2);width:20px}
+.srow.val{margin-left:auto;color:var(--muted);font-size:13px;flex:0 1 auto;text-align:right}
+.chev{color:var(--faint)}
+.modecards{display:flex;gap:10px;margin:12px 14px}
+.modecard{flex:1;display:flex;flex-direction:column;gap:7px;align-items:center}
+.modecard .prev{width:100%;height:60px;border-radius:12px;border:1px solid var(--hair);background:var(--surface);position:relative;padding:10px}
+.modecard.darkp .prev{background:#232220}
+.modecard.sysp .prev{background:linear-gradient(135deg,var(--surface) 50%,#232220 50%)}
+.prev .line{height:4px;width:60%;background:var(--hair);border-radius:2px;margin-bottom:5px}
+.prev .orb{position:absolute;bottom:8px;right:8px;width:9px;height:9px;border-radius:50%;background:var(--coral)}
+.modecard label{font-size:12px;color:var(--muted);font-weight:600}
+.modecard.on label{color:var(--coral-press)}
+.modecard.on .prev{outline:2px solid var(--coral);outline-offset:2px}
+.field{margin:0 14px 10px;background:var(--surface);border:1px solid var(--hair);border-radius:12px;padding:11px 13px;font-size:13.5px;color:var(--ink)}
+.field .lb{font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;font-weight:700;color:var(--muted);margin-bottom:4px}
+.btnfull{margin:6px 14px;background:var(--ink);color:#FFF9F5;border-radius:999px;padding:13px;text-align:center;font-size:14.5px;font-weight:650;box-shadow:0 4px 14px rgba(20,19,18,.25)}
+.otp{display:flex;gap:8px;margin:4px 14px 10px}
+.otp span{flex:1;height:44px;border:1px solid var(--hair);border-radius:10px;background:var(--surface);display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:18px;color:var(--ink)}
+.otp span.cur{border-color:var(--coral);box-shadow:0 0 0 2px var(--coral-tint)}
+.ghostlink{text-align:center;font-size:12.5px;color:var(--ink2);text-decoration:underline;text-decoration-color:var(--hair2);text-underline-offset:3px;margin:2px 0 10px}
+.probe{margin:6px 16px 0;font-size:11.5px;color:var(--live);text-align:center}
+.nudge{margin:12px 16px 0;background:var(--coral-tint);border:1px solid #EBC9B9;border-radius:14px;padding:12px 14px;font-size:12.5px;color:var(--ink);display:flex;align-items:center;gap:10px}
+.nudge b{display:block;font-size:13px;margin-bottom:2px}
+.nudge span{flex:1}
+@media (max-width:720px){.strip{flex-direction:column;align-items:center;gap:36px;overflow:visible}.phone{max-width:100%}}
+</style>
+</head>
+<body>
+
+<div class="pagehead">
+  <h1>Beacon — UI mockup v3 · slide-in sidebar</h1>
+  <div class="sub">Tab bar removed — navigation is the left slide-in sidebar, mimicking Claude's drawer × the Open WebUI web sidebar (wordmark · nav rows · gated rows · pinned/folders/recents · avatar + ＋ New chat). Spec: beacon-ui-design.md v3 · wires: feature-map.md §10.0b + §10.14 + §11.</div>
+  <div class="tokens">
+    <span class="tok"><span class="sw" style="background:#F9F9F7"></span>bg #F9F9F7</span>
+    <span class="tok"><span class="sw" style="background:#F3F3F0"></span>sidebar #F3F3F0</span>
+    <span class="tok"><span class="sw" style="background:#131313"></span>ink #131313</span>
+    <span class="tok"><span class="sw" style="background:#D97757"></span>coral = interactive only</span>
+    <span class="tok"><span class="sw" style="background:#3565F2"></span>blue = critter only</span>
+  </div>
+</div>
+
+<div class="strip">
+
+<!-- ============ 01 CHAT NEW ============ -->
+<div class="frame">
+  <div class="phone">
+    <div class="sbar"><span>1:07</span><span class="dots">▮▮ ⌁ ▐▊</span></div>
+    <div class="topbar">
+      <div class="ib white"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#131313" stroke-width="1.8" stroke-linecap="round"><path d="M3 5h12M3 9h9M3 13h11"/></svg></div>
+      <div class="chipmid"><span class="n">Scarlet</span><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#817F7A" stroke-width="1.8"><path d="M3 4.5l3 3 3-3"/></svg></div>
+      <div class="ib dashb"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke-width="1.6"><circle cx="9" cy="8.4" r="5.6" stroke-dasharray="2.4 2.2"/><path d="M4.6 12.4l-1.4 2.4"/></svg></div>
+    </div>
+    <div class="hero">
+      <svg width="92" height="80" viewBox="0 0 14 12">
+        <g fill="#3565F2">
+          <rect x="4" y="0" width="6" height="1" rx=".2"/><rect x="3" y="1" width="8" height="1" rx=".2"/>
+          <rect x="2" y="2" width="10" height="1" rx=".2"/><rect x="1" y="3" width="12" height="1" rx=".2"/>
+          <rect x="1" y="4" width="12" height="1" rx=".2"/><rect x="1" y="5" width="12" height="1" rx=".2"/>
+          <rect x="1" y="6" width="12" height="1" rx=".2"/><rect x="2" y="7" width="10" height="1" rx=".2"/>
+          <rect x="3" y="8" width="2.5" height="1" rx=".2"/><rect x="5.75" y="8" width="2.5" height="1" rx=".2"/><rect x="8.5" y="8" width="2.5" height="1" rx=".2"/>
+          <rect x="3" y="9" width="2" height="1" rx=".2"/><rect x="9" y="9" width="2" height="1" rx=".2"/>
+        </g>
+        <rect x="4" y="4" width="1" height="1" fill="#F9F9F7"/><rect x="9" y="4" width="1" height="1" fill="#F9F9F7"/>
+        <rect x="6" y="5" width="2" height="1" fill="#E0473F"/><rect x="6.4" y="6" width="1.2" height=".9" fill="#E0473F"/>
+      </svg>
+      <div class="greet">Late night, Anthony?<br>Ready when you are</div>
+    </div>
+    <div class="pchips">
+      <span class="pchip"><i>✦</i>Stock report &amp; news</span>
+      <span class="pchip"><i>✦</i>Translate to Chinese</span>
+      <span class="pchip"><i>✦</i>Sentiment analysis</span>
+    </div>
+    <div class="composer">
+      <div class="plus"><svg width="15" height="15" viewBox="0 0 15 15" stroke="#56544E" stroke-width="1.7" fill="none" stroke-linecap="round"><path d="M7.5 2.5v10M2.5 7.5h10"/></svg></div>
+      <input class="hint" placeholder="Message Scarlet…">
+      <span class="send"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="#FFF9F5" stroke-width="1.8" stroke-linecap="round"><path d="M7.5 12V3.4M3.8 6.6L7.5 3l3.7 3.6"/></svg></span>
+    </div>
+    <div class="pill"></div>
+  </div>
+  <div class="flabel">01 · Chat — new (start)</div>
+  <div class="fnote">Hamburger bubble is back (Claude-style) — opens the sidebar. No tab bar anywhere; single-row composer, ⊕ sheet holds the toggles.</div>
+</div>
+
+<!-- ============ 02 CONVERSATION ============ -->
+<div class="frame">
+  <div class="phone">
+    <div class="sbar"><span>1:07</span><span class="dots">▮▮ ⌁ ▐▊</span></div>
+    <div class="topbar">
+      <div class="ib white"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#131313" stroke-width="1.8" stroke-linecap="round"><path d="M3 5h12M3 9h9M3 13h11"/></svg></div>
+      <div class="chipmid"><span class="n">Beacon UI audit</span><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#817F7A" stroke-width="1.8"><path d="M3 4.5l3 3 3-3"/></svg></div>
+      <div class="ib"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="#817F7A" stroke-width="1.6"><circle cx="9" cy="8.4" r="5.6" stroke-dasharray="2.4 2.2"/><path d="M4.6 12.4l-2.6 2.6" stroke-dasharray="2.4 2.2" stroke-linecap="round"/></svg></div>
+    </div>
+    <div class="conv">
+      <div class="msg user">map every visible control in the mock to a wire call, add it to the doc</div>
+      <div class="drun"><span class="ok">✓</span> Explored 6 sources <span style="color:var(--faint)">⌄</span></div>
+      <div class="think">Thought for 4s ⌄</div>
+      <div class="toolrow"><span class="st">⌄</span><code>files.list</code><code>feature-map.md</code><span style="margin-left:auto;color:var(--coral)">✓</span></div>
+      <div class="acolor">Done — every control resolves to a route + endpoint<span class="cit">1</span><span class="cit">2</span>. Sidebar rows are mapped in §10.14.</div>
+      <div class="inlinechart hscroll">
+        <div class="cb">
+          <div class="barw on" style="height:60%"></div><div class="barw on" style="height:82%"></div><div class="barw" style="height:44%"></div><div class="barw on" style="height:96%"></div><div class="barw" style="height:30%"></div><div class="barw on" style="height:74%"></div><div class="barw" style="height:52%"></div><div class="barw on" style="height:88%"></div><div class="barw" style="height:38%"></div><div class="barw on" style="height:66%"></div><div class="barw on" style="height:72%"></div><div class="barw" style="height:55%"></div>
+        </div>
+      </div>
+      <div class="hintrow"><span>↔ oversize: scrolls, never shrinks</span><span style="border:1px solid var(--hair);border-radius:6px;padding:1px 6px;color:var(--ink2)">⤢</span></div>
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <div class="tfoot"><span class="pg">‹ 2/4 ›</span><span>↻</span><span>⋯</span></div>
+        <div class="fu"><span class="fuchip">→ wire the hamburger?</span><span class="fuchip">keep the FAB too?</span></div>
+      </div>
+    </div>
+    <div class="meter">
+      <div class="rail"><div class="fill"></div></div>
+      <div class="cap">18.2k / 200k context</div>
+    </div>
+    <div class="composer">
+      <div class="plus"><svg width="15" height="15" viewBox="0 0 15 15" stroke="#56544E" stroke-width="1.7" fill="none" stroke-linecap="round"><path d="M7.5 2.5v10M2.5 7.5h10"/></svg></div>
+      <input class="hint" value="now simplify the layout" readonly>
+      <span class="send"><svg width="15" height="15" viewBox="0 0 18 18" fill="#FFF9F5"><rect x="4.5" y="4.5" width="9" height="9" rx="1.5"/></svg></span>
+    </div>
+    <div class="pill"></div>
+  </div>
+  <div class="flabel">02 · Chat — streaming + parts</div>
+  <div class="fnote">⋮ hamburger opens the sidebar over the chat. Footer ‹2/4› ↻ ⋯; chart borderless + ↔ oversize scroll; stop square, context rail.</div>
+</div>
+
+<!-- ============ 03 SIDEBAR =========== -->
+<div class="frame"><div class="phone" style="position:relative">
+  <div class="ghost"></div>
+  <div class="sbar"><span>1:07</span><span class="dots" style="visibility:hidden">·</span></div>
+  <div class="sb">
+    <div class="wordmark"><b>Beacon</b><span>v1.0 · v0.6.34</span></div>
+    <div class="dsearch"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#817F7A" stroke-width="1.6"><circle cx="6.2" cy="6.2" r="4.2"/><path d="M9.5 9.5l2.4 2.4"/></svg>Search chats</div>
+    <div class="dh">Navigate</div>
+    <div class="drow on"><span class="q">◌</span>Chats</div>
+    <div class="drow"><span class="q">▤</span>Notes</div>
+    <div class="drow"><span class="q">▥</span>Files</div>
+    <div class="drow"><span class="q">▦</span>Workspace</div>
+    <div class="drow"><span class="q">◍</span>Memories<span class="k">gated</span></div>
+    <div class="drow"><span class="q">◈</span>Channels<span class="k">gated</span></div>
+    <div class="drow"><span class="q">⚙</span>Settings</div>
+    <div class="dh">Chats <span class="a">＋</span></div>
+    <div class="drow" style="font-size:13.5px"><span class="q pin">✦</span>Beacon UI audit<span class="km">⋯</span></div>
+    <div class="drow" style="font-size:13.5px"><span class="q">▸</span>owui-android<span class="km" style="font-size:10px;letter-spacing:0">12</span></div>
+    <div class="drow" style="font-size:13.5px"><span class="q">▸</span>FRIO lore<span class="km" style="font-size:10px;letter-spacing:0">31</span></div>
+    <div class="drow" style="color:var(--faint);font-size:13.5px"><span class="q">◷</span>Today ›<span class="km">⋯</span></div>
+    <div class="sbbot">
+      <div class="ab">AC<i></i></div>
+      <b>Anthony Chen</b><span class="role">admin</span>
+      <div class="newchatr"><svg width="13" height="13" viewBox="0 0 15 15" stroke="#FFF9F5" stroke-width="1.8" fill="none" stroke-linecap="round"><path d="M7.5 2.5v10M2.5 7.5h10"/></svg>New chat</div>
+    </div>
+  </div>
+</div><div class="flabel">03 · Sidebar — slide-in, primary nav</div>
+<div class="fnote">Claude drawer anatomy (wordmark · rows · recents · avatar + ＋ New chat bottom) × the OWUI web sidebar (Search · Notes · Workspace · gated rows · date groups). Gate rows vanish; models stay on the top chip.</div></div>
+
+<!-- ============ 04 MODEL PICKER ============ -->
+<div class="frame"><div class="phone" style="position:relative">
+  <div class="sbar"><span>1:07</span><span class="dots">▮▮ ⌁ ▐▊</span></div>
+  <div class="topbar">
+    <div class="ib white"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#131313" stroke-width="1.8" stroke-linecap="round"><path d="M3 5h12M3 9h9M3 13h11"/></svg></div>
+    <div class="chipmid"><span class="n">Scarlet</span><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#817F7A" stroke-width="1.8"><path d="M3 4.5l3 3 3-3"/></svg></div>
+    <div class="ib"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="#817F7A" stroke-width="1.6"><circle cx="9" cy="8.4" r="5.6" stroke-dasharray="2.4 2.2"/><path d="M4.6 12.4l-1.4 2.4"/></svg></div>
+  </div>
+  <div style="flex:1"></div>
+  <div class="sheet">
+    <div class="handle"></div>
+    <div class="shead"><b>Model</b><span class="x">✕</span></div>
+    <div class="search" style="margin:0 0 6px;padding:8px 12px"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#817F7A" stroke-width="1.6"><circle cx="6.2" cy="6.2" r="4.2"/><path d="M9.5 9.5l2.4 2.4"/></svg>Search models</div>
+    <div class="mrow"><div class="av">OI</div><div class="minfo"><b>Scarlet</b><span>daily driver · 🌐 web · 🖼 images</span></div><span class="mk">✓</span></div>
+    <div class="mrow"><div class="av">OI</div><div class="minfo"><b>Iris</b><span>fast</span></div></div>
+    <div class="mrow"><div class="av">OI</div><div class="minfo"><b>Search Assist</b><span>task · 🌐</span></div></div>
+    <div class="mrow"><div class="av">OI</div><div class="minfo"><b>Deep Search</b><span>task · 🌐</span></div></div>
+    <div class="mrow"><div class="av">OI</div><div class="minfo"><b>Scarlet Experimental</b><span>task</span></div></div>
+    <div class="capt">Per-chat default · GET /api/v1/models/list?page=1 · opened via the top chip</div>
+  </div>
+  <div class="pill" style="background:var(--hair2)"></div>
+</div><div class="flabel">04 · Model sheet</div>
+<div class="fnote">The single source of truth for switching — deliberately not a sidebar section. Caps badges from the defaults chain.</div></div>
+
+<!-- ============ 05 ADD TO CHAT ============ -->
+<div class="frame"><div class="phone" style="position:relative">
+  <div style="flex:1"></div>
+  <div class="sheet">
+    <div class="handle"></div>
+    <div class="shead"><b>Add to chat</b><span class="x">✕</span></div>
+    <div class="tiles">
+      <div class="tile"><div class="tic"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="#131313" stroke-width="1.6"><rect x="2.5" y="5" width="13" height="9.5" rx="2"/><circle cx="9" cy="9.7" r="2.6"/><path d="M6 5l1.2-1.8h3.6L12 5"/></svg></div>Camera</div>
+      <div class="tile"><div class="tic"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="#131313" stroke-width="1.6"><rect x="2.5" y="4" width="13" height="10.5" rx="2"/><circle cx="7" cy="8.5" r="1.4"/><path d="M4 14.5l4.4-4.2 2.4 2 2-1.6 2.2 3.8"/></svg></div>Photos</div>
+      <div class="tile"><div class="tic"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="#131313" stroke-width="1.6"><path d="M10 2.5H5.5A1.5 1.5 0 0 0 4 4v10a1.5 1.5 0 0 0 1.5 1.5h7A1.5 1.5 0 0 0 14 14v-7z"/></svg></div>Files</div>
+    </div>
+    <div style="height:8px"></div>
+    <div class="shrow"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="#131313" stroke-width="1.6"><rect x="3" y="2.5" width="12" height="13" rx="2"/><path d="M6 6h6M6 9h6M6 12h3.5"/></svg>Attach Knowledge<span class="gr"><span class="chev">›</span></span></div>
+    <div class="shrow"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="#131313" stroke-width="1.6"><rect x="3.2" y="2.5" width="11.6" height="13" rx="2"/><path d="M6 6.5h6M6 9.5h6M6 12.5h3.5"/></svg>Attach Notes<span class="gr"><span class="chev">›</span></span></div>
+    <div style="height:9px"></div>
+    <div class="shrow"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="#131313" stroke-width="1.6"><circle cx="9" cy="9" r="6"/><path d="M9 4.4v9.2M5.9 6.3h4.4a1.7 1.7 0 1 1 0 3.4H8"/></svg>Web search<span class="gr"><span class="tog"></span></span></div>
+    <div class="shrow"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="#131313" stroke-width="1.6"><rect x="2.5" y="4" width="13" height="10.5" rx="2"/><circle cx="7" cy="8.5" r="1.4"/><path d="M4 14.5l4.4-4.2 2.4 2 2-1.6 2.2 3.8"/></svg>Image gen<span class="gr"><span class="tog off"></span></span></div>
+    <div class="shrow"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="#131313" stroke-width="1.6"><path d="M6.2 2L4 8.5 6.2 16M11.8 2L14 8.5 11.8 16M2 8.5h14"/></svg>Code interpreter<span class="gr"><span class="tog"></span></span></div>
+    <div class="capt">Defaults pre-seeded from server: user settings → model defaults → caps.</div>
+  </div>
+  <div class="pill" style="background:var(--hair2)"></div>
+</div><div class="flabel">05 · ⊕ Add-to-chat</div>
+<div class="fnote">The chips' only home. Camera/Photos/Files → POST /files; Knowledge/Notes pickers. Folder moves live in chat options + row actions.</div></div>
+
+<!-- ============ 06 CHATS HOME ============ -->
+<div class="frame"><div class="phone">
+  <div class="sbar"><span>1:07</span><span class="dots">▮▮ ⌁ ▐▊</span></div>
+  <div class="pagehead2">
+    <div class="ib" style="margin-left:-8px"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#131313" stroke-width="1.8" stroke-linecap="round"><path d="M3 5h12M3 9h9M3 13h11"/></svg></div>
+    <div class="ptitle">Chats</div>
+    <span class="icolink">＋</span>
+  </div>
+  <div class="search"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#817F7A" stroke-width="1.6"><circle cx="6.2" cy="6.2" r="4.2"/><path d="M9.5 9.5l2.4 2.4"/></svg>Search chats</div>
+  <div class="nudge"><span><b>Secure your account</b>Enroll 2FA now — takes a minute.</span><b style="color:var(--coral-press);font-weight:700">Set up</b></div>
+  <div class="sect">Pinned</div>
+  <div class="lrow"><span class="li pin">✦</span><div class="linfo"><b>Beacon UI audit</b><span>edited 1:07</span></div><span class="kebab">⋯</span></div>
+  <div class="sect">Folders</div>
+  <div class="lrow"><span class="li">▸</span><div class="linfo"><b>owui-android</b><span>12 chats · updated Tue</span></div><span class="kebab">⋯</span></div>
+  <div class="lrow"><span class="li">▸</span><div class="linfo"><b>FRIO lore</b><span>31 chats · updated Oct 31</span></div><span class="kebab">⋯</span></div>
+  <div class="sect">Today</div>
+  <div class="lrow"><span class="li">◌</span><div class="linfo"><b>UI design</b><span>1:15</span></div><span class="kebab">⋯</span></div>
+  <div class="fab"><svg width="14" height="14" viewBox="0 0 15 15" stroke="#FFF9F5" stroke-width="1.8" fill="none" stroke-linecap="round"><path d="M7.5 2.5v10M2.5 7.5h10"/></svg>New chat</div>
+  <div class="pill"></div>
+</div><div class="flabel">06 · Chats home (start destination)</div>
+<div class="fnote">Reached via the sidebar "Chats" row (and app start). Pinned ▸ folders ▸ date groups; ⋯ = the shared action sheet. ＋ header = new folder; FAB = new chat.</div></div>
+
+<!-- ============ 07 NOTES ============ -->
+<div class="frame"><div class="phone">
+  <div class="sbar"><span>1:07</span><span class="dots">▮▮ ⌁ ▐▊</span></div>
+  <div class="pagehead2">
+    <div class="ib" style="margin-left:-8px"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#131313" stroke-width="1.8" stroke-linecap="round"><path d="M3 5h12M3 9h9M3 13h11"/></svg></div>
+    <div class="ptitle">Notes</div>
+    <span class="icolink"><b style="font-size:19px;color:var(--ink)">+</b></span>
+  </div>
+  <div class="search"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#817F7A" stroke-width="1.6"><circle cx="6.2" cy="6.2" r="4.2"/><path d="M9.5 9.5l2.4 2.4"/></svg>Search notes</div>
+  <div class="lrow"><span class="li">◌</span><div class="linfo"><b>Beacon feature map refresh</b><span>§10.14 + §11 — just landed · 1:05</span></div><span class="kebab">⋯</span></div>
+  <div class="lrow"><span class="li pin">✦</span><div class="linfo"><b>FRIO lore bible</b><span>org chart, ship prefixes · pinned</span></div><span class="kebab">⋯</span></div>
+  <div class="lrow"><span class="li">◌</span><div class="linfo"><b>AMZN Q3 2026 notes</b><span>AWIS margin math · Nov 3</span></div><span class="kebab">⋯</span></div>
+  <div style="flex:1"></div>
+  <div class="pill"></div>
+</div><div class="flabel">07 · Notes</div>
+<div class="fnote">Editor = title + markdown body, debounced merge-update. Swipe = delete confirm. Reached from the sidebar Notes row.</div></div>
+
+<!-- ============ 08 FILES ============ -->
+<div class="frame"><div class="phone">
+  <div class="sbar"><span>1:07</span><span class="dots">▮▮ ⌁ ▐▊</span></div>
+  <div class="pagehead2">
+    <div class="ib" style="margin-left:-8px"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#131313" stroke-width="1.8" stroke-linecap="round"><path d="M3 5h12M3 9h9M3 13h11"/></svg></div>
+    <div class="ptitle">Files</div>
+    <span class="icolink" style="visibility:hidden">·</span>
+  </div>
+  <div class="chipsrow">
+    <span class="pchip" style="background:var(--surface)"><i style="color:var(--faint)">◍</i>Uploads</span>
+    <span class="pchip"><i>●</i>pi-5</span>
+    <span class="pchip" style="background:var(--surface)"><i style="color:var(--faint)">●</i>relay-2</span>
+  </div>
+  <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink2);padding:2px 16px 4px"><i style="color:var(--faint)">openwebui@pi-5</i> <i style="color:var(--faint)">/home/anthony/</i><span style="color:var(--coral-press)">beacon</span> › &nbsp;⌃ ↻</div>
+  <div class="lrow"><span class="li" style="color:var(--coral)">▸</span><div class="linfo"><b>artifacts</b><span>folder · Nov 5</span></div><span class="kebab">⋯</span></div>
+  <div class="lrow"><span class="li" style="color:var(--coral)">▸</span><div class="linfo"><b>docs</b><span>folder · Nov 4</span></div><span class="kebab">⋯</span></div>
+  <div class="lrow"><span class="li">▤</span><div class="linfo"><b>CLAUDE.md</b><span>22.1 KB</span></div><span class="kebab">⋯</span></div>
+  <div class="lrow"><span class="li">▤</span><div class="linfo"><b>feature-map.md</b><span>26.4 KB · +§10.14</span></div><span class="kebab">⋯</span></div>
+  <div class="fab"><svg width="14" height="14" viewBox="0 0 15 15" stroke="#FFF9F5" stroke-width="1.8" fill="none" stroke-linecap="round"><path d="M7.5 2.5v10M2.5 7.5h10"/></svg>Upload</div>
+  <div class="pill"></div>
+</div><div class="flabel">08 · Files — sources as chips</div>
+<div class="fnote">Uploads = /api/v1/files; each terminal = its cwd tree (single-slash). Upload FAB follows the active source.</div></div>
+
+<!-- ============ 09 SETTINGS ============ -->
+<div class="frame"><div class="phone">
+  <div class="sbar"><span>1:07</span><span class="dots">▮▮ ⌁ ▐▊</span></div>
+  <div class="pagehead2">
+    <div class="ib" style="margin-left:-8px"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#131313" stroke-width="1.8" stroke-linecap="round"><path d="M3 5h12M3 9h9M3 13h11"/></svg></div>
+    <div class="ptitle">Settings</div>
+    <span class="icolink" style="visibility:hidden">·</span>
+  </div>
+  <div class="scardgrp" style="margin-top:8px">
+    <div class="srow"><span class="ic">◈</span>ai.anthonymiles.xyz<span class="val">v0.6.34</span><span class="chev">›</span></div>
+    <div class="srow"><span class="ic">◉</span><span style="flex:1">Anthony Chen<span style="font-size:9.5px;letter-spacing:.5px;text-transform:uppercase;font-weight:800;color:var(--muted);border:1px solid var(--hair2);border-radius:6px;padding:2px 6px;margin-left:8px">admin</span><small>gamertonystuck@gmail.com</small></span></div>
+    <div class="srow" style="color:var(--danger)">⇤ Sign out<small style="color:var(--faint);font-weight:500">wipes keys on-device only</small><span class="chev" style="color:var(--hair2)">›</span></div>
+  </div>
+  <div class="scardgrp">
+    <div class="srow" style="padding-bottom:0"><span class="ic">◐</span>Color mode</div>
+  </div>
+  <div class="modecards" style="margin-top:2px">
+    <div class="modecard"><div class="prev"><div class="line"></div><div class="line" style="width:40%"></div><div class="orb"></div></div><label>Light</label></div>
+    <div class="modecard darkp"><div class="prev"><div class="line" style="background:#3A3835"></div><div class="line" style="width:40%;background:#3A3835"></div><div class="orb"></div></div><label>Dark</label></div>
+    <div class="modecard sysp on"><div class="prev"><div class="line"></div><div class="line" style="width:40%"></div><div class="orb"></div></div><label>System</label></div>
+  </div>
+  <div class="scardgrp" style="margin-top:2px">
+    <div class="srow"><span class="ic">♪</span><span style="flex:1">Voice<small>Sky (en_GB) · auto-read off</small></span><span class="chev">›</span></div>
+    <div class="srow"><span class="ic">≈</span>Haptics<span class="gr"><span class="tog" style="margin-left:auto"></span></span></div>
+  </div>
+  <div class="scardgrp">
+    <div class="srow"><span class="ic">⚙</span><span style="flex:1">Custom HTTP headers<small>2 rules · same-origin only</small></span><span class="chev">›</span></div>
+    <div class="srow"><span class="ic">▰</span>Context rail after send<span class="gr"><span class="tog" style="margin-left:auto"></span></span></div>
+  </div>
+  <div class="capt" style="padding:10px 20px">Beacon 1.0 · server v0.6.34 — admin plane lives on web</div>
+  <div style="flex:1"></div>
+  <div class="pill"></div>
+</div><div class="flabel">09 · Settings — 3 groups</div>
+<div class="fnote">Account / Appearance &amp; voice / Advanced. Language + font-size rows cut (follow system). About = footer captions.</div></div>
+
+<!-- ============ 10 HEADERS EDITOR ============ -->
+<div class="frame"><div class="phone">
+  <div class="sbar"><span>1:07</span><span class="dots">▮▮ ⌁ ▐▊</span></div>
+  <div class="pagehead2">
+    <div class="ib" style="margin-left:-8px"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#131313" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4L5 10l6 6M5 10h11"/></svg></div>
+    <div class="ptitle">Custom HTTP headers</div>
+    <span class="icolink" style="visibility:hidden">·</span>
+  </div>
+  <div class="capt" style="padding:12px 20px 2px">Attached to ai.anthonymiles.xyz requests only. RFC-token names enforced; CR/LF/NUL stripped; Authorization reserved.</div>
+  <div class="scardgrp" style="margin-top:12px">
+    <div class="srow"><span style="flex:1;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink)">X-Beacon-Device: <span style="color:var(--ink2)">pixel-fold</span></span><span class="gr"><span class="tog"></span></span></div>
+    <div class="srow"><span style="flex:1;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink)">X-Trace-Build: <span style="color:var(--ink2)">mock-v3</span></span><span class="gr"><span class="tog off"></span></span></div>
+    <div class="srow" style="align-items:flex-start"><span style="flex:1;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--danger)">Authorization: ✕<small style="font-family:var(--sans)">Reserved by Beacon auth — rejected</small></span><span class="kebab" style="align-self:center">⋯</span></div>
+  </div>
+  <div class="btnfull" style="margin-top:14px">+ Add rule</div>
+  <div class="capt" style="text-align:center">Stored encrypted at rest (SecureStore · ADR-0012)</div>
+  <div style="flex:1"></div>
+  <div class="pill"></div>
+</div><div class="flabel">10 · Headers editor</div>
+<div class="fnote">Rejections shown as dead states, never silently swallowed.</div></div>
+
+<!-- ============ 11 ONBOARDING ============ -->
+<div class="frame"><div class="phone">
+  <div class="sbar"><span>1:07</span><span class="dots">▮▮ ⌁ ▐▊</span></div>
+  <div style="display:flex;flex-direction:column;align-items:center;padding:22px 0 6px;gap:9px">
+    <svg width="56" height="49" viewBox="0 0 14 12"><g fill="#3565F2"><rect x="4" y="0" width="6" height="1" rx=".2"/><rect x="3" y="1" width="8" height="1" rx=".2"/><rect x="2" y="2" width="10" height="1" rx=".2"/><rect x="1" y="3" width="12" height="1" rx=".2"/><rect x="1" y="4" width="12" height="1" rx=".2"/><rect x="1" y="5" width="12" height="1" rx=".2"/><rect x="1" y="6" width="12" height="1" rx=".2"/><rect x="2" y="7" width="10" height="1" rx=".2"/><rect x="3" y="8" width="2.5" height="1" rx=".2"/><rect x="5.75" y="8" width="2.5" height="1" rx=".2"/><rect x="8.5" y="8" width="2.5" height="1" rx=".2"/><rect x="3" y="9" width="2" height="1" rx=".2"/><rect x="9" y="9" width="2" height="1" rx=".2"/></g><rect x="4" y="4" width="1" height="1" fill="#F9F9F7"/><rect x="9" y="4" width="1" height="1" fill="#F9F9F7"/><rect x="6" y="5" width="2" height="1" fill="#E0473F"/><rect x="6.4" y="6" width="1.2" height=".9" fill="#E0473F"/></svg>
+    <div style="font-family:var(--serif);font-size:20px;color:var(--ink);font-weight:600">One page. Three fields.</div>
+  </div>
+  <div class="field"><div class="lb">Instance</div>ai.anthonymiles.xyz</div>
+  <div class="field"><div class="lb">Email</div>gamertonystuck@gmail.com</div>
+  <div class="field" style="margin-bottom:6px"><div class="lb">Password</div>••••••••••</div>
+  <div class="field" style="margin-bottom:4px"><div class="lb" style="color:var(--coral-press)">Two-factor — appears only when the challenge lands</div></div>
+  <div class="otp"><span class="cur">4</span><span>2</span><span></span><span></span><span></span><span></span></div>
+  <div class="ghostlink">Use a recovery code instead</div>
+  <div class="btnfull">Sign in</div>
+  <div class="probe">v0.6.34 detected ✓ · MFA available</div>
+  <div style="flex:1"></div>
+  <div class="capt" style="text-align:center;padding-bottom:8px">2FA enroll is deferred — one-time nudge on the home screen.</div>
+  <div class="pill"></div>
+</div><div class="flabel">11 · Onboarding = 1 page</div>
+<div class="fnote">Connect + sign-in + inline MFA on one card. Model-pick step cut; enroll postponed to a home nudge.</div></div>
+
+<!-- ============ 12 TOOL CARD INLINE ============ -->
+<div class="frame"><div class="phone">
+  <div class="sbar"><span>1:07</span><span class="dots">▮▮ ⌁ ▐▊</span></div>
+  <div class="conv">
+    <div class="msg user">map every visible control — make it visual</div>
+    <div class="toolhead">◇ <span class="tn">frontier_ui</span> · rendered inline <span style="margin-left:auto;color:var(--faint)">⤢</span></div>
+    <div class="acolor">Kyoto in one day — <b>6.1 km walked</b><span class="cit">1</span>. Table + stops below, swipe ↔.</div>
+    <div class="hscroll">
+      <div class="wtable">
+        <table>
+          <tr><th>Stop</th><th>Time</th><th>Km leg</th><th>Rain%</th><th>Cover</th><th>Donation ¥</th></tr>
+          <tr><td><b>⛩ Fushimi Inari Taisha</b></td><td>08:00</td><td>—</td><td>10</td><td>open</td><td>free</td></tr>
+          <tr><td><b>Tofuku-ji</b></td><td>10:20</td><td>1.4</td><td>15</td><td>¥600</td><td>400</td></tr>
+          <tr><td><b>Kiyomizu-dera</b></td><td>12:30</td><td>1.8</td><td>20</td><td>¥400</td><td>300</td></tr>
+          <tr><td><b>Gion Shimbashi</b></td><td>15:00</td><td>1.1</td><td>15</td><td>free</td><td>—</td></tr>
+          <tr><td><b>Kamo river walk</b></td><td>17:40</td><td>1.8</td><td>5</td><td>—</td><td>—</td></tr>
+        </table>
+      </div>
+    </div>
+    <div class="hscroll">
+      <div class="galrow">
+        <div class="gph">⛩️</div><div class="gph">🍜</div><div class="gph">🏯</div><div class="gph">🌇</div>
+      </div>
+    </div>
+    <div class="hintrow"><span>height = iframe:height · links → Custom Tabs</span><span>↑↓ hand-off</span></div>
+    <div class="actbar"><span class="act">⧉ Copy</span><span class="act">✉ Email</span><span class="act">⬓ Export ▾</span><span class="act">⚑ Save to Notes</span></div>
+    <div class="fu"><span class="fuchip">→ swap in ramen stop</span><span class="fuchip">gpx for osmand</span></div>
+    <div class="capt">All borderless: the card is message content. Action chips post input:prompt:submit → composer prefill.</div>
+  </div>
+  <div class="composer">
+    <div class="plus"><svg width="15" height="15" viewBox="0 0 15 15" stroke="#56544E" stroke-width="1.7" fill="none" stroke-linecap="round"><path d="M7.5 2.5v10M2.5 7.5h10"/></svg></div>
+    <input class="hint" placeholder="Message Scarlet…">
+    <span class="send"><svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="#FFF9F5" stroke-width="1.7" stroke-linecap="round"><path d="M3.5 10h12M3.5 10l2.4 2.4M3.5 10l2.4-2.4M14.5 4.5v11"/></svg></span>
+  </div>
+  <div class="pill"></div>
+</div><div class="flabel">12 · Tool card inline + ↔ scroll</div>
+<div class="fnote">Frontier-UI contract: tool HTML pane, borderless, height from iframe:height, ↔ oversize scroll (edge-fade mask), links → Custom Tabs, chips → composer prefill.</div></div>
+
+</div>
+
+<div class="pagehead" style="max-width:1100px">
+  <div class="sub">Sidebar control→wire authority: feature-map.md §10.14 · v3 amendments: §10.13b · complete OWUI inventory: §11 · Frontier-UI contract: §11.3b.</div>
+</div>
+
+</body>
+</html>

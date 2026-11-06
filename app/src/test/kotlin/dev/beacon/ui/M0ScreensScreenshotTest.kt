@@ -27,8 +27,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * Baseline captures for the M0 screens in both color schemes (agent.md §16.4:
- * screenshots before any UI commit). Recorded once, then verified on UI changes.
+ * Baseline captures for the M0 screens in both color schemes . Recorded once, then verified on UI changes.
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)

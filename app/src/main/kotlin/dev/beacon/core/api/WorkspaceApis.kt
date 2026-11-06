@@ -19,13 +19,13 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 // ── M4 drawer surfaces — list shapes verified in the clone (docs/protocol-notes.md) ──
-// folders.py:92  FolderNameIdResponse {id, user_id, name, parent_id?, …}
-// notes.py:113   NoteItemResponse {id, title, data?, is_pinned?, updated_at, …}
+// folders.py:92 FolderNameIdResponse {id, user_id, name, parent_id?, …}
+// notes.py:113 NoteItemResponse {id, title, data?, is_pinned?, updated_at, …}
 // channels.py:191 ChannelModel {id, name, description?, is_private?, …}
-// files.py:485   FileListResponse {items: [FileModelResponse{id, filename, …}], total}
-// prompts.py     PromptModel {id?, command, name, content}
-// tools.py       ToolModel {id, name, …}
-// knowledge.py   KnowledgeModel {id, name, …}
+// files.py:485 FileListResponse {items: [FileModelResponse{id, filename, …}], total}
+// prompts.py PromptModel {id?, command, name, content}
+// tools.py ToolModel {id, name, …}
+// knowledge.py KnowledgeModel {id, name, …}
 
 @Serializable
 data class FolderRow(val id: String, val name: String, val parent_id: String? = null, val unread_count: Int = 0)

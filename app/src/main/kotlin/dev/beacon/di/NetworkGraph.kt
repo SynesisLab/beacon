@@ -27,8 +27,8 @@ object NetworkGraph {
     }
 
     /**
-     * One client for REST + SSE (agent.md §3). Same-origin credential attachment
-     * lives in [AuthInterceptor]. trustUserCa (opt-in, agent.md §5.5) re-applies
+     * One client for REST + SSE . Same-origin credential attachment
+     * lives in [AuthInterceptor]. trustUserCa (opt-in,) re-applies
      * on process restart in M0 (flagged in docs/decisions.md ADR-0004).
      */
     @Provides

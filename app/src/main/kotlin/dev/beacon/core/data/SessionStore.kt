@@ -18,7 +18,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * True when both URLs are the same scheme+host+port origin (agent.md §11).
+ * True when both URLs are the same scheme+host+port origin .
  * Pure java.net.URI on purpose — this rule is exercised by plain-JVM tests.
  * Malformed/unresolvable inputs compare as NOT same-origin.
  */

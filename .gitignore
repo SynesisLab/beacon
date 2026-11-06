@@ -26,3 +26,5 @@ Thumbs.db
 *.keystore
 !debug.keystore
 secrets.properties
+# Session scratchpad (device DB pulls, screenshots, scripts) — never upload
+.tmp/

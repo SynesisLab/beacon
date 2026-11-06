@@ -3,13 +3,12 @@ package dev.beacon.core.sse
 import kotlin.math.max
 
 /**
- * Byte-level incremental SSE event scanner (agent.md §3: own implementation,
- * concept-mirrors Conduit's `sse_frame_scanner`). OWUI emits `data: {json}\n\n`
+ * Byte-level incremental SSE event scanner . OWUI emits `data: {json}\n\n`
  * frames (middleware.py `wrap_item`), errors as `data: {"error": …}\n\n` plus the
  * `data: [DONE]` sentinel; proxies may still speak spec SSE (comments, `event:`,
  * lone-CR lines). The scanner is spec-shaped and byte-exact:
  *
- * - byte-level: frames may split mid-CRLF and mid-UTF-8 (agent.md §17) — UTF-8 is
+ * - byte-level: frames may split mid-CRLF and mid-UTF-8  — UTF-8 is
  *   decoded only for *complete* lines, so split sequences are impossible by design;
  * - line terminators: CRLF, lone CR, lone LF (SSE spec); a CR reaching the end of a
  *   chunk holds until the next piece decides CRLF vs CR;
@@ -136,7 +135,7 @@ class SseFrameScanner {
             lines.size == 1 -> lines[0]
             else -> lines.joinToString("\n")
         }
-        // Empty data = heartbeat (agent.md §17): the parser must never decode it.
+        // Empty data = heartbeat : the parser must never decode it.
         return Frame(eventName, payload?.takeIf { it.isNotBlank() })
     }
 

@@ -25,7 +25,7 @@ import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** Typed failure surface for the UI (agent.md: never crash on server variance). */
+/** Typed failure surface for the UI . */
 class OwuiApiException(
     val code: Int,
     val bodyExcerpt: String?,
@@ -38,10 +38,10 @@ fun interface InstanceSource {
 }
 
 /**
- * One HTTP client for REST + SSE (agent.md §3). M0 routes:
+ * One HTTP client for REST + SSE . M0 routes:
  * /api/version, /api/config, /api/v1/auths/signin, /api/v1/models/list.
  * Shapes verified in docs/protocol-notes.md — never add an endpoint or field
- * without the open-webui clone as proof (agent.md §16.2).
+ * without the open-webui clone as proof .
  */
 @Singleton
 class OwuiApi @Inject constructor(

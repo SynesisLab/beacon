@@ -6,9 +6,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Byte-level torture tests (agent.md §13, §16.3): every fixture is replayed
+ * Byte-level torture tests : every fixture is replayed
  * full-chunk AND byte-by-byte AND with adversarial chunk splits — results must be
- * identical. Frames may split mid-CRLF and mid-UTF-8 (agent.md §17).
+ * identical. Frames may split mid-CRLF and mid-UTF-8 .
  */
 class SseFrameScannerTest {
     private fun frames(vararg chunks: ByteArray): List<SseFrameScanner.Frame> {

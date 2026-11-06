@@ -4,7 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Table tests for the M1 segmenter (agent.md §16.3: rules + tests same commit). */
+/** Table tests for the M1 segmenter . */
 class SegmentMarkdownTest {
     @Test
     fun plainParagraphs() {

@@ -1,11 +1,11 @@
 # Beacon protocol notes
 
-Verified request/response shapes for every endpoint Beacon touches. Rule (agent.md §16.2):
+Verified request/response shapes for every endpoint Beacon touches. Rule:
 **never invent an endpoint or a field** — each row below must cite `file:line` in the
-cloned reference source (`open-webui` clone is the ground truth; Conduit cites carry the
-concept it verified originally). Update this file in the same PR as the code change.
+`open-webui` server source (the protocol ground truth). Update this file in the same
+PR as the code change.
 
-Reference clones verified against: `open-webui` (BSD-3-style) + `conduit` (GPL, spec-only).
+Verified against the `open-webui` server clone.
 
 ## Verification table (M0)
 
@@ -19,13 +19,12 @@ Reference clones verified against: `open-webui` (BSD-3-style) + `conduit` (GPL, 
 | `GET /api/v1/models/list` | `query/view_option/tag/order_by/direction/page` | `{items: [{id, name, …}], total}` (`ModelAccessListResponse`; per-item `profile_image_url` in meta is excluded server-side) | `backend/open_webui/routers/models.py:227-239`; `backend/open_webui/models/models.py:237-240` |
 | `GET /api/v1/models` (bare) | — | OpenAI-compat `{data: [...]}` — *compat surface only; Beacon uses `/list`* | `main.py:934-935` |
 
-## Corrections against agent.md (§16.7 log)
+## Corrections log
 
-- **agent.md §5.3 claimed behavior flags come from `GET /api/v1/configs/`.** Wrong for the
+- **The original blueprint claimed behavior flags come from `GET /api/v1/configs/`.** Wrong for the
   client: in current open-webui, `/api/v1/configs/` is the *admin* import/export surface
   (`routers/configs.py:100-134`); the surface the web UI (and Beacon) gates screens on is
-  the public **`GET /api/config`** (`main.py:2289`). agent.md §5.3 updated in the same commit
-  as this note.
+  the public **`GET /api/config`** (`main.py:2289`). Corrected in the same commit as this note.
 
 ## Deviations / open questions
 
@@ -140,16 +139,16 @@ The M4 "memories" item lands gated by `enable_memories`
 | USER read route | `GET /api/v1/configs/models/defaults` → `{DEFAULT_MODEL_METADATA}` — `get_verified_user`, NOT admin-gated | routers/configs.py:780-784 |
 | Server-side merge | the global defaults merge into EVERY listed model's `info.meta` where the key is absent (per-model wins); capabilities merge is dict-union with per-model precedence | utils/models.py:369-388 |
 | Chip semantics (web) | the composer chips start ON when the selected models' merged meta lists the feature id | Chat.svelte:1118 |
-| Feature defaults (2026-11-03, models-defaults chain) | per the composer's truth chain — the caller's `ui.webSearch`/`ui.imageGeneration` tool-modes (`GET /api/v1/users/user/settings`, users.py:466-483; values that read as always-on: `always/enabled/on/true/1`/true/1 — Conduit chat_feature_defaults.dart:25-52 semantics, original code), the model's merged `defaultFeatureIds` (own meta → the USER-readable global `GET /api/v1/configs/models/defaults` when absent, configs.py:780-784), and the model's capabilities (top-level `meta` on /list items — ModelModel.meta, models/models.py:199-217); all gated by `/api/config` same-flags | users.py:466-483; configs.py:780-784; models.py:199-217,224-229; Chat.svelte:1118 |
+| Feature defaults (2026-11-03, models-defaults chain) | per the composer's truth chain — the caller's `ui.webSearch`/`ui.imageGeneration` tool-modes (`GET /api/v1/users/user/settings`, users.py:466-483; values that read as always-on: `always/enabled/on/true/1`/true/1 — same semantics, original code), the model's merged `defaultFeatureIds` (own meta → the USER-readable global `GET /api/v1/configs/models/defaults` when absent, configs.py:780-784), and the model's capabilities (top-level `meta` on /list items — ModelModel.meta, models/models.py:199-217); all gated by `/api/config` same-flags | users.py:466-483; configs.py:780-784; models.py:199-217,224-229; Chat.svelte:1118 |
 
-## Streaming fold semantics (2026-11-03, device logs + Conduit cross-read)
+## Streaming fold semantics (2026-11-03, device logs)
 
 | Topic | Finding | Evidence |
 | --- | --- | --- |
 | Delta events | task/socket completions deliver `response.output_text.delta` / `response.reasoning_text.delta` / `response.function_call_arguments.delta` under `chat:completion` batches or direct envelopes; payload = `{type, item_id, output_index, content_index, delta}` — item_id/index NOT always present (id-less deltas continue the last matching-family item) | middleware.py:5467-5498; middleware.py:4716-4758 |
-| Fold model | accumulate ONE `output` item list: deltas APPEND into the item's content parts; every mutation = a fresh snapshot (the web's `applyResponseStreamEvent`; Conduit `openwebui_response_stream.dart` mirrors it) | src/lib + Conduit |
-| Snapshot merge | snapshots (terminal `chat:completion` output, `response.completed`, `output_item.added/done`) MERGE by id, or call_id+same-type; unmatched previous items SURVIVE — earlier tool rounds and reasoning must not vanish; a function_call_output shares its call's call_id and must never replace the call | Conduit issue #751 note |
-| Reasoning timing | the server stamps started_at/ended_at only at structural transitions; the client stamps locally so "Thought for N s" reads live | Conduit _stampReasoningTiming |
+| Fold model | accumulate ONE `output` item list: deltas APPEND into the item's content parts; every mutation = a fresh snapshot (the web's `applyResponseStreamEvent`) | src/lib |
+| Snapshot merge | snapshots (terminal `chat:completion` output, `response.completed`, `output_item.added/done`) MERGE by id, or call_id+same-type; unmatched previous items SURVIVE — earlier tool rounds and reasoning must not vanish; a function_call_output shares its call's call_id and must never replace the call | merge-by-id semantics |
+| Reasoning timing | the server stamps started_at/ended_at only at structural transitions; the client stamps locally so "Thought for N s" reads live | client-stamped |
 | Live delivery | the shared throttled `chat:completion {output}` (0.15s cadence) lands in room `chat:{id}` — clients must JOIN via socket `events:chat {chat_id, data:{type:'join'}}`; the user room carries mostly chat:list/chat:active only | socket/main.py:866-925, :1628-1675 |
 
 ## Chat share/export (2026-11-03, chats.py)

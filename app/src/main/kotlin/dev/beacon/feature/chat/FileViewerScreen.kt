@@ -60,7 +60,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * Native file viewers for display_file (agent.md §7.3). Download-once to cache;
+ * Native file viewers for display_file . Download-once to cache;
  * images pinch-zoom; pdf pages render via PdfRenderer; text/code scrolls
  * monospace; everything else falls back to "Open with…" + download intents.
  */

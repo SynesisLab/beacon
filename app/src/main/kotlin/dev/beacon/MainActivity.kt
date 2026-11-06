@@ -800,7 +800,7 @@ private fun BeaconChatSurface(
     }
 
     val surfacesVm: dev.beacon.feature.surfaces.SurfaceViewModel = hiltViewModel()
-    // Fold-aware note (agent.md queue): on expanded widths the chats panel will
+    // Fold-aware note : on expanded widths the chats panel will
     // be a PERMANENT two-pane surface instead of the modal drawer — deferred here
     // pending a careful extraction of the surface body; the window-size class
     // plumbing (permanentSidebar) is ready.

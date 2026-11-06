@@ -3,7 +3,7 @@ package dev.beacon.core.render
 import dev.beacon.core.render.policy.EmbedPolicy
 
 /**
- * Builds the WebView document for a [ChatPart.HtmlCard] (agent.md §7.2) — the
+ * Builds the WebView document for a [ChatPart.HtmlCard]  — the
  * mobile port of the web's two embed surfaces, one code path:
  *
  * - **Foreign documents** ([CardKind.Artifact] fences / raw-blob, [CardKind.Embed]

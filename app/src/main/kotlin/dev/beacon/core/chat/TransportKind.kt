@@ -1,7 +1,7 @@
 package dev.beacon.core.chat
 
 /**
- * Transport classification (agent.md §6.1) — driven by response Content-Type
+ * Transport classification  — driven by response Content-Type
  * (verified: middleware.py:6545-6549 — both text/event-stream AND
  * application/x-ndjson carry the same data:-frame protocol; task_id JSON → taskSocket;
  * plain JSON → jsonCompletion).

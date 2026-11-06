@@ -1,10 +1,9 @@
 package dev.beacon.core.render.policy
 
 /**
- * The embed policy engine (agent.md §7.2) — pure rules verified against the web
+ * The embed policy engine  — pure rules verified against the web
  * client (FullHeightIframe.svelte: URL-vs-HTML auto-detect; scripts on;
- * allow-same-origin FALSE unless trusted; CSP injection) and agent.md's
- * mobile-safe overlay: popups/links never navigate the frame — they go external
+ * allow-same-origin FALSE unless trusted; CSP injection) and * mobile-safe overlay: popups/links never navigate the frame — they go external
  * unless the target is the instance origin (§11: same-origin credentials only).
  */
 /** In-pane navigation verdicts. */
@@ -43,7 +42,7 @@ sealed interface EmbedPolicy {
         fun blocked(url: String): Boolean = BLOCKED_SCHEMES.any { url.lowercase().trim().startsWith(it) }
 
         /**
-         * Navigation decision for the pane (agent.md §7.2): instance-origin
+         * Navigation decision for the pane : instance-origin
          * content stays in-frame; automatic non-user navigations load in-frame;
          * user-activated links/popups to non-instance targets open outside
          * (Custom Tabs); blocked schemes never load.
@@ -74,7 +73,7 @@ sealed interface EmbedPolicy {
         // (moved to top-level NavigationDecision)
 
         /**
-         * agent.md §11: elevation requires server-side provenance. The web's
+         * elevation requires server-side provenance. The web's
          * default is allowSameOrigin=false — Beacon's levels mirror that:
          * UI always; MEDIA/TRUSTED only when the server stamped the embed.
          */

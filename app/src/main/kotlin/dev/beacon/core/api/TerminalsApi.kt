@@ -48,7 +48,7 @@ sealed interface TsRead {
     data class Raw(val bytes: ByteArray, val mime: String) : TsRead
 }
 
-/** Terminal-server FILES surface — Conduit parity, ORIGINAL implementation
+/** Terminal-server FILES surface — server parity, original implementation
  *  (GPL: behavior read as spec, code ours). Calls ride the OWUI proxy
  *  /api/v1/terminals/{server}/… (routers/terminals.py:112+). */
 @Singleton

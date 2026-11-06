@@ -26,7 +26,7 @@ class TaskSocketParserTest {
 
     @Test
     fun textDeltasFold() {
-        // Accumulator semantics (Conduit parity): deltas APPEND into the item
+        // Accumulator semantics (accumulator semantics): deltas APPEND into the item
         // and every mutation emits a Snapshot — one truth list, the live paint.
         val events = fold("""{"type":"response.output_text.delta","delta":"Hel"}""") +
             fold("""{"type":"response.output_text.delta","delta":"lo"}""")
@@ -66,7 +66,7 @@ class TaskSocketParserTest {
         // The device bug (2026-11-03): the thinking block vanished between tool
         // calls and the tool result replaced its call. With the accumulator +
         // merge: round-1 reasoning survives, the function_call survives its
-        // own function_call_output (call_id+type match; Conduit issue #751).
+        // own function_call_output (call_id+type match).
         parser.reset()
         fold("""{"type":"response.output_item.added","output_index":0,
                 "item":{"type":"reasoning","id":"r1","status":"in_progress","content":[]}}""")

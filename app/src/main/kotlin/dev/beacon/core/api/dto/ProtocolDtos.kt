@@ -71,7 +71,7 @@ data class Features(
     val enable_login_form: Boolean? = null,
     val enable_ldap: Boolean? = null,
     val enable_websocket: Boolean? = null,
-    // Post-auth gates (capability flags; hide screens the server doesn't expose — agent.md §16.6)
+    // Post-auth gates (capability flags; hide screens the server doesn't expose —)
     val enable_api_keys: Boolean? = null,
     val enable_folders: Boolean? = null,
     val enable_channels: Boolean? = null,

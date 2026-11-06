@@ -4,7 +4,7 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
-/** Room projection of a server chat (agent.md §10). Secrets/content live on messages. */
+/** Room projection of a server chat . Secrets/content live on messages. */
 @Entity(tableName = "chats")
 data class ChatEntity(
     @PrimaryKey val chatId: String,
@@ -21,8 +21,7 @@ data class ChatEntity(
 )
 
 /**
- * One node of the OWUI message tree (agent.md §6.4: history is a tree — chat
- * history correctness is a non-negotiable). [partsJson] holds the normalized
+ * One node of the OWUI message tree . [partsJson] holds the normalized
  * render parts; [content] keeps the raw server content string for reconciliation
  * + M2's segmenter. [outputJson] keeps the structured output list as delivered.
  */

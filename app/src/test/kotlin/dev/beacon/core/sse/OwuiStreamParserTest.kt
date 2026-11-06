@@ -7,7 +7,7 @@ import org.junit.Test
 import java.io.File
 
 /**
- * Fixture-driven parser tests (agent.md §13): the .sse fixtures carry shapes
+ * Fixture-driven parser tests : the .sse fixtures carry shapes
  * verified against the open-webui clone (docs/protocol-notes.md, M1 section).
  * Every fixture is driven through the scanner byte-by-byte as well — fold output
  * must be identical either way.
@@ -103,7 +103,7 @@ class OwuiStreamParserTest {
     @Test
     fun responsesApi_fixtureFolds() {
         val list = events("responses_api")
-        // Accumulator semantics (Conduit parity): item.added → S1(1);
+        // Accumulator semantics (accumulator semantics): item.added → S1(1);
         // reasoning delta APPENDS into r1 → S2(1); item.added msg → S3(2);
         // text delta appends → S4(2); completed merges by id → S5(2) + usage.
         val snapshots = list.filterIsInstance<StreamEvent.OutputSnapshot>()

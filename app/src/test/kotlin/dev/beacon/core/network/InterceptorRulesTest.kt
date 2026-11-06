@@ -8,7 +8,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** The agent.md §11 rule exercised edge-on: credentials never leave the instance origin. */
+/** The rule exercised edge-on: credentials never leave the instance origin. */
 class InterceptorRulesTest {
     private val instance = "https://ai.example.com"
 
@@ -45,7 +45,7 @@ class InterceptorRulesTest {
 
     @Test
     fun customHeadersCannotOverrideBearerAuthorization() {
-        // Conduit parity: the credential Beacon manages is never overridable.
+        // the credential Beacon manages is never overridable.
         val result = request("$instance/api/config")
             .attachInstanceAuth(
                 instance,

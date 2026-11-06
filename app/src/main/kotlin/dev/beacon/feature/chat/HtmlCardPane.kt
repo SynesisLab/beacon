@@ -44,7 +44,7 @@ import okhttp3.OkHttpClient
 import timber.log.Timber
 
 /**
- * The sandboxed inline WebView pane for [ChatPart.HtmlCard] (agent.md §7.2) —
+ * The sandboxed inline WebView pane for [ChatPart.HtmlCard]  —
  * the mobile port of the web's Artifacts/FullHeightIframe pair (M2-2):
  *
  * - one WebView per card; the document is built by [CardDocument.build]

@@ -4,7 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Segmenter table tests (agent.md §16.3: every rule with its test, same commit). */
+/** Segmenter table tests . */
 class SegmenterTest {
     @Test
     fun htmlFenceBecomesHtmlCard() {

@@ -12,7 +12,7 @@ import kotlinx.serialization.json.JsonPrimitive
  *
  * Rules (verified, docs/protocol-notes.md M1/M2 tables):
  * - `output[]` is authoritative when present — even [present-and-empty gate][FoldedMessage.outputSeen]
- *   (agent.md §17); text-accumulation parts are used only when outputs never appeared;
+ *   ; text-accumulation parts are used only when outputs never appeared;
  * - message items carry output_text parts; reasoning items carry their own;
  * - function_call + function_call_output pair by call_id into a single ToolCall;
  * - display_file outputs become [ChatPart.File]s — never JSON text (§7.1);
@@ -61,7 +61,7 @@ object PartBuilder {
             val rendered = m.contentMd.trim('\n')
             if (rendered.isNotBlank()) {
                 // The segmenter splits cards/mermaid/chart/tool-details out of the
-                // markdown (agent.md §7.1).
+                // markdown .
                 Segmenter.build(rendered, m.streaming).forEach { add(it) }
             } else if (m.streaming) {
                 add(ChatPart.Markdown("", streaming = true))

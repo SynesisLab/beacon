@@ -1,13 +1,13 @@
-# Beacon decisions (append-only ADR log; agent.md §16.7)
+# Beacon decisions (append-only ADR log)
 
 ## ADR-0001 — Typed settings via kotlinx-serialization DataStore (not Proto)
 
-*Date:* 2026-11-01 · *Milestone:* M0 · *Supersedes:* agent.md §3 persistence row
+*Date:* 2026-11-01 · *Milestone:* M0 · *Supersedes:* the original blueprint's persistence row
 
 **Decision.** `ServerSettings` is persisted through `DataStore<Typed>` with a
 kotlinx-serialization `Serializer` (`core/data/SettingsStore.kt`), not Proto DataStore.
 
-**Why.** agent.md pinned the stack to kotlinx-serialization for the entire protocol layer;
+**Why.** The original blueprint pinned the stack to kotlinx-serialization for the entire protocol layer;
 Proto adds the protobuf gradle plugin + protoc codegen for exactly one settings type. One
 serializer stack, zero native codegen, corruption-tolerant decode (server config is
 server-wins at M1+ anyway). Proto can be reintroduced when Room M1 lands if a schema
@@ -39,9 +39,9 @@ inside `AndroidKeyStore` (AES-256/GCM, randomized EncryptionRequired defaults of
 IV per encryption, ciphertext files under `filesDir/beacon/secrets/`.
 
 **Why.** androidx.security:security-crypto (EncryptedSharedPreferences /
-EncryptedFile) — the library agent.md named first — was deprecated upstream, and hand-
-rolling for exactly two secret types is small, auditable, and matches the GPL-fresh-code
-posture (§16.5). Hardware-backed key per alias; invalidate/reset path handled (read
+EncryptedFile) — the library the blueprint named first — was deprecated upstream, and hand-
+rolling for exactly two secret types is small, auditable, and keeps every line of Beacon
+code original. Hardware-backed key per alias; invalidate/reset path handled (read
 returns null → treated as signed out).
 
 **Consequences.** No Keystore-backed user-auth (biometric unlock) yet — app-lock is §9.3/M3
@@ -64,11 +64,11 @@ honest and simple in M0; M4's multi-server/multi-profile work introduces a clien
 
 ## ADR-0005 — `/api/config`, not `/api/v1/configs/`, gates client features
 
-*Date:* 2026-11-01 · *Milestone:* M0 · *Updates:* agent.md §5.3
+*Date:* 2026-11-01 · *Milestone:* M0 · *Updates:* blueprint §5.3
 
 **Decision.** Feature visibility for the client comes from `GET /api/config` (public,
 optional auth). Proof and the server-side split live in `docs/protocol-notes.md`.
-agent.md §5.3 was corrected in the same commit per §16.7.
+Blueprint §5.3 was corrected in the same commit.
 
 **Why.** Cloned source shows `routers/configs.py` is the admin import/export surface;
 `main.py:2289` is what the Svelte UI consumes pre-auth (login buttons, signup, ldap) and
@@ -76,7 +76,7 @@ post-auth (folders/channels/notes/web-search gates).
 
 ## ADR-0006 — compileSdk 37.0, targetSdk 36 (blueprint's 35/36 superseded)
 
-*Date:* 2026-11-01 · *Milestone:* M0 · *Updates:* agent.md §3 table
+*Date:* 2026-11-01 · *Milestone:* M0 · *Updates:* blueprint §3 table
 
 **Decision.** `compileSdk = 37` + `compileSdkMinor = 0` (targets the installed
 minor-versioned platform `android-37.0`); `targetSdk = 36` (int); `minSdk 29` unchanged.
@@ -86,7 +86,7 @@ okhttp 5.5.1) hard-requires compileSdk ≥37. Android platforms are minor-versio
 `platforms;android-37` does not exist as an installable package; the AGP 9 DSL is
 `compileSdk` (int) + `compileSdkMinor` (int, verified in gradle-api 9.4.1
 `CommonExtension`), not a string form. targetSdk 36 keeps edge-to-edge enforced behavior
-(agent.md's targetSdk 35 would under-specify current runtime semantics).
+(the blueprint's targetSdk 35 would under-specify current runtime semantics).
 
 **Consequences.** Play policy: new releases must target ≥35 (currently satisfied); keep
 targetSdk current at every ship-prep milestone (M5 re-checks).
@@ -146,8 +146,7 @@ credential values — §11 "credentials in Keystore only"). The map is cached ho
 in `SessionStore._customHeaders` (loaded off-main at construction, updated on
 write, wiped on sign-out); `AuthInterceptor` reads the snapshot, never disk.
 
-Rules (editor validate() AND `attachInstanceAuth` belt-and-braces; Conduit
-api_auth_interceptor.dart parity, read-as-spec):
+Rules (editor validate() AND `attachInstanceAuth` belt-and-braces):
 - field names are RFC 9110 tokens (letters/digits/`!#$%&'*+.^_`|~-`);
 - values with CR/LF/NUL are dropped before they reach OkHttp (OkHttp throws —
   a dropped header must never crash a request, §11 origin-first rule);
@@ -155,7 +154,7 @@ api_auth_interceptor.dart parity, read-as-spec):
   credential; a custom header may never override it;
 - `Cookie` is intentionally allowed: a pasted reverse-proxy session cookie is
   the simple form of proxy-cookie auth. The full WebView capture flow
-  (Conduit proxy_auth_page.dart: capture cookies + JWT on the instance origin)
+  (a WebView capture flow grabbing cookies + JWT on the instance origin)
   remains an M4+ follow-up, not done here.
 
 **Why.** The M0 scaffolding pre-placed `customHeaders` on `ServerSettings`, but
@@ -224,7 +223,7 @@ renderer is a separate M5 follow-up). `HtmlCardPane` uses the real density
 for px→dp (the old hardcoded /2.5 was wrong), a reload guard (height events
 must not re-load — infinite loop risk), and the real instance origin for
 navigation policy (the old code passed null — instance-origin links wrongly
-opened external). AC (agent.md §15 M2): frontier card + chart + mermaid
+opened external). AC (M2): frontier card + chart + mermaid
 render inline on the dev instance — pending device verification.
 
 ## ADR-0014 — The app-frame channel: function_call_output.embeds (Frontier UI cards)

@@ -28,7 +28,7 @@ import javax.inject.Inject
 
 /**
  * Per-chat session screen: one [ChatEngine] + the model picker + attachments
- * (M3-d; the upload rides the WorkManager queue with retry/backoff, agent.md §10).
+ * (M3-d; the upload rides the WorkManager queue with retry/backoff,).
  * Model fallback chain (user request): pick → user setting → server's
  * `default_models` (/api/config) → the first model.
  */
@@ -506,7 +506,7 @@ class ChatViewModel @Inject constructor(
         if (modelId == null || defaultsAppliedFor == modelId) return
         val model = modelsState.value.firstOrNull { it.id == modelId } ?: return
         val gate = configFeaturesFlow.value
-        // The feature truth chain (web parity + Conduit's quick-pill semantics):
+        // The feature truth chain (web parity + 's quick-pill semantics):
         // 1) the caller's ui.<feature> 'always'-mode (users/user/settings),
         // 2) the model's merged defaultFeatureIds — own first, then the admin
         //    global (utils/models.py:373-388 merge covers either server),
@@ -576,7 +576,7 @@ class ChatViewModel @Inject constructor(
             ?: serverDefault
             ?: modelsState.value.firstOrNull()?.id
 
-    // ── voice (agent.md §8; both engines) ───────────────────────────────────
+    // ── voice  ───────────────────────────────────
 
     sealed interface MicState {
         data object Idle : MicState

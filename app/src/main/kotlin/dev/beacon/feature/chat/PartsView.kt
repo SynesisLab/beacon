@@ -34,7 +34,7 @@ import androidx.compose.ui.unit.dp
 import okhttp3.OkHttpClient
 
 /**
- * Renders the engine's part list inside a bubble (agent.md §4 contract).
+ * Renders the engine's part list inside a bubble .
  * Reasoning = collapsible card; ToolCall = chip w/ args/result; citations;
  * follow-ups; HtmlCard = the sandboxed WebView pane (M2-2).
  */
@@ -296,7 +296,7 @@ private fun StatusPill(part: dev.beacon.core.render.ChatPart.Status) {
     }
 }
 
-/** `<think>` styled collapsible (agent.md §7.4) with elapsed-time placeholder. */
+/** `<think>` styled collapsible  with elapsed-time placeholder. */
 @Composable
 private fun ReasoningCard(part: dev.beacon.core.render.ChatPart.Reasoning) {
     var open by rememberSaveable { mutableStateOf(!part.collapsedByDefault) }

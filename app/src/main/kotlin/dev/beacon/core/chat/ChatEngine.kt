@@ -179,6 +179,8 @@ class ChatEngine(
     private var outputSeen = false
     private var outItems: List<JsonElement> = emptyList()
     private var embedsHtml: List<String> = emptyList()
+    /** Last fold arrival (any StreamEvent) — the hang-rescue clock (§9.1). */
+    private var lastStreamActivityAt = 0L
     private var lastRoomWrite = 0L
     private var lastSyncAt = 0L
     private var activeModelId: String? = null
@@ -467,11 +469,19 @@ class ChatEngine(
     }
 
     /** Intent: stop (§6.3) — abort the transfer, user-level stop route, mark interrupted. */
-    fun stop() {
+    fun stop() = abortStream()
+
+    /** Cancel the live transfer + post the user-level stop; partial text kept, busy cleared. */
+    private fun abortStream() {
         currentCall?.cancel()
         streamJob?.cancel()
         val chatId = _state.value.chatId
         val id = _state.value.streamingMessageId
+        _state.value = _state.value.copy(
+            streamingMessageId = null,
+            busy = false,
+            statusText = null,
+        )
         scope.launch {
             if (chatId != null) {
                 runCatching { api.stopTasksForChat(chatId) }
@@ -479,12 +489,24 @@ class ChatEngine(
             if (id != null && chatId != null) {
                 store.setDone(id, done = true)
             }
-            _state.value = _state.value.copy(
-                streamingMessageId = null,
-                busy = false,
-                statusText = null,
-            )
         }
+    }
+
+    /**
+     * §9.1 flick-to-refetch (2026-11-06 hang rescue): at the bottom of the
+     * conversation an upward flick re-syncs. The busy guard from §9.1
+     * ("the stream is the source of truth while live") applies ONLY to
+     * LIVE streams: a busy stream that has been SILENT for [hangSilenceMs]
+     * is dead — abort it (stop semantics: partial kept, server task
+     * stopped) and reconcile whatever the server already persisted.
+     */
+    suspend fun flickSync(hangSilenceMs: Long = HANG_SILENCE_MS): Boolean {
+        if (_state.value.busy) {
+            val silentFor = System.currentTimeMillis() - lastStreamActivityAt
+            if (silentFor < hangSilenceMs) return false // live: the stream owns truth
+            abortStream()
+        }
+        return sync()
     }
 
     fun close() {
@@ -711,6 +733,9 @@ class ChatEngine(
         outItems = emptyList()
         embedsHtml = emptyList()
         pendingDisplayPath = null
+        // The hang clock starts at send: a transfer that never yields its first
+        // fold is a hang too (flick rescue, §9.1).
+        lastStreamActivityAt = System.currentTimeMillis()
         lastRoomWrite = now
         scanner = SseFrameScanner()
 
@@ -1139,6 +1164,7 @@ class ChatEngine(
     }
 
     private suspend fun fold(event: StreamEvent, assistantMessageId: String) {
+        lastStreamActivityAt = System.currentTimeMillis()
         val chatId = _state.value.chatId
         when (event) {
             is StreamEvent.Content -> {
@@ -1414,6 +1440,14 @@ class ChatEngine(
         private const val CHUNK_BUFFER = 8192
         private const val ROOM_WRITE_INTERVAL_MS = 750L
         private const val SYNC_DEBOUNCE_MS = 1_000L
+
+        /**
+         * §9.1 hang rescue (2026-11-06): a busy stream with NO fold activity
+         * for this long is dead — a flick at the bottom aborts it (user-level
+         * stop route, partial text kept) and reconciles the server tree. A
+         * live stream keeps its §9.1 immunity (the flick is ignored).
+         */
+        private const val HANG_SILENCE_MS = 10_000L
     }
 }
 

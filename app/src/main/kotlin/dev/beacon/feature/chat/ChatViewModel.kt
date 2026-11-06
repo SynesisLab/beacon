@@ -411,11 +411,15 @@ class ChatViewModel @Inject constructor(
         justUpdated.value = false
     }
 
-    /** §9.1 flick-to-refetch gesture → silent sync. */
+    /**
+     * §9.1 flick-to-refetch gesture → silent sync. Live streams keep their
+     * §9.1 immunity; a HUNG one (silent ≥ HANG_SILENCE_MS) is aborted and
+     * re-synced — the user's escape hatch for a stuck generation (2026-11-06).
+     */
     fun flickRefetch() {
         viewModelScope.launch {
             try {
-                if (engine.sync()) justUpdated.value = true
+                if (engine.flickSync()) justUpdated.value = true
             } catch (_: Exception) {
             }
         }

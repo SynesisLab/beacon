@@ -46,6 +46,14 @@ class ChatEngineTest {
             if (request.url.encodedPath == "/api/chat/completions") {
                 val next = synchronized(pendingStreams) { pendingStreams.removeFirstOrNull() }
                     ?: return MockResponse.Builder().code(404).build()
+                if (next.first == "HANG") {
+                    // A true hang: headers arrive, the body NEVER yields a byte
+                    // (§9.1 flick rescue's dead-transfer case).
+                    return MockResponse.Builder().code(200)
+                        .addHeader("Content-Type", "text/event-stream; charset=utf-8")
+                        .onResponseBody(mockwebserver3.SocketEffect.Stall)
+                        .build()
+                }
                 return MockResponse.Builder().code(200).addHeader("Content-Type", next.first).body(next.second).build()
             }
             return MockResponse.Builder().code(200).addHeader("Content-Type", "application/json").body("{}").build()
@@ -134,6 +142,57 @@ class ChatEngineTest {
         val assistant = final.messages.last { it.role == "assistant" }
         assertEquals("Step one step two", assistant.reasoning)
         assertEquals("Final", assistant.markdown)
+    }
+
+    /** A stalled-socket response for the completions route (a true hang). */
+    private fun enqueueHang() {
+        synchronized(pendingStreams) {
+            pendingStreams.addLast("HANG" to "")
+        }
+    }
+
+    @Test
+    fun flickWhileHungAbortsAndResyncs() = runBlocking {
+        // Warm one completed exchange so the engine owns a chat id (the
+        // rescue posts /api/tasks/chat/{id}/stop + re-fetches the tree).
+        enqueueStream(FIRST_MESSAGE)
+        val (engine, store) = newEngine()
+        engine.load(null)
+        engine.send("hi", "m1")
+        awaitIdle(engine)
+
+        // A second send whose stream NEVER yields a byte: busy forever.
+        enqueueHang()
+        engine.send("hi again", "m1")
+        withTimeout(5_000) {
+            while (!engine.state.value.busy) delay(10)
+        }
+
+        // (a) LIVE-stream immunity: a flick with a long silence threshold
+        // is ignored — the stream stays the source of truth (§9.1).
+        assertTrue(!engine.flickSync(hangSilenceMs = 60_000L))
+        assertTrue(engine.state.value.busy)
+
+        // (b) Hang rescue: with the silence crossed, the flick aborts the
+        // dead transfer (stop semantics — partial kept) and re-syncs.
+        engine.flickSync(hangSilenceMs = 0L)
+        val state = awaitIdle(engine)
+        assertTrue(!state.busy)
+        assertTrue(state.streamingMessageId == null)
+
+        // The rescue hit the wire: the chat-level stop route (+ tree fetch).
+        val paths = mutableListOf<String>()
+        withTimeout(5_000) {
+            while (paths.size < 6) {
+                val req = server.takeRequest(500, java.util.concurrent.TimeUnit.MILLISECONDS) ?: break
+                paths.add(req.url.encodedPath)
+            }
+        }
+        assertTrue("expected the stop route in $paths", paths.any { it.startsWith("/api/tasks/chat/") && it.endsWith("/stop") })
+
+        // (c) The rescue kept the conversation intact.
+        assertTrue(engine.state.value.messages.any { it.role == "assistant" })
+        assertTrue(store.messages.isNotEmpty())
     }
 
     @Test

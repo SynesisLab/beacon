@@ -297,7 +297,7 @@ have live code; MISSING rows are deliberately deferred to their milestone.
 | Voice STT/TTS | ✓ M3 (overlay + hold-to-talk polish pending) |
 | Auto-titling (chat:title) | ✓ (live title + room-paint) |
 | Context usage | data ✓ shown when sent; v2 = context rail after send (Stage C) |
-| Reconciler + flick-to-refetch | ✓ |
+| Reconciler + flick-to-refetch | ✓ (+ hang rescue 2026-11-06: flick while busy AND fold-silent ≥10s aborts the dead transfer — stop route + partial kept — then re-syncs; live streams keep §9.1 immunity) |
 | Chat share (share_id) + export md/json | ✓ client-built export |
 | Shared chats w/ Allow-replies + reply streaming | MISSING — rides M3 share row (server flag) |
 | Comment threads (ENABLE_COMMENTS) | M5+ |

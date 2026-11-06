@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -141,9 +142,9 @@ private fun BeaconNavHost(permanentSidebar: Boolean) {
             }
             NavHost(
                 navController = nav,
-                // v2: the START destination = Chats HOME (the list); the chat
-                // surface is PUSHED on top of it (back ⇒ Chats home, §2).
-                startDestination = if (snapshot.isOnboarded) ROUTE_CHATS_HOME else ROUTE_ONBOARDING,
+                // BOOT = a fresh chat (user instruction 2026-11-06 — the Chats
+                // home rides one tab away; recents = Chats home).
+                startDestination = if (snapshot.isOnboarded) ROUTE_CHAT_NEW else ROUTE_ONBOARDING,
                 // Transitions ("better transitions" user request): the forward
                 // push fades-in w/ a slight right-to-left slide; the BACK gesture
                 // (predictive) previews a scale-down + slide-out — Claude-app calm.
@@ -268,6 +269,8 @@ private fun BeaconNavHost(permanentSidebar: Boolean) {
                                 onOpenNote = { note -> nav.navigate("note/$note") },
                                 onNewNote = { nav.navigate("note/new") },
                                 onChanged = { surfacesVm.refresh() },
+                                // v2 tab chrome: serif Notes (the FAB still creates).
+                                header = { dev.beacon.feature.home.TabHeader("Notes") },
                             )
                         }
                         TabBar(nav, active = "notes")
@@ -292,6 +295,8 @@ private fun BeaconNavHost(permanentSidebar: Boolean) {
                     }
                     Column(Modifier.fillMaxSize()) {
                         androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
+                            // v2 Files tab = the serif Files header + the terminal
+                            // one-list body (source chips land Stage C).
                             dev.beacon.feature.terminal.TerminalScreen(
                                 vm = terminalVm,
                                 onBack = { navToTab(nav, "chats") },
@@ -299,6 +304,7 @@ private fun BeaconNavHost(permanentSidebar: Boolean) {
                                     terminalVm.pendingDownload = bytes to name
                                     save.launch(name)
                                 },
+                                header = { dev.beacon.feature.home.TabHeader("Files") },
                             )
                         }
                         TabBar(nav, active = "files")
@@ -641,8 +647,14 @@ private fun BeaconChatSurface(
                 onDraft = vm::setDraft,
                 onSend = vm::send,
                 onStop = vm::stop,
-                // v2: back ⇒ Chats home (the chat is pushed on it).
-                onBack = { nav.popBackStack() },
+                // v2: back = Chats home — pop when the chat is pushed on it;
+                // on the BOOT surface (chat/new = the start entry) there is
+                // nothing beneath — navigate home instead.
+                onBack = {
+                    if (!nav.popBackStack()) {
+                        nav.navigate(ROUTE_CHATS_HOME) { launchSingleTop = true }
+                    }
+                },
                 onOpenModelPicker = { pickerOpen = true },
                 onAttach = { docPicker.launch(arrayOf("*/*")) },
                 onRemoveAttachment = vm::removeAttachment,
@@ -698,7 +710,9 @@ private fun BeaconChatSurface(
                     vm.signOutNow()
                     nav.navigate(ROUTE_ONBOARDING) { popUpTo(0) }
                 },
-                modifier = Modifier.align(androidx.compose.ui.Alignment.TopCenter),
+                modifier = Modifier
+                    .align(androidx.compose.ui.Alignment.TopCenter)
+                    .statusBarsPadding(),
             )
         }
     }

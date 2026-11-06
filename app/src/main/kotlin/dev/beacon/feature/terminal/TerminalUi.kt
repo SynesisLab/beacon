@@ -48,11 +48,13 @@ fun TerminalScreen(
     vm: TerminalViewModel,
     onBack: () -> Unit,
     onSaveDownload: (ByteArray, String) -> Unit,
+    /** Hosted-in-tab header (v2 Files tab = the TabHeader chrome); null = the default back bar. */
+    header: (@Composable () -> Unit)? = null,
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     Scaffold(
         topBar = {
-            TopAppBar(
+            header?.invoke() ?: TopAppBar(
                 title = { Text("Terminal files", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
             )

@@ -373,9 +373,11 @@ fun NotesScreen(
     onNewNote: () -> Unit,
     /** Re-fetch the listing after a mutation (M4 fix: the list went stale). */
     onChanged: () -> Unit = {},
+    /** Hosted-in-tab header (v2 Notes tab = the TabHeader chrome); null = the default back bar. */
+    header: (@Composable () -> Unit)? = null,
 ) {
     Scaffold(
-        topBar = { SurfaceTopBar("Notes", onBack) },
+        topBar = { header?.invoke() ?: SurfaceTopBar("Notes", onBack) },
         floatingActionButton = {
             FloatingActionButton(onClick = onNewNote) {
                 Icon(Icons.Filled.Add, contentDescription = "New note")

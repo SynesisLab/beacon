@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -98,19 +99,7 @@ fun MoreScreen(
     val appVersion = "1.0"
 
     Scaffold(
-        topBar = {
-            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp)) {
-                Text(
-                    "More",
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontSize = 20.sp,
-                        fontFamily = FontFamily.Serif,
-                        fontWeight = FontWeight.SemiBold,
-                    ),
-                    modifier = Modifier.padding(start = 10.dp, top = 6.dp, bottom = 6.dp),
-                )
-            }
-        },
+        topBar = { TabHeader("More") },
         bottomBar = tabState,
         modifier = Modifier.semantics { testTag = "more_home" },
     ) { padding ->
@@ -163,6 +152,34 @@ fun MoreScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+        }
+    }
+}
+
+/** Serif TAB HEADER (mockup pagehead2): centered title + optional trailing slot. */
+@Composable
+fun TabHeader(
+    title: String,
+    trailing: (@Composable () -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
+    androidx.compose.foundation.layout.Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
+            .padding(horizontal = 4.dp, vertical = 6.dp),
+    ) {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleLarge.copy(
+                fontSize = 19.sp,
+                fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.SemiBold,
+            ),
+            modifier = Modifier.align(Alignment.Center),
+        )
+        if (trailing != null) {
+            androidx.compose.foundation.layout.Box(Modifier.align(Alignment.CenterEnd)) { trailing() }
         }
     }
 }

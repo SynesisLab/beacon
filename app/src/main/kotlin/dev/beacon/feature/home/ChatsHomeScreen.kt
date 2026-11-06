@@ -4,6 +4,7 @@ import android.content.Intent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -102,23 +103,7 @@ fun ChatsHomeScreen(
 
     Scaffold(
         topBar = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 4.dp, vertical = 4.dp),
-            ) {
-                Text(
-                    "Chats",
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontSize = 20.sp,
-                        fontFamily = FontFamily.Serif,
-                        fontWeight = FontWeight.SemiBold,
-                    ),
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(start = 10.dp),
-                )
+            TabHeader("Chats", trailing = {
                 IconButton(onClick = {
                     // ＋ header = NEW FOLDER (§4.2); chats come from the FAB.
                     folderNameDraft = ""
@@ -126,7 +111,7 @@ fun ChatsHomeScreen(
                 }) {
                     Icon(Icons.Filled.Add, contentDescription = "New folder")
                 }
-            }
+            })
         },
         floatingActionButton = {
             FloatingActionButton(

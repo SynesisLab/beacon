@@ -214,6 +214,11 @@ class ChatEngineTest {
         assertTrue(first, first.contains("\"chat_id\":\"chat-app-1\""))
         assertTrue(first, first.contains("\"title_generation\":true"))
         assertTrue(first, first.contains("\"tags_generation\":true"))
+        // The wire body must carry the user text exactly TWICE: once in the
+        // messages array, once in user_message — never three (2026-11-06: the
+        // optimistic paint + the projection append duplicated it in messages,
+        // and LLMs answered with duplicated text).
+        assertEquals(first, 2, first.split("\"content\":\"hi\"").size - 1)
 
         // Second turn in the same chat: no title/tags generation.
         enqueueStream(FIRST_SHORT)

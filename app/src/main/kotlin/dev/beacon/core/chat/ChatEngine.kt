@@ -760,9 +760,21 @@ class ChatEngine(
         lastRoomWrite = now
         scanner = SseFrameScanner()
 
-        val projection = projectionFor(plan) + buildList {
-            if (plan.regenerate.not() && plan.continueAssistantId == null) {
-                add(ProjectionMessage.user(plan.text))
+        val base = projectionFor(plan)
+        val projection = if (
+            plan.regenerate.not() && plan.continueAssistantId == null &&
+            base.lastOrNull()?.let { it.role == ProjectionMessage.ROLE_USER && it.content == plan.text } == true
+        ) {
+            // The optimistic paint above already added this user turn to state
+            // (and so to the projection) — don't send it twice (2026-11-06:
+            // the duplicated user message on the wire made LLMs duplicate
+            // their response text).
+            base
+        } else {
+            base + buildList {
+                if (plan.regenerate.not() && plan.continueAssistantId == null) {
+                    add(ProjectionMessage.user(plan.text))
+                }
             }
         }
 

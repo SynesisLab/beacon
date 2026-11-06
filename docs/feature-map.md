@@ -196,7 +196,7 @@ what the v2 simplification MOVED; §10.1-10.13 = per-surface tables.
 | Onboarding 5 steps | 1 page + inline MFA | same endpoints; enroll deferred to a home nudge (same enroll endpoints) |
 | Turn footer (icon row) | `↻ · ‹n/N› · ⋯` (sheet contents) | same actions (rating/copy/share endpoints) |
 | Files = segmented panes | ONE list, source chips | both sources' endpoints unchanged |
-| Top bar hamburger/⋮ split | back + **context chip** (tap=options sheet, long-press=model) + dashed temp bubble | same actions |
+| Top bar hamburger/⋮ split | back + **context chip** (tap=model sheet, long-press=options menu — amended 2026-11-06: the chevron promises models) + dashed temp bubble | same actions |
 
 ### §10.0b — v2→v3 amendments ("sidebar", 2026-11-06)
 
@@ -205,7 +205,7 @@ what the v2 simplification MOVED; §10.1-10.13 = per-surface tables.
 | Bottom tab bar (Chats/Notes/Files/More) | **DELETED** — navigation = the left slide-in sidebar (Claude drawer × OWUI web anatomy) | none |
 | `More` tab list | sidebar NAV rows (Workspace/Memories*/Channels*/Settings — gated rows vanish) | same reads |
 | Chat topbar `‹ back` | **hamburger bubble** top-left on every screen; system back pops routes (predictive) | none |
-| Chat ⋮ menu | dies — chat options consolidate into the CONTEXT CHIP (tap = options sheet; long-press = model sheet) | same actions |
+| Chat ⋮ menu | dies — chat options consolidate into the CONTEXT CHIP (tap = model sheet; long-press = options menu — amended 2026-11-06) | same actions |
 | Recents | sidebar CHATS section mirrors the Chats home (pinned ✦ → folders ▸ → date groups; paginates `?page=N`) + shared row-actions sheet | same reads |
 
 ### §10.1 Chats home (`ChatsHomeScreen`; start destination)
@@ -221,7 +221,7 @@ what the v2 simplification MOVED; §10.1-10.13 = per-surface tables.
 - 2FA-enroll nudge card (coral-tint) when session is enrolled=false; tap → enroll sheet (`/enroll/start`, `/enroll/confirm`); dismiss = forever (per-install flag).
 
 ### §10.2 Chat conversation (`ChatScreen`)
-- Top bar: `‹ back` → pop to `chats`; **context chip** = auto-title/model ⌄ → options sheet (below); **dashed temp bubble** → temp toggle (client-ephemeral; M5).
+- Top bar: `‹ back` → pop to `chats`; **context chip** = auto-title/model ⌄ → tap = **model sheet** (listed models; long-press = the options menu — amended 2026-11-06); **dashed temp bubble** → temp toggle (client-ephemeral; M5).
 - Detail-run `✓ Explored N ⌄` / "Exploring" — display-only (parts pipeline).
 - `Thought for 4s ⌄` — reasoning expand (Room parts).
 - Tool row ⌄ — pending → approval dialog (`POST /api/v1/chats/{id}/messages/{messageId}/resolve` w/ action approve/reject or ask_user answers).

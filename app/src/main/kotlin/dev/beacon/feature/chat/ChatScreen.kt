@@ -195,9 +195,11 @@ fun ChatScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                // v3 §3.1: [☰ bubble][context chip ⌄][temp] — the hamburger
-                // opens the slide-in sidebar (no back arrow, no tab bar, no ⋮;
-                // chat options live in the chip's sheet).
+                // v3 §3.1 (amended, user report 2026-11-06): the chip wears the
+                // model name + a ⌄ chevron, so TAP = the model sheet (the
+                // 2026-11-06 long-press-only model sheet read as "the model
+                // dropdown doesn't list the models"); LONG-PRESS = the chat
+                // options menu (share/copy).
                 title = {
                     var optionsOpen by remember { mutableStateOf(false) }
                     Surface(
@@ -205,8 +207,8 @@ fun ChatScreen(
                         shape = RoundedCornerShape(50),
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                         modifier = Modifier.combinedClickable(
-                            onClick = { optionsOpen = true },
-                            onLongClick = actions.onOpenModelPicker,
+                            onClick = actions.onOpenModelPicker,
+                            onLongClick = { optionsOpen = true },
                         ),
                     ) {
                         Row(

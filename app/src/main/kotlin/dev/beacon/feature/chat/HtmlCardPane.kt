@@ -133,7 +133,17 @@ private val ExpandedCap = 4000.dp
  * The seamlessness rule (the web's iframe in the page): vertical scrolls over
  * a card belong to the CHAT list — the WebView hands them to the Compose
  * scroll instead of eating them. Taps, links and horizontal gestures
- * (maps/galleries) stay native: only a dominant-vertical drag returns false.
+ * (maps/galleries/wide tables) stay native.
+ *
+ * The gesture axis is LOCKED at the first slop crossing (user report
+ * 2026-11-06: sideways card scrolling was "not smooth" and "extending the
+ * menu" — the old per-move |dy| > |dx| test flip-flopped mid-drag, stuttering
+ * the scroll and leaking the gesture to the sidebar's edge-swipe). A locked
+ * HORIZONTAL drag claims the whole parent chain
+ * ([android.view.ViewParent.requestDisallowInterceptTouchEvent] crosses the
+ * Compose interop and cancels in-progress Compose gestures — the drawer
+ * cannot open off a card's sideways scroll); a locked VERTICAL drag hands
+ * off to the chat list as before.
  */
 class BeaconCardWebView(context: Context) : WebView(context) {
     init {
@@ -142,26 +152,57 @@ class BeaconCardWebView(context: Context) : WebView(context) {
         setBackgroundColor(android.graphics.Color.TRANSPARENT)
     }
 
-    private var lastY = 0f
-    private var lastX = 0f
+    private companion object {
+        private const val AXIS_NONE = 0
+        private const val AXIS_VERTICAL = 1
+        private const val AXIS_HORIZONTAL = 2
+    }
+
+    private var downX = 0f
+    private var downY = 0f
+    private var axis = AXIS_NONE
+    private val slop = android.view.ViewConfiguration.get(context).scaledTouchSlop
 
     override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
         when (event.actionMasked) {
             android.view.MotionEvent.ACTION_DOWN -> {
-                lastX = event.x
-                lastY = event.y
+                downX = event.x
+                downY = event.y
+                axis = AXIS_NONE
                 // let inner content (buttons, links) claim the stream first
                 return super.onTouchEvent(event)
             }
             android.view.MotionEvent.ACTION_MOVE -> {
-                val dy = event.y - lastY
-                val dx = event.x - lastX
-                lastX = event.x
-                lastY = event.y
-                if (kotlin.math.abs(dy) > kotlin.math.abs(dx)) {
-                    // dominant vertical drag → the chat list scrolls
-                    return false
+                if (axis == AXIS_NONE) {
+                    val dx = kotlin.math.abs(event.x - downX)
+                    val dy = kotlin.math.abs(event.y - downY)
+                    // Below the slop the stream stays untouched (taps/links).
+                    if (dx <= slop && dy <= slop) {
+                        return super.onTouchEvent(event)
+                    }
+                    // The first crossing LOCKS the axis for the whole gesture —
+                    // no per-move flip-flop (the stutter) and no mid-drag handoff.
+                    axis = if (dy > dx) AXIS_VERTICAL else AXIS_HORIZONTAL
+                    if (axis == AXIS_HORIZONTAL) {
+                        // §11.3b: the wide card OWNS sideways drags. Block every
+                        // parent interception for the rest of the stream — the
+                        // request crosses the Compose interop and cancels
+                        // in-progress Compose gestures, so the sidebar's
+                        // left-edge swipe can never open off a horizontal
+                        // card scroll.
+                        parent?.requestDisallowInterceptTouchEvent(true)
+                    }
                 }
+                return when (axis) {
+                    AXIS_VERTICAL -> false // locked dominant-vertical → the chat list
+                    else -> super.onTouchEvent(event)
+                }
+            }
+            android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                axis = AXIS_NONE
+                // Release the claim so the next gesture (drawer swipe, chat
+                // scroll) works normally again.
+                parent?.requestDisallowInterceptTouchEvent(false)
                 return super.onTouchEvent(event)
             }
             else -> return super.onTouchEvent(event)

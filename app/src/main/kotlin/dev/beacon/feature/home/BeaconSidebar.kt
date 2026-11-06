@@ -62,6 +62,11 @@ data class SidebarState(
     val appVersion: String = "1.0",
     /** The active route's row key (chats/notes/files/workspace/…) for the ink row. */
     val activeRow: String = "chats",
+    /**
+     * NAV rows the user toggled OFF in Settings → Sidebar (2026-11-06):
+     * hidden rows VANISH exactly like gated rows (never gray).
+     */
+    val hiddenRows: Set<String> = emptySet(),
 )
 
 data class SidebarActions(
@@ -133,16 +138,24 @@ fun BeaconSidebar(
         // ── NAV rows ──────────────────────────────────────────────────────
         Text("NAVIGATE", style = sidebarSection(), modifier = Modifier.padding(start = 18.dp, top = 12.dp, bottom = 2.dp))
         SidebarRow("chats", "◌", "Chats", state.activeRow == "chats", actions.goto)
-        SidebarRow("notes", "▤", "Notes", state.activeRow == "notes", actions.goto)
-        SidebarRow("files", "▥", "Files", state.activeRow == "files", actions.goto)
-        SidebarRow("workspace", "▦", "Workspace", state.activeRow == "workspace", actions.goto)
-        if (state.memoriesGate) {
+        if ("notes" !in state.hiddenRows) {
+            SidebarRow("notes", "▤", "Notes", state.activeRow == "notes", actions.goto)
+        }
+        if ("files" !in state.hiddenRows) {
+            SidebarRow("files", "▥", "Files", state.activeRow == "files", actions.goto)
+        }
+        if ("workspace" !in state.hiddenRows) {
+            SidebarRow("workspace", "▦", "Workspace", state.activeRow == "workspace", actions.goto)
+        }
+        if (state.memoriesGate && "memories" !in state.hiddenRows) {
             SidebarRow("memories", "◍", "Memories", state.activeRow == "memories", actions.goto)
         }
-        if (state.channelsGate) {
+        if (state.channelsGate && "channels" !in state.hiddenRows) {
             SidebarRow("channels", "◈", "Channels", state.activeRow == "channels", actions.goto)
         }
-        SidebarRow("settings", "⚙", "Settings", state.activeRow == "settings", actions.goto)
+        if ("settings" !in state.hiddenRows) {
+            SidebarRow("settings", "⚙", "Settings", state.activeRow == "settings", actions.goto)
+        }
         // ── CHATS (mirrors the home list) ─────────────────────────────────
         Row(
             verticalAlignment = Alignment.CenterVertically,

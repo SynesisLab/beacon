@@ -371,6 +371,10 @@ class ChatViewModel @Inject constructor(
     /** M4: the interceptor's dead-credential flag → the re-auth banner. */
     val authExpired: kotlinx.coroutines.flow.StateFlow<Boolean> = session.authExpired
 
+    /** display_file auto-open: terminal:display_file resolved against the fold. */
+    val fileDisplays: kotlinx.coroutines.flow.SharedFlow<dev.beacon.core.render.ChatPart.File> =
+        engine.fileDisplays
+
     fun signOutNow() {
         viewModelScope.launch { session.signOut() }
     }

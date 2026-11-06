@@ -39,6 +39,8 @@ fun SettingsScreen(
     onSignOut: () -> Unit,
     onThemeMode: (dev.beacon.core.data.ThemeMode) -> Unit,
     onOpenHeaders: () -> Unit = {},
+    /** Sidebar row visibility ([rowKey], visible). */
+    onNavRowVisible: (String, Boolean) -> Unit = { _, _ -> },
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -91,6 +93,39 @@ fun SettingsScreen(
                     )
                 }
             }
+        }
+        HorizontalDivider()
+        SettingSection("Sidebar") {
+            Text(
+                "Show or hide sidebar rows.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            listOf(
+                "notes" to "Notes",
+                "files" to "Files",
+                "workspace" to "Workspace",
+                "memories" to "Memories",
+                "channels" to "Channels",
+                "settings" to "Settings",
+            ).forEach { (key, label) ->
+                Row(
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.dp),
+                ) {
+                    Text(label, Modifier.weight(1f))
+                    androidx.compose.material3.Switch(
+                        checked = key !in state.hiddenNavRows,
+                        onCheckedChange = { visible -> onNavRowVisible(key, visible) },
+                    )
+                }
+            }
+            Text(
+                "Memories and Channels also need their server features enabled.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
         HorizontalDivider()
         SettingSection("Authentication") {

@@ -12,5 +12,9 @@ data: {"type":"chat:title","data":"New chat"}
 
 data: {"type":"chat:tags","data":["tag-one","tag-two"]}
 
+data: {"type":"terminal:display_file","data":{"path":"/home/user/beacon-ui-design.md"}}
+
+data: {"type":"terminal:display_file","data":{"path":"/home/user/report.pdf","page":2}}
+
 data: [DONE]
 

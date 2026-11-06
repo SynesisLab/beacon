@@ -247,3 +247,17 @@ attach; pending ask_user hidden (parity); text-mode reasoning/code_interpreter
 details lifted/stripped in the Segmenter; embeds = CardKind.Embed cards
 (readOnly contexts do not exist client-side yet; the M4-landed share/export is
 client-built markdown/json).
+
+## display_file auto-open event (2026-11-06, chat f18050dd device DB + clone)
+
+| Topic | Finding | Proof |
+| --- | --- | --- |
+| terminal:display_file | the Open Terminal `display_file` builtin emits `{type:'terminal:display_file', data:{path, page?}}` (path resolved against the session cwd) — the web OPENS the file viewer on it (Chat.svelte `terminalEventHandler` → `displayFileHandler`); skipped server-side when `inline:true`, `displayed:true`, or `exists:false` | middleware.py:968-991 (terminal_event_handler), Chat.svelte:1282-1290 |
+| not unordered | tool result JSON also rides the normal function_call_output fold — `{type:'file', source:'open_terminal', terminal_selector, terminal_id, path, name, mime_type, displayed:false}` — the client pairs the event's `path` with the folded File part to resolve the terminal server | device DB chat f18050dd (display_file → /home/user/beacon-ui-design.md); builtin.py:3123+ |
+
+Beacon deltas: `terminal:display_file` → `StreamEvent.TerminalFileDisplay` →
+the engine matches the pending path against the folded `ChatPart.File`
+(`terminalPath`) → `fileDisplays` SharedFlow → the UI auto-navigates to the
+native file viewer. The instance-file branch (`source:'open_webui'`) never
+emits the event (`displayed:true` — it renders inline as a File part chip;
+web parity getInlineFileFromToolOutput).

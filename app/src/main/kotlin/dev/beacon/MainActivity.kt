@@ -174,6 +174,7 @@ private fun BeaconNavHost(permanentSidebar: Boolean) {
                                     userEmail = snapshot.signedInEmail,
                                     userRole = snapshot.userRole,
                                     serverVersion = snapshot.serverVersion,
+                                    hiddenRows = snapshot.hiddenNavRowsSet,
                                     activeRow = when (currentEntry?.destination?.route) {
                                         ROUTE_NOTES_TAB -> "notes"
                                         ROUTE_FILES_TAB, "terminal" -> "files"
@@ -396,6 +397,7 @@ private fun BeaconNavHost(permanentSidebar: Boolean) {
                         onSignOut = vm::signOut,
                         onThemeMode = vm::setThemeMode,
                         onOpenHeaders = { nav.navigate("settings/headers") },
+                        onNavRowVisible = { row, visible -> vm.setNavRowHidden(row, !visible) },
                         onClose = { nav.popBackStack() },
                     )
                 }
@@ -491,7 +493,9 @@ private fun BeaconNavHost(permanentSidebar: Boolean) {
                     dev.beacon.feature.chat.FileViewerScreen(
                         filesApi = fileVm.api,
                         terminalsApi = fileVm.terminals,
-                        fileId = android.net.Uri.decode(entry.arguments?.getString("fileId").orEmpty()),
+                        // "-" = the terminal-file placeholder (no instance id).
+                        fileId = android.net.Uri.decode(entry.arguments?.getString("fileId").orEmpty())
+                            .takeIf { it.isNotEmpty() && it != "-" }.orEmpty(),
                         name = android.net.Uri.decode(entry.arguments?.getString("name").orEmpty()),
                         mime = android.net.Uri.decode(entry.arguments?.getString("mime").orEmpty()),
                         terminalServerId = entry.arguments?.getString("server")
@@ -793,7 +797,12 @@ private fun BeaconChatSurface(
                 onAppResume = vm::onAppResume,
                 onClearUpdatedPill = vm::clearUpdatedPill,
                 onOpenFile = { fileId, name, mime, terminalServer, terminalPath ->
-                    val base = "file/${android.net.Uri.encode(fileId)}/${android.net.Uri.encode(name)}/${android.net.Uri.encode(mime)}"
+                    // Terminal files carry NO fileId — an empty path segment
+                    // can't match the {fileId} nav pattern (NavController needs
+                    // ≥1 char/segment; the old "file//…" tap silently died).
+                    // "-" stands in and decodes back to empty at the destination.
+                    val id = fileId.ifBlank { "-" }
+                    val base = "file/${android.net.Uri.encode(id)}/${android.net.Uri.encode(name)}/${android.net.Uri.encode(mime)}"
                     val suffix = buildString {
                         if (terminalServer != null) append("?server=${android.net.Uri.encode(terminalServer)}")
                         if (terminalPath != null) append(
@@ -813,6 +822,22 @@ private fun BeaconChatSurface(
             },
             onSetDefault = { id -> vm.chooseModel(id) },
         )
+        // display_file auto-open (terminal:display_file, the web's
+        // displayFileHandler parity): navigate to the native viewer once the
+        // engine resolves the fold's File part.
+        androidx.compose.runtime.LaunchedEffect(Unit) {
+            vm.fileDisplays.collect { file ->
+                val id = file.fileId.ifBlank { "-" }
+                val base = "file/${android.net.Uri.encode(id)}/${android.net.Uri.encode(file.name)}/${android.net.Uri.encode(file.mime)}"
+                val suffix = buildString {
+                    file.terminalServerId?.let { append("?server=${android.net.Uri.encode(it)}") }
+                    file.terminalPath?.let {
+                        append((if (file.terminalServerId == null) "?" else "&") + "path=${android.net.Uri.encode(it)}")
+                    }
+                }
+                nav.navigate(base + suffix)
+            }
+        }
         if (authExpired) {
             SessionExpiredBanner(
                 onSignInAgain = {

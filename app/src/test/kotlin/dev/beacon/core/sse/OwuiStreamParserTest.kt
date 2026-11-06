@@ -81,6 +81,14 @@ class OwuiStreamParserTest {
             listOf("tag-one", "tag-two"),
             list.filterIsInstance<StreamEvent.TagsUpdate>().single().tags,
         )
+        // terminal:display_file (middleware.py:961; device-verified shape
+        // 2026-11-06): path + optional page — the auto-open signal.
+        val displays = list.filterIsInstance<StreamEvent.TerminalFileDisplay>()
+        assertEquals(2, displays.size)
+        assertEquals("/home/user/beacon-ui-design.md", displays[0].path)
+        assertTrue(displays[0].page == null)
+        assertEquals("/home/user/report.pdf", displays[1].path)
+        assertTrue(displays[1].page == 2)
         assertEquals("StreamDone", eventTypes(list).last())
     }
 

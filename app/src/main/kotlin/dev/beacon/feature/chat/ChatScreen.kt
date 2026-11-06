@@ -324,7 +324,30 @@ fun ChatScreen(
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom),
                 ) {
-                if (state.engine.messages.isEmpty()) {
+                if (state.engine.loading && state.engine.messages.isEmpty()) {
+                    // Opening an uncached OLD chat: the tree is still on the
+                    // wire — a centered loading state, not the landing hero
+                    // (user report 2026-11-06).
+                    item(key = "chat_loading") {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 40.dp),
+                        ) {
+                            androidx.compose.material3.CircularProgressIndicator(
+                                modifier = Modifier.size(28.dp),
+                                strokeWidth = 2.5.dp,
+                            )
+                            Text(
+                                text = "Loading chat…",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                } else if (state.engine.messages.isEmpty()) {
                     // Empty-state hero (Claude parity, pixel-measured 2026-11-03):
                     // a BIG pulsing starburst OVER a display-class serif line,
                     // centered; the sub-line drops to the page bottom.

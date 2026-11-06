@@ -34,6 +34,15 @@ sealed interface StreamEvent {
     data class TagsUpdate(val tags: List<String>) : StreamEvent
 
     /**
+     * type:terminal:display_file — the Open Terminal display_file builtin's
+     * auto-open signal (middleware.py:961 terminal_event_handler; Chat.svelte
+     * terminalEventHandler → displayFileHandler): data {path, page?} — the
+     * FILE VIEWER takes over. Skipped server-side when inline:true,
+     * displayed:true or exists:false.
+     */
+    data class TerminalFileDisplay(val path: String, val page: Int?) : StreamEvent
+
+    /**
      * type:chat:list — the created chat's id (server-side chat creation on first
      * send without chat_id; main.py:304-307, middleware.py:249).
      */
@@ -158,6 +167,19 @@ class OwuiStreamParser(
             "chat:tags" -> {
                 val tags = (obj["data"] as? JsonArray)?.stringList().orEmpty()
                 return listOf(StreamEvent.TagsUpdate(tags))
+            }
+            "terminal:display_file" -> {
+                // The Open Terminal display_file builtin signals "open this
+                // file for the user" (middleware.py:961; the path is resolved
+                // against the session cwd server-side).
+                val body = obj["data"] as? JsonObject
+                val path = (body?.get("path") as? JsonPrimitive)?.content
+                val page = (body?.get("page") as? JsonPrimitive)?.content?.toIntOrNull()
+                return if (!path.isNullOrEmpty()) {
+                    listOf(StreamEvent.TerminalFileDisplay(path, page))
+                } else {
+                    emptyList()
+                }
             }
             "chat:message:error" -> {
                 val body = obj["data"]

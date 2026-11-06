@@ -27,6 +27,8 @@ class SettingsViewModel @Inject constructor(
         val signedInEmail: String? = null,
         val signingOut: Boolean = false,
         val themeMode: dev.beacon.core.data.ThemeMode = dev.beacon.core.data.ThemeMode.System,
+        /** Sidebar NAV rows the user toggled off (Settings → Sidebar). */
+        val hiddenNavRows: Set<String> = emptySet(),
     )
 
     // Headers live in SecureStore (Keystore), not the settings DataStore — the
@@ -40,6 +42,7 @@ class SettingsViewModel @Inject constructor(
             trustUserCa = settings.trustUserCa,
             signedInEmail = settings.signedInEmail,
             themeMode = settings.themeMode,
+            hiddenNavRows = settings.hiddenNavRowsSet,
         )
     }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())
@@ -48,6 +51,18 @@ class SettingsViewModel @Inject constructor(
     fun setThemeMode(mode: dev.beacon.core.data.ThemeMode) {
         viewModelScope.launch {
             session.update { it.copy(themeMode = mode) }
+        }
+    }
+
+    /** Sidebar row visibility (user request 2026-11-06) — [rowKey] per SidebarState NAV keys. */
+    fun setNavRowHidden(rowKey: String, hidden: Boolean) {
+        viewModelScope.launch {
+            session.update { current ->
+                val next = current.hiddenNavRowsSet.let { set ->
+                    if (hidden) set + rowKey else set - rowKey
+                }
+                current.copy(hiddenNavRows = next.sorted().ifEmpty { null } ?: next.toList())
+            }
         }
     }
 

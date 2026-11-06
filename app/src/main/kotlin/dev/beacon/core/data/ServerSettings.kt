@@ -34,8 +34,17 @@ data class ServerSettings(
     val modelNamesJson: String? = null,
     val cachedChipDefaults: String? = null,
     val cachedChipGates: String? = null,
+    /**
+     * Per-row sidebar visibility (user request 2026-11-06): NAV rows the user
+     * toggled OFF ("notes", "files", "workspace", "memories", "channels",
+     * "settings"). Null = defaults visible. Chats is the home scaffold and
+     * never hides; gated rows still need their /api/config flags.
+     */
+    val hiddenNavRows: List<String>? = null,
 ) {
     val isOnboarded: Boolean get() = serverUrl.isNotBlank() && authMethod != AuthMethod.None
+
+    val hiddenNavRowsSet: Set<String> get() = hiddenNavRows?.toSet() ?: emptySet()
 }
 
 /** csv codec for the cache fields (ids among web/image/code). */

@@ -94,6 +94,13 @@ class ChatEngine(
         val inputPrompt: InputRequest? = null,
         /** The context meter from GET /{id} (context_usage; loads fresh only). */
         val contextUsage: dev.beacon.core.api.dto.ContextUsageDto? = null,
+        /**
+         * An open chat whose tree is still fetching and has NO Room rows to
+         * paint yet — the UI shows the loading state instead of the landing
+         * hero (the tap must land on the chat instantly: user report
+         * 2026-11-06 — uncached old chats painted the greeting for seconds).
+         */
+        val loading: Boolean = false,
     )
 
     /**
@@ -145,6 +152,20 @@ class ChatEngine(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _state = MutableStateFlow(ChatUiModel())
     val state: StateFlow<ChatUiModel> = _state.asStateFlow()
+
+    /**
+     * display_file's auto-open contract (the web's displayFileHandler):
+     * one emission per terminal:display_file event, RESOLVED against the
+     * function_call_output fold (which carries terminal_selector + path) —
+     * the UI navigates to the native file viewer.
+     */
+    private val _fileDisplays = kotlinx.coroutines.flow.MutableSharedFlow<dev.beacon.core.render.ChatPart.File>(
+        extraBufferCapacity = 4,
+    )
+    val fileDisplays: kotlinx.coroutines.flow.SharedFlow<dev.beacon.core.render.ChatPart.File> = _fileDisplays
+
+    /** A terminal:display_file event awaiting its matching output fold. */
+    private var pendingDisplayPath: String? = null
 
     private var currentCall: Call? = null
     private var streamJob: Job? = null
@@ -198,6 +219,16 @@ class ChatEngine(
                 paintFromStore(existingChatId)
             }
         }
+        // No cached rows yet (first open since install / evicted): show the
+        // loading state — the landing hero must not masquerade as the chat
+        // (user report 2026-11-06). The chats-table row still titles the bar.
+        if (_state.value.messages.isEmpty()) {
+            _state.value = ChatUiModel(
+                chatId = existingChatId,
+                title = runCatching { store.chatTitle(existingChatId) }.getOrNull(),
+                loading = true,
+            )
+        }
         try {
             val payload = store.fetchServerTree(existingChatId)
             if (payload != null) {
@@ -211,6 +242,9 @@ class ChatEngine(
             if (_state.value.messages.isEmpty()) {
                 _state.value = ChatUiModel(chatId = existingChatId, error = describe(e))
             }
+        } finally {
+            // The fetch landed (painted or failed) — never strand the spinner.
+            _state.value = _state.value.copy(loading = false)
         }
     }
 
@@ -289,6 +323,23 @@ class ChatEngine(
                 ),
             ),
         )
+    }
+
+    /** Matches a pending terminal:display_file path against the folded File
+     *  parts — the function_call_output fold is the parsed source for the
+     *  path + terminal_selector (DisplayFile.fromObject). Emits once. */
+    private fun flushPendingDisplay(assistantMessageId: String) {
+        val path = pendingDisplayPath ?: return
+        val file = _state.value.messages
+            .firstOrNull { it.id == assistantMessageId }
+            ?.parts
+            ?.filterIsInstance<dev.beacon.core.render.ChatPart.File>()
+            ?.lastOrNull {
+                it.terminalPath == path || it.terminalPath?.endsWith(path) == true
+            }
+            ?: return
+        pendingDisplayPath = null
+        _fileDisplays.tryEmit(file)
     }
 
     /** Recomputes the streaming assistant's part list from accumulated fold state. */
@@ -659,6 +710,7 @@ class ChatEngine(
         outputSeen = false
         outItems = emptyList()
         embedsHtml = emptyList()
+        pendingDisplayPath = null
         lastRoomWrite = now
         scanner = SseFrameScanner()
 
@@ -1115,6 +1167,9 @@ class ChatEngine(
                 // parts derive from outputs from here on.
                 outputSeen = true
                 foldPartsFor(assistantMessageId) { it.copy(markdown = displayTextFromOutput(event.items) ?: it.markdown) }
+                // display_file's auto-open fires once the fold resolves the
+                // terminal_selector (the fco is the parsed source for it).
+                flushPendingDisplay(assistantMessageId)
             }
             is StreamEvent.FollowUps ->
                 foldPartsFor(assistantMessageId) { it.copy(followUps = event.items) }
@@ -1143,7 +1198,17 @@ class ChatEngine(
                 taskTerminated = true
                 patch { copy(error = event.message) }
             }
-            is StreamEvent.FinishReason, is StreamEvent.StreamDone -> taskTerminated = true
+            is StreamEvent.TerminalFileDisplay -> {
+                // The web opens the file viewer immediately (Chat.svelte
+                // terminalEventHandler); Beacon resolves the server from the
+                // call's own output fold — emit once the File part lands.
+                pendingDisplayPath = event.path
+                flushPendingDisplay(assistantMessageId)
+            }
+            is StreamEvent.FinishReason, is StreamEvent.StreamDone -> {
+                taskTerminated = true
+                pendingDisplayPath = null
+            }
         }
     }
 

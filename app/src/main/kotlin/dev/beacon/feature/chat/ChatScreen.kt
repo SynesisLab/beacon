@@ -54,6 +54,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -128,7 +131,7 @@ internal var testHourOverride: Int? = null
 /** Test hook: pins the rotating greeting second line's day-of-year. */
 internal var testDayOfYearOverride: Int? = null
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun ChatScreen(
     state: ChatViewModel.UiState,
@@ -511,25 +514,44 @@ fun ChatScreen(
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                                     modifier = Modifier.fillMaxWidth(),
                                 )
-                            }
-                        }
-                    }
-                }
-                // Hero prompt chips (mockup 01): the server's
-                // default_prompt_suggestions as ≤3 coral ✦ pills; tap sends.
-                if (state.engine.messages.isEmpty() && !state.tempMode && state.promptSuggestions.isNotEmpty()) {
-                    item(key = "prompt_chips") {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 20.dp, vertical = 4.dp),
-                        ) {
-                            state.promptSuggestions.take(3).forEach { s ->
-                                androidx.compose.material3.SuggestionChip(
-                                    onClick = { actions.onSendPrompt(s.contentText) },
-                                    label = { Text("✦ ${s.titleText}", maxLines = 1) },
-                                )
+                                // Mockup 01 .pchips: the server's
+                                // default_prompt_suggestions as ≤3 coral-tint
+                                // ✦ pills, centered + wrapping, directly below
+                                // the greeting; tap sends.
+                                if (!state.tempMode && state.promptSuggestions.isNotEmpty()) {
+                                    androidx.compose.foundation.layout.FlowRow(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 20.dp, vertical = 4.dp),
+                                    ) {
+                                        state.promptSuggestions.take(3).forEach { s ->
+                                            Surface(
+                                                onClick = { actions.onSendPrompt(s.contentText) },
+                                                shape = androidx.compose.foundation.shape.RoundedCornerShape(999.dp),
+                                                color = dev.beacon.ui.theme.Coral.copy(alpha = 0.12f),
+                                                border = androidx.compose.foundation.BorderStroke(
+                                                    1.dp,
+                                                    dev.beacon.ui.theme.Coral.copy(alpha = 0.35f),
+                                                ),
+                                            ) {
+                                                Text(
+                                                    text = buildAnnotatedString {
+                                                        withStyle(SpanStyle(color = dev.beacon.ui.theme.CoralDeep)) {
+                                                            append("✦ ")
+                                                        }
+                                                        append(s.titleText)
+                                                    },
+                                                    maxLines = 1,
+                                                    style = MaterialTheme.typography.labelLarge,
+                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                    modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -601,40 +623,10 @@ fun ChatScreen(
                         .padding(horizontal = 16.dp, vertical = 2.dp),
                 )
             }
-            // §9.3 composer toggles (server-gated). Temp rides the topbar.
-            val gate = state.featuresGate
-            if (gate != null && (gate.enable_web_search == true || gate.enable_image_generation == true ||
-                    gate.enable_code_interpreter == true)
-            ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp),
-                ) {
-                    if (gate.enable_web_search == true) {
-                        androidx.compose.material3.FilterChip(
-                            selected = state.toggles.webSearch,
-                            onClick = actions.onToggleWebSearch,
-                            label = { Text("🌐 Web") },
-                        )
-                    }
-                    if (gate.enable_image_generation == true) {
-                        androidx.compose.material3.FilterChip(
-                            selected = state.toggles.imageGeneration,
-                            onClick = actions.onToggleImageGeneration,
-                            label = { Text("🎨 Image") },
-                        )
-                    }
-                    if (gate.enable_code_interpreter == true) {
-                        androidx.compose.material3.FilterChip(
-                            selected = state.toggles.codeInterpreter,
-                            onClick = actions.onToggleCodeInterpreter,
-                            label = { Text("⌨️ Code") },
-                        )
-                    }
-                }
-            }
+            // §9.3 composer toggles REMOVED from above the composer (user
+            // request 2026-11-06; mockup 01 fnote: "single-row composer, ⊕
+            // sheet holds the toggles") — Web/Image/Code live in the
+            // add-to-chat sheet only.
             // M3-d: pending attachments (chips) + the attach affordance.
             if (state.attachments.isNotEmpty()) {
                 Row(

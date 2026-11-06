@@ -257,8 +257,8 @@ private fun SearchField(value: String, onChange: (String) -> Unit) {
         leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp)
-            .height(54.dp),
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+            .height(56.dp),
         colors = OutlinedTextFieldDefaults.colors(
             focusedBorderColor = MaterialTheme.colorScheme.outline,
             unfocusedBorderColor = MaterialTheme.colorScheme.outline,
@@ -275,7 +275,7 @@ private fun SectionLabel(label: String) {
             letterSpacing = 0.8.sp,
         ),
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = 20.dp, top = 12.dp, bottom = 2.dp),
+        modifier = Modifier.padding(start = 20.dp, top = 18.dp, bottom = 6.dp),
     )
 }
 
@@ -293,7 +293,7 @@ private fun ChatRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { open() }
-            .padding(start = 16.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
+            .padding(start = 16.dp, end = 6.dp, top = 14.dp, bottom = 14.dp),
     ) {
         Text(
             if (star) "✦" else "◌",
@@ -326,7 +326,7 @@ private fun FolderRowView(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { open() }
-            .padding(start = 16.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
+            .padding(start = 16.dp, end = 6.dp, top = 14.dp, bottom = 14.dp),
     ) {
         Icon(
             Icons.Filled.KeyboardArrowDown,

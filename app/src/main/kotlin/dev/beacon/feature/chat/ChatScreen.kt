@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
@@ -757,20 +758,31 @@ fun ChatScreen(
     }   // Scaffold content
 
     if (showModelPicker) {
-        // "Select model" sheet (mockup 04): search + avatar initials + caps
-        // badges (🌐/🖼/⌘ from the model's defaultFeatureIds, server-gated);
-        // the chosen one checked; HOLD a model to set it as the default.
+        // Mockup 04: handle + "Model" + ✕, search, avatar-initial rows with
+        // caps badges, coral ✓ on the chosen one; hold = set app default.
         var query by remember { mutableStateOf("") }
         val visible = state.models.filter {
             query.isBlank() || it.name.contains(query, ignoreCase = true) || it.id.contains(query, ignoreCase = true)
         }
         ModalBottomSheet(onDismissRequest = onDismissPicker) {
             Column(Modifier.padding(horizontal = 16.dp)) {
-                Text(
-                    "Select model",
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.padding(bottom = 8.dp),
+                Box(
+                    Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .padding(vertical = 4.dp)
+                        .width(32.dp)
+                        .height(4.dp)
+                        .background(MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(2.dp)),
                 )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                ) {
+                    Text("Model", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                    IconButton(onClick = onDismissPicker) {
+                        Icon(Icons.Filled.Close, contentDescription = "Close")
+                    }
+                }
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
@@ -778,28 +790,19 @@ fun ChatScreen(
                     shape = CircleShape,
                     placeholder = { Text("Search models") },
                     leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 6.dp),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
                 )
                 LazyColumn(
-                    // The jumping = the sheet re-measuring itself while the
-                    // list scrolled past the drag limit (report 2026-11-03):
-                    // give the list a stable max height.
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 460.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 460.dp),
                 ) {
                     items(visible.size, key = { visible[it].id }) { index ->
                         val model = visible[index]
                         val chosen = model.id == state.selectedModelId
-                        // Caps badges from the model's defaultFeatureIds, only
-                        // when the server exposes the feature (mockup 04).
                         val gate = state.featuresGate
                         val badges = buildList {
-                            if ("web_search" in model.default_feature_ids && gate?.enable_web_search == true) add("🌐")
-                            if ("image_generation" in model.default_feature_ids && gate?.enable_image_generation == true) add("🖼")
-                            if ("code_interpreter" in model.default_feature_ids && gate?.enable_code_interpreter == true) add("⌘")
+                            if ("web_search" in model.default_feature_ids && gate?.enable_web_search == true) add("🌐 web")
+                            if ("image_generation" in model.default_feature_ids && gate?.enable_image_generation == true) add("🖼 images")
+                            if ("code_interpreter" in model.default_feature_ids && gate?.enable_code_interpreter == true) add("⌘ code")
                         }
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -808,12 +811,13 @@ fun ChatScreen(
                                 .combinedClickable(
                                     onClick = { onPickModel(model.id) },
                                     onLongClick = { onSetDefault(model.id) },
-                                ),
+                                )
+                                .padding(vertical = 11.dp),
                         ) {
-                            // Avatar initials (mockup 04).
+                            // Avatar initials (mockup 04: blue-tinted tile).
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                color = androidx.compose.ui.graphics.Color(0xFFEFF3FE),
                                 modifier = Modifier.size(34.dp),
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
@@ -822,11 +826,12 @@ fun ChatScreen(
                                             .take(2).joinToString("") { it.first().uppercase() },
                                         style = MaterialTheme.typography.labelLarge,
                                         fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                        color = androidx.compose.ui.graphics.Color(0xFF3565F2),
                                     )
                                 }
                             }
                             Spacer(Modifier.width(11.dp))
-                            Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
+                            Column(Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(model.name, style = MaterialTheme.typography.titleMedium)
                                     if (chosen) {
@@ -850,6 +855,7 @@ fun ChatScreen(
                                         style = MaterialTheme.typography.labelLarge,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                     )
                                 }
                             }
@@ -857,17 +863,16 @@ fun ChatScreen(
                                 Icon(
                                     Icons.Filled.Check,
                                     contentDescription = "Selected",
-                                    // The model-sheet check is BLUE in the reference
-                                    // (Claude's informational accent) → tertiary.
-                                    tint = MaterialTheme.colorScheme.tertiary,
+                                    tint = MaterialTheme.colorScheme.primary,
                                 )
                             }
                         }
+                        HorizontalDivider()
                     }
                 }
                 Text(
-                    "Hold a model to make it the default across Beacon.",
-                    style = MaterialTheme.typography.labelLarge,
+                    "Per-chat default · GET /api/v1/models/list?page=1 · hold a model to make it the app default.",
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 10.dp),
                 )

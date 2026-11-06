@@ -428,20 +428,10 @@ fun ChatScreen(
                 }
             }
 
-            // §9.1 fallback affordance when scrolled away from the newest content.
-            val notAtBottom by androidx.compose.runtime.remember {
-                androidx.compose.runtime.derivedStateOf { listState.canScrollForward }
-            }
-            if (notAtBottom) {
-                val clickScope = androidx.compose.runtime.rememberCoroutineScope()
-                androidx.compose.material3.TextButton(
-                    onClick = {
-                        clickScope.launch { listState.scrollToItem(0) }
-                        actions.onFlickRefetch()
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("Latest ⇅") }
-            }
+            // The "Latest ⇅" fallback pill was REMOVED (user request
+            // 2026-11-06): the flick-up gesture + the Updated ✓ pill cover
+            // the sync affordance; a permanent bottom button cluttered the
+            // composer row.
             // Context meter (context_usage from GET /{id}; verified shape in
             // the clone): tokenized estimate vs the compaction threshold.
             val context = state.engine.contextUsage
@@ -772,6 +762,68 @@ private fun MessageBubble(
     onSetBranch: (holderId: String, index: Int) -> Unit = { _, _ -> },
 ) {
     val streaming = message.id == streamingMessageId
+    // The native compaction checkpoint renders as its own row ABOVE the
+    // message content (web ContextCompactionLabel parity) — split it out so
+    // a part-bearing USER turn never loses its markdown to PartsView.
+    val compactions = message.parts.filterIsInstance<dev.beacon.core.render.ChatPart.Compaction>()
+    val restParts = message.parts.filterNot { it is dev.beacon.core.render.ChatPart.Compaction }
+    if (compactions.isNotEmpty()) {
+        androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth()) {
+            compactions.forEach { part ->
+                dev.beacon.feature.chat.CompactionRow(part)
+            }
+            MessageBody(
+                message = message,
+                streaming = streaming,
+                parts = restParts,
+                onFollowUp = onFollowUp,
+                onOpenFile = onOpenFile,
+                httpClient = httpClient,
+                instanceUrl = instanceUrl,
+                iframeCsp = iframeCsp,
+                onRegenerate = onRegenerate,
+                onReadAloud = onReadAloud,
+                onRate = onRate,
+                onShare = onShare,
+                onSetBranch = onSetBranch,
+            )
+        }
+    } else {
+        MessageBody(
+            message = message,
+            streaming = streaming,
+            parts = restParts,
+            onFollowUp = onFollowUp,
+            onOpenFile = onOpenFile,
+            httpClient = httpClient,
+            instanceUrl = instanceUrl,
+            iframeCsp = iframeCsp,
+            onRegenerate = onRegenerate,
+            onReadAloud = onReadAloud,
+            onRate = onRate,
+            onShare = onShare,
+            onSetBranch = onSetBranch,
+        )
+    }
+}
+
+/** The bubble body: user pill or assistant on-canvas parts/markdown. */
+@Composable
+private fun MessageBody(
+    message: ChatEngine.RenderMessage,
+    streaming: Boolean,
+    parts: List<dev.beacon.core.render.ChatPart>,
+    onFollowUp: (String) -> Unit,
+    onOpenFile: (fileId: String, name: String, mime: String, terminalServerId: String?, terminalPath: String?) -> Unit,
+    httpClient: okhttp3.OkHttpClient?,
+    instanceUrl: String?,
+    iframeCsp: String?,
+    onRegenerate: () -> Unit,
+    onReadAloud: (messageId: String, text: String) -> Unit,
+    onRate: (messageId: String, rating: Int) -> Unit,
+    onShare: (messageId: String, text: String) -> Unit,
+    onSetBranch: (holderId: String, index: Int) -> Unit,
+) {
     if (message.role == "user") {
         // Right-hugging warm pill (user request 2026-11-03: sent turns belong
         // on the right, Claude parity). Long-press = select/copy (v1).
@@ -796,7 +848,7 @@ private fun MessageBubble(
             // Assistant text sits on the app background directly (Copernicus-voice,
             // no chrome) — parts render inside.
             Box(Modifier.fillMaxWidth()) {
-                if (message.parts.isEmpty()) {
+                if (parts.isEmpty()) {
                     // Persisted legacy rows / tests without a part pipeline,
                     // and long-press select/copy (user request 2026-11-03).
                     androidx.compose.foundation.text.selection.SelectionContainer(Modifier) {
@@ -808,7 +860,7 @@ private fun MessageBubble(
                     }
                 } else {
                     PartsView(
-                        parts = message.parts,
+                        parts = parts,
                         onFollowUp = onFollowUp,
                         onOpenFile = onOpenFile,
                         modifier = Modifier,

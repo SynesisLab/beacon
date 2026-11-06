@@ -34,6 +34,14 @@ sealed interface StreamEvent {
     data class TagsUpdate(val tags: List<String>) : StreamEvent
 
     /**
+     * type:context_compaction — OWUI native compaction progress
+     * (utils/context_compaction.py:82-151): data {action, description, done,
+     * error?, checkpoint_message_id?, context_summary?}. The web shows a
+     * per-message "Compacting context" spinner, then the summary row.
+     */
+    data class CompactionStatus(val description: String?, val done: Boolean, val error: Boolean) : StreamEvent
+
+    /**
      * type:terminal:display_file — the Open Terminal display_file builtin's
      * auto-open signal (middleware.py:961 terminal_event_handler; Chat.svelte
      * terminalEventHandler → displayFileHandler): data {path, page?} — the
@@ -180,6 +188,14 @@ class OwuiStreamParser(
                 } else {
                     emptyList()
                 }
+            }
+            "context_compaction" -> {
+                // Native compaction status (context_compaction.py:82-151).
+                val body = obj["data"] as? JsonObject
+                val description = (body?.get("description") as? JsonPrimitive)?.content
+                val done = (body?.get("done") as? JsonPrimitive)?.booleanOrNull() == true
+                val error = (body?.get("error") as? JsonPrimitive)?.booleanOrNull() == true
+                return listOf(StreamEvent.CompactionStatus(description, done, error))
             }
             "chat:message:error" -> {
                 val body = obj["data"]

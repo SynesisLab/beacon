@@ -76,5 +76,6 @@ object ChatReconciler {
         outputJson = output?.toString(),
         done = done ?: true,
         timestamp = updatedAt ?: createdAt ?: timestamp,
+        meta = buildMap { contextSummary?.takeIf { it.isNotBlank() }?.let { put("contextSummary", it) } },
     )
 }

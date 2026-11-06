@@ -56,6 +56,15 @@ sealed interface ChatPart {
     data class Status(val text: String, val done: Boolean) : ChatPart
     data class GeneratedImage(val url: String, val prompt: String? = null) : ChatPart
     data class FollowUps(val items: List<String>) : ChatPart
+
+    /**
+     * OWUI native context compaction (utils/context_compaction.py; web parity
+     * ContextCompactionLabel.svelte): the summary row on the checkpoint
+     * message (`message.contextSummary`) and/or the
+     * `open_webui:context_compaction` output item. Renders as a muted
+     * "Context compacted" row that expands to the summary.
+     */
+    data class Compaction(val summary: String) : ChatPart
 }
 
 /** UI-only grouping: consecutive [ChatPart.Reasoning]/[ChatPart.ToolCall] = one

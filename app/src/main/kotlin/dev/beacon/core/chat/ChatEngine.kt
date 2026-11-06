@@ -312,18 +312,27 @@ class ChatEngine(
             pending = !entity.done,
         )
         return base.copy(
-            parts = PartBuilder.build(
-                FoldedMessage(
-                    contentMd = entity.content.orEmpty(),
-                    reasoningMd = reasoning,
-                    // An unfinished message whose content never arrived may have
-                    // died mid-reasoning — keep the card spinning there only.
-                    reasoningActive = !entity.done && entity.content.isNullOrBlank(),
-                    outputItems = outputItems,
-                    outputSeen = outputItems.isNotEmpty(),
-                    streaming = !entity.done,
-                ),
-            ),
+            parts = buildList {
+                // The native compaction checkpoint (context_compaction.py upserts
+                // contextSummary onto the checkpoint message) renders as its own
+                // row ABOVE the message content (web: ContextCompactionLabel).
+                entity.meta["contextSummary"]?.takeIf { it.isNotBlank() }
+                    ?.let { add(dev.beacon.core.render.ChatPart.Compaction(it)) }
+                addAll(
+                    PartBuilder.build(
+                        FoldedMessage(
+                            contentMd = entity.content.orEmpty(),
+                            reasoningMd = reasoning,
+                            // An unfinished message whose content never arrived may have
+                            // died mid-reasoning — keep the card spinning there only.
+                            reasoningActive = !entity.done && entity.content.isNullOrBlank(),
+                            outputItems = outputItems,
+                            outputSeen = outputItems.isNotEmpty(),
+                            streaming = !entity.done,
+                        ),
+                    ),
+                )
+            },
         )
     }
 
@@ -1179,6 +1188,18 @@ class ChatEngine(
                 foldPartsFor(assistantMessageId) { it.copy(reasoning = assistantReasoning.toString(), reasoningActive = true) }
             }
             is StreamEvent.Status -> patch { copy(statusText = if (event.done == true) null else event.text) }
+            is StreamEvent.CompactionStatus ->
+                // Native compaction progress (context_compaction.py): spinner
+                // line while running; done+error keeps the failure visible.
+                patch {
+                    copy(
+                        statusText = when {
+                            event.error -> event.description ?: "Context compaction failed"
+                            event.done -> null
+                            else -> event.description ?: "Compacting context"
+                        },
+                    )
+                }
             is StreamEvent.OutputSnapshot -> {
                 outItems = event.items
                 reasoningActive = false // content stage reached (§: spinner off)

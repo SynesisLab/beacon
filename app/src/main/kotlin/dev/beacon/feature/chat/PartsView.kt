@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -85,7 +86,12 @@ private fun RenderPart(
         is dev.beacon.core.render.ChatPart.Status -> StatusPill(part)
         is dev.beacon.core.render.ChatPart.Reasoning -> ReasoningCard(part)
         is dev.beacon.core.render.ChatPart.Markdown ->
-            MiniMarkdown(markdown = part.md, streaming = part.streaming)
+            MiniMarkdown(
+                markdown = part.md,
+                streaming = part.streaming,
+                httpClient = host.httpClient,
+                instanceUrl = host.instanceUrl,
+            )
         is dev.beacon.core.render.ChatPart.ToolCall -> ToolCallCard(part)
         is dev.beacon.core.render.ChatPart.Citations -> CitationsPill(part)
         is dev.beacon.core.render.ChatPart.FollowUps -> FollowUpRow(part, host.onFollowUp)
@@ -97,6 +103,48 @@ private fun RenderPart(
             }
         is dev.beacon.core.render.ChatPart.File -> FileChip(part, host.onOpenFile)
         is dev.beacon.core.render.ChatPart.GeneratedImage -> Unit // M2: generation rendering next
+        is dev.beacon.core.render.ChatPart.Compaction -> CompactionRow(part)
+    }
+}
+
+/**
+ * OWUI native context compaction (utils/context_compaction.py) — web parity
+ * with ContextCompactionLabel.svelte: a muted "Context compacted" row that
+ * expands to the checkpoint summary (pre-wrap, capped scroll height).
+ */
+@Composable
+fun CompactionRow(part: dev.beacon.core.render.ChatPart.Compaction) {
+    var open by rememberSaveable { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { open = !open },
+        ) {
+            Text(
+                "Context compacted",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (open && part.summary.isNotBlank()) {
+            Text(
+                text = part.summary,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .padding(top = 4.dp)
+                    .heightIn(max = 320.dp)
+                    .verticalScroll(rememberScrollState()),
+            )
+        }
     }
 }
 

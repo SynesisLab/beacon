@@ -109,6 +109,12 @@ object PartBuilder {
                         add(ChatPart.Reasoning(text, streaming = item.statusInProgress()))
                     }
                 }
+                "open_webui:context_compaction" -> {
+                    // middleware.py:6046 — the checkpoint summary rowed into the
+                    // output (web: displayItems context_compaction row).
+                    val summary = (item["summary"] as? JsonPrimitive)?.content.orEmpty()
+                    add(ChatPart.Compaction(summary))
+                }
                 "message" -> {
                     val text = (item["content"] as? JsonArray).outputText()
                     // message.embeds (middleware.py:3310): inline UI docs when

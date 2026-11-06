@@ -89,6 +89,14 @@ class OwuiStreamParserTest {
         assertTrue(displays[0].page == null)
         assertEquals("/home/user/report.pdf", displays[1].path)
         assertTrue(displays[1].page == 2)
+        // context_compaction envelope (context_compaction.py:82-151): the
+        // in-progress line, then the done event carrying the summary.
+        val compactions = list.filterIsInstance<StreamEvent.CompactionStatus>()
+        assertEquals(2, compactions.size)
+        assertEquals("Compacting context", compactions[0].description)
+        assertTrue(!compactions[0].done && !compactions[0].error)
+        assertTrue(compactions[1].done)
+        assertEquals("Context compacted", compactions[1].description)
         assertEquals("StreamDone", eventTypes(list).last())
     }
 

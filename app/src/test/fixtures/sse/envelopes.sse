@@ -12,6 +12,10 @@ data: {"type":"chat:title","data":"New chat"}
 
 data: {"type":"chat:tags","data":["tag-one","tag-two"]}
 
+data: {"type":"context_compaction","data":{"action":"context_compaction","description":"Compacting context","done":false}}
+
+data: {"type":"context_compaction","data":{"action":"context_compaction","description":"Context compacted","done":true,"checkpoint_message_id":"m0","context_summary":"Earlier: user asked about UI."}}
+
 data: {"type":"terminal:display_file","data":{"path":"/home/user/beacon-ui-design.md"}}
 
 data: {"type":"terminal:display_file","data":{"path":"/home/user/report.pdf","page":2}}

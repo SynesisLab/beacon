@@ -92,6 +92,9 @@ data class StoredMessage(
     val annotations: kotlinx.serialization.json.JsonElement? = null,
     val statusHistory: kotlinx.serialization.json.JsonElement? = null,
     val output: kotlinx.serialization.json.JsonElement? = null,
+    /** Native context-compaction checkpoint (context_compaction.py:127-138 upserts
+     *  it onto the checkpoint message; web renders ContextCompactionLabel). */
+    val contextSummary: String? = null,
 )
 
 /** POST /api/v1/chats/new — ChatForm {chat, variables?, folder_id?} (chats.py:303-306). */

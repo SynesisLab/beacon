@@ -57,4 +57,20 @@ class DisplayFileFoldTest {
         assertTrue("expected a File part, got $parts", file != null)
         assertTrue(file!!.fileId == "8d747b83-dd07-4fde-a414-e14cc73a26be")
     }
+
+    @Test
+    fun `context compaction output item folds to a Compaction part`() {
+        // middleware.py:6046 shape: {type:'open_webui:context_compaction', id, call_id, summary}
+        val payload = """
+            [{"type":"open_webui:context_compaction","id":"cc_1","call_id":"call_9","summary":"Earlier the user asked about the UI audit."},
+             {"type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"Answer"}]}]
+        """.trimIndent()
+        val parts = PartBuilder.build(
+            FoldedMessage(outputSeen = true, outputItems = json.parseToJsonElement(payload) as kotlinx.serialization.json.JsonArray),
+            json,
+        )
+        val compaction = parts.filterIsInstance<ChatPart.Compaction>().singleOrNull()
+        assertTrue("expected a Compaction part, got $parts", compaction != null)
+        assertTrue(compaction!!.summary == "Earlier the user asked about the UI audit.")
+    }
 }

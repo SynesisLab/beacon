@@ -431,10 +431,12 @@ class ChatViewModel @Inject constructor(
      * re-synced — the user's escape hatch for a stuck generation (2026-11-06).
      */
     fun flickRefetch() {
-        // A brand-new chat has nothing on the server to refetch until the
-        // first message is sent (user report 2026-11-06) — skip the sync
-        // (and the pill) entirely.
-        if (engine.state.value.chatId == null && engine.state.value.messages.isEmpty()) return
+        // Nothing on screen (landing / brand-new chat, no message sent yet):
+        // there is nothing on the server to refetch (user report 2026-11-06)
+        // — skip the sync entirely. A busy stream is exempt: the flick is
+        // then the hang rescue (§9.1).
+        val snap = engine.state.value
+        if (snap.messages.isEmpty() && !snap.busy) return
         viewModelScope.launch {
             syncing.value = true
             try {

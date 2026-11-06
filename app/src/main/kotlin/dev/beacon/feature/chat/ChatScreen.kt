@@ -153,8 +153,13 @@ fun ChatScreen(
     val flickScope = rememberCoroutineScope()
     var refetching by remember { mutableStateOf(false) }
     val pullUp = remember(listState) { androidx.compose.animation.core.Animatable(0f) }
+    // Nothing on screen (landing / brand-new chat, no message sent yet) ⇒
+    // no sync possible — the pull must not even bounce or show the pill
+    // (user report 2026-11-06). A live/hung stream keeps the rescue path:
+    // the optimistic pair makes messages non-empty as soon as it starts.
+    val canSync = state.engine.chatId != null || state.engine.messages.isNotEmpty() || state.engine.busy
     val fireFlick: () -> Unit = {
-        if (listState.canScrollBackward.not() && !refetching) {
+        if (canSync && listState.canScrollBackward.not() && !refetching) {
             flickScope.launch {
                 refetching = true
                 actions.onFlickRefetch()
@@ -575,10 +580,8 @@ fun ChatScreen(
                     )
                 }
                 }
-                // A brand-new chat (no id, no messages) has nothing to
-                // refetch until the first message is sent (user report
-                // 2026-11-06) — no pill during the pull either.
-                val canSync = state.engine.chatId != null || state.engine.messages.isNotEmpty()
+                // The pill rides canSync from above: on the landing screen
+                // (no id, no messages) neither the pull nor the sync shows.
                 if (syncing || refetching || (pullAccum > 0f && canSync)) {
                     // Visible during the PULL itself (user report 2026-11-06:
                     // the loading pill only appeared once the network call ran —

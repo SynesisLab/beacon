@@ -72,6 +72,13 @@ fun LandingCritter(size: Dp, modifier: Modifier = Modifier) {
     ) {
         val cellW = this.size.width / grid[0].length
         val cellH = heightPx / grid.size
+        // The map has dead columns on the right (the heart floats top-left) —
+        // center the USED columns so the critter sits centered in its box
+        // (user report 2026-11-06: "off center").
+        val usedCols = grid[0].indices.filter { col -> grid.any { row -> row[col] != '.' } }
+        val minC = usedCols.first()
+        val maxC = usedCols.last()
+        val offsetX = ((grid[0].length - (maxC - minC + 1)) / 2f - minC) * cellW
         grid.forEachIndexed { row, line ->
             line.forEachIndexed { col, c ->
                 val color = when (c) {
@@ -82,7 +89,7 @@ fun LandingCritter(size: Dp, modifier: Modifier = Modifier) {
                 }
                 drawRect(
                     color = color,
-                    topLeft = Offset(col * cellW, row * cellH),
+                    topLeft = Offset(col * cellW + offsetX, row * cellH),
                     size = androidx.compose.ui.geometry.Size(cellW + 0.6f, cellH + 0.6f),
                 )
             }

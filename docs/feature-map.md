@@ -36,13 +36,12 @@ and the `dev.beacon.NEW_CHAT` shortcut still jump to `chat/new`
 
 ## 2. Onboarding & auth
 
-**v2 target: ONE page, three micro-steps** (beacon-ui-design.md §4.1) — a card
-stack on cream: Instance (URL + probe line) → Sign in → inline MFA when the
-challenge lands (code cells + recovery-link on the same card). Model pick is
-dropped (first model = default; change via the top chip). **2FA enroll defers**
-to a one-time coral-tint nudge card on Chats home → enroll sheet → dismiss
-forever. Current code keeps the multi-step flow (below) until the v2 page
-lands:
+**v2 target: ONE page** (beacon-ui-design.md §4.1, mockup 11) — ✓ landed
+2026-11-06: instance (URL + probe line) + sign-in on one card, inline MFA
+when the challenge lands, model pick dropped (first listed model = default,
+auto-finish; change via the top chip). **2FA enroll defers** to a one-time
+coral-tint nudge card on Chats home → enroll sheet → dismiss forever.
+(The multi-step screens below are retained only as the empty-models edge.)
 
 Screen states: instance URL+version probe → sign-in → MFA challenge
 (TOTP/recovery toggle) → enroll (QR svg data-URI via JS-off WebView, manual

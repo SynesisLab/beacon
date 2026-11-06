@@ -42,6 +42,8 @@ class OnboardingViewModel @Inject constructor(
         val step: Step = Step.Url,
         val urlDraft: String = "",
         val probing: Boolean = false,
+        /** True once GET /api/version succeeded for the urlDraft (one-page probe line, mockup 11). */
+        val probed: Boolean = false,
         val error: String? = null,
         val authMode: AuthMethod = AuthMethod.ApiKey,
         val apiKeyDraft: String = "",
@@ -74,8 +76,8 @@ class OnboardingViewModel @Inject constructor(
     fun setMfaCodeDraft(value: String) = mutate { copy(mfaCodeDraft = value, error = null) }
     fun setMfaRecoveryMode(on: Boolean) = mutate { copy(mfaRecoveryMode = on, error = null) }
 
-    /** The recovery-codes screen's Continue → model pick. */
-    fun continueAfterRecoveryCodes() = mutate { copy(step = Step.Models) }
+    /** The recovery-codes card's Continue → done (model auto-chosen). */
+    fun continueAfterRecoveryCodes() = finish()
 
     /** Step 1: resolve + prove the instance lives at the given URL. */
     fun probeServer() {
@@ -92,7 +94,7 @@ class OnboardingViewModel @Inject constructor(
                 session.update {
                     it.copy(serverUrl = url, serverVersion = version.version ?: it.serverVersion)
                 }
-                _state.value = _state.value.copy(probing = false, step = Step.Auth)
+                _state.value = _state.value.copy(probing = false, probed = true, step = Step.Auth)
             } catch (e: Exception) {
                 _state.value = _state.value.copy(probing = false, error = describe(e))
             }
@@ -113,7 +115,7 @@ class OnboardingViewModel @Inject constructor(
                 session.adoptCredentials(AuthMethod.ApiKey, key)
                 adoptUserName()
                 val page = api.models()
-                _state.value = UiState(step = Step.Models, models = page.items)
+                completeOnboarding(page.items)
             } catch (e: Exception) {
                 _state.value = _state.value.copy(connecting = false, error = describe(e))
             }
@@ -183,7 +185,7 @@ class OnboardingViewModel @Inject constructor(
                 session.adoptCredentials(AuthMethod.Password, result.token)
                 adoptUserName()
                 val page = api.models()
-                _state.value = UiState(step = Step.Models, models = page.items)
+                completeOnboarding(page.items)
             } catch (e: Exception) {
                 _state.value = _state.value.copy(connecting = false, error = describe(e))
             }
@@ -221,14 +223,11 @@ class OnboardingViewModel @Inject constructor(
                         connecting = false,
                         step = Step.MfaRecovery,
                         models = page.items,
+                        chosenModelId = page.items.firstOrNull()?.id,
                         recoveryCodes = result.recovery_codes,
                     )
                 } else {
-                    _state.value = _state.value.copy(
-                        connecting = false,
-                        step = Step.Models,
-                        models = page.items,
-                    )
+                    completeOnboarding(page.items)
                 }
             } catch (e: Exception) {
                 _state.value = _state.value.copy(connecting = false, error = describe(e))
@@ -286,6 +285,21 @@ class OnboardingViewModel @Inject constructor(
 
     /** Step 3: pick the starting model — the M0 "model list rendered" AC. */
     fun chooseModel(modelId: String) = mutate { copy(chosenModelId = modelId) }
+
+    /**
+     * One-page onboarding (mockup 11): the model pick is dropped — the FIRST
+     * listed model becomes the default (change later via the top chip).
+     * Falls back to the Models step only when the server lists none.
+     */
+    private fun completeOnboarding(models: List<OwuiModel>) {
+        val chosen = models.firstOrNull()?.id
+        if (chosen != null) {
+            _state.value = _state.value.copy(step = Step.Models, models = models, chosenModelId = chosen)
+            finish()
+        } else {
+            _state.value = _state.value.copy(step = Step.Models, models = models)
+        }
+    }
 
     fun finish() {
         val chosen = _state.value.chosenModelId ?: return

@@ -116,6 +116,9 @@ data class ChatActions(
 private val UserBubbleShape = RoundedCornerShape(12.dp)
 private val BubblePadding = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
 
+/** Test hook: pins the time-aware greeting's hour so goldens are stable. */
+internal var testHourOverride: Int? = null
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
@@ -386,7 +389,8 @@ fun ChatScreen(
                                 LandingCritter(size = 96.dp)
                                 // Time-aware greeting (mockup 01: "Late night,
                                 // Anthony?") with the signed-in name.
-                                val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+                                val hour = testHourOverride
+                                    ?: java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
                                 val part = when (hour) {
                                     in 5..11 -> "morning"
                                     in 12..17 -> "afternoon"

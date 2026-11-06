@@ -359,12 +359,15 @@ private fun BeaconNavHost(permanentSidebar: Boolean) {
                     }
                 }
                 composable(ROUTE_FILES_TAB) {
-                    val terminalVm: dev.beacon.feature.terminal.TerminalViewModel = hiltViewModel()
+                    // v3 Files (mockup 08): ONE list, source chips — Uploads +
+                    // one per terminal server — breadcrumb, folders-first,
+                    // contextual Upload FAB.
+                    val filesVm: dev.beacon.feature.terminal.FilesViewModel = hiltViewModel()
                     val context = androidx.compose.ui.platform.LocalContext.current
                     val save = androidx.activity.compose.rememberLauncherForActivityResult(
                         androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/octet-stream"),
                     ) { uri ->
-                        terminalVm.pendingDownload?.let { (bytes, _) ->
+                        filesVm.pendingSave.value?.let { (bytes, _) ->
                             uri?.let {
                                 runCatching {
                                     context.contentResolver.openOutputStream(it)?.use { out ->
@@ -372,22 +375,39 @@ private fun BeaconNavHost(permanentSidebar: Boolean) {
                                     }
                                 }
                             }
-                            terminalVm.pendingDownload = null
+                            filesVm.clearPendingSave()
                         }
                     }
-                    androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
-                        // v3 Files = serif Files header + the terminal one-list
-                        // body (source chips land Stage C).
-                        dev.beacon.feature.terminal.TerminalScreen(
-                            vm = terminalVm,
-                            onBack = { nav.popBackStack() },
-                            onSaveDownload = { bytes, name ->
-                                terminalVm.pendingDownload = bytes to name
-                                save.launch(name)
-                            },
-                            header = { dev.beacon.feature.home.TabHeader("Files") },
-                        )
+                    val pickUpload = androidx.activity.compose.rememberLauncherForActivityResult(
+                        androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+                    ) { uri ->
+                        if (uri != null) {
+                            runCatching {
+                                val name = dev.beacon.core.data.contentQueryName(context, uri)
+                                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@runCatching
+                                filesVm.uploadToActiveSource(name, bytes)
+                            }
+                        }
                     }
+                    dev.beacon.feature.terminal.FilesScreen(
+                        vm = filesVm,
+                        onOpenInstanceFile = { fileId, name, mime ->
+                            nav.navigate(
+                                "file/${android.net.Uri.encode(fileId)}/${android.net.Uri.encode(name)}/${android.net.Uri.encode(mime)}",
+                            )
+                        },
+                        onOpenTerminalFile = { serverId, path, name ->
+                            nav.navigate(
+                                "file/-/${android.net.Uri.encode(name)}/application/octet-stream" +
+                                    "?server=${android.net.Uri.encode(serverId)}&path=${android.net.Uri.encode(path)}",
+                            )
+                        },
+                        onPickUpload = { pickUpload.launch(arrayOf("*/*")) },
+                        onSaveDownload = { bytes, name ->
+                            save.launch(name)
+                        },
+                        header = { dev.beacon.feature.home.TabHeader("Files") },
+                    )
                 }
                 // (v3: the More tab died — its rows are sidebar rows.)
                 composable(ROUTE_SETTINGS) {

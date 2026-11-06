@@ -18,7 +18,7 @@ One hand, no drawer. Start destination (when onboarded) = **Chats home**.
 | tab 1 `chats` (start) | Chats home: Pinned ✦ → Folders → date-grouped All; ⌕ search; ＋ new folder; FAB `+ New chat`; row ⋯ = row-actions sheet; 2FA nudge card when unenrolled | `feature/home/ChatsHomeScreen.kt` + `feature/home/ChatsHomeViewModel.kt` | v2 target (Stage B) |
 | `chat/new`, `chat/{chatId}` | chat conversation (tab 1 stack; back → Chats home) | `feature/chat/ChatScreen.kt` + `ChatViewModel.kt` | exists; topbar/composer per §3/§10.2 |
 | tab 2 `notes` | Notes list (title · snippet · updated · ✦ pin · ⋯) + editor | `feature/surfaces/SurfaceWriteScreens.kt` (NotesScreen/NoteEditorScreen) | editor exists; tab-level chrome pending |
-| tab 3 `files` | ONE list, source chips: Uploads + each terminal server; mono breadcrumb; folders-first rows; contextual upload FAB → `FileViewer` route | `feature/terminal/TerminalScreen.kt` (merged with uploads list) | v2 merge pending (Stage C) |
+| `files` | ONE list, source chips: Uploads + each terminal server; mono breadcrumb (cwd · ⌃ · ↻); folders-first rows; contextual Upload FAB → `FileViewer` route | `feature/terminal/FilesScreen.kt` (+`FilesViewModel`) | ✓ landed 2026-11-06 (mockup 08) |
 | tab 4 `more` | everything else: Workspace › · Memories* › · Channels* › · Settings › · version caption | `feature/home/MoreScreen.kt` (new) | v2 target (Stage B) |
 | `settings`, `settings/headers` | pushed; headers editor unchanged (ADR-0012) | `feature/settings/*` | exists |
 | `folder/{id}/{name}/chats` | folder's chats | `feature/surfaces/FolderChatsScreen.kt` | exists |

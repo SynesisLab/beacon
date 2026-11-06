@@ -14,6 +14,8 @@ import dev.beacon.core.chat.ChatEngineFactory
 import dev.beacon.core.chat.FileAttachment
 import dev.beacon.core.data.SessionStore
 import dev.beacon.core.data.UploadQueue
+import dev.beacon.core.data.modelNameFor
+import dev.beacon.core.data.parseChipCsv
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -69,10 +71,15 @@ class ChatViewModel @Inject constructor(
         val mic: MicState = MicState.Idle,
         val micError: String? = null,
         val micAvailable: Boolean = false,
+        /** Boot cache (ServerSettings, 2026-11-06): paints chip gates/flags and
+         *  the resolved model NAME before the defaults chain lands. */
+        val cachedSettings: dev.beacon.core.data.ServerSettings? = null,
     ) {
-        /** Display label: the model's NAME when known, else its id. */
+        /** Display label: name when known → boot-cache name → the id. */
         val modelLabel: String?
-            get() = models.firstOrNull { it.id == selectedModelId }?.name ?: selectedModelId
+            get() = models.firstOrNull { it.id == selectedModelId }?.name
+                ?: cachedSettings?.modelNameFor(selectedModelId)
+                ?: selectedModelId
     }
 
     private val engine: ChatEngine = factory.create()
@@ -95,6 +102,10 @@ class ChatViewModel @Inject constructor(
     /** ui.iframe_csp (admin CSP for artifact/embed cards) rides the /api/config fetch. */
     private val iframeCspFlow = MutableStateFlow<String?>(null)
     private var serverDefault: String? = null
+    /** Boot cache seed (hot snapshot): the returning session paints instantly. */
+    private val cachedSettings = MutableStateFlow<dev.beacon.core.data.ServerSettings?>(
+        session.settingsSnapshot().takeIf { it.isOnboarded },
+    )
     private val httpClient = api.publicClient()
     private val instanceUrl = session.instanceUrlSnapshot()
 
@@ -114,6 +125,7 @@ class ChatViewModel @Inject constructor(
             micError,
             configFeaturesFlow,
             iframeCspFlow,
+            cachedSettings,
         ) { values ->
             @Suppress("UNCHECKED_CAST")
             UiState(
@@ -129,10 +141,14 @@ class ChatViewModel @Inject constructor(
                 attachmentError = values[7] as String?,
                 toggles = values[8] as Toggles,
                 tempMode = values[9] as Boolean,
-                featuresGate = values[12] as dev.beacon.core.api.dto.Features?,
+                // Chip visibility at boot = the CACHED gates (the live config
+                // replaces them when the fetch lands).
+                featuresGate = (values[12] as dev.beacon.core.api.dto.Features?)
+                    ?: cachedBootGate(values[14] as dev.beacon.core.data.ServerSettings?),
                 mic = values[10] as MicState,
                 micError = values[11] as String?,
                 iframeCsp = values[13] as String?,
+                cachedSettings = values[14] as dev.beacon.core.data.ServerSettings?,
                 // §8.5: the mic STAYS visible; the tap requests the permission
                 // (a hidden mic would never produce the prompt).
                 micAvailable = true,
@@ -140,6 +156,18 @@ class ChatViewModel @Inject constructor(
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState(engine = engine.state.value))
 
     init {
+        val cache = session.settingsSnapshot()
+        // Boot cache seed (2026-11-06): the chips paint with the LAST session's
+        // server-determined defaults instead of blank-then-pop; the fresh chain
+        // ORs over this at applyModelDefaults.
+        val seedIds = dev.beacon.core.data.parseChipCsv(cache.cachedChipDefaults)
+        if (cache.cachedChipDefaults != null) {
+            toggles.value = Toggles(
+                webSearch = "web" in seedIds,
+                imageGeneration = "image" in seedIds,
+                codeInterpreter = "code" in seedIds,
+            )
+        }
         viewModelScope.launch {
             // §9.3 share-target: pre-fill the draft when shared into Beacon.
             ShareSeed.pending?.let { seed ->
@@ -152,17 +180,61 @@ class ChatViewModel @Inject constructor(
             applyModelDefaults(selected.value)
             selected.value = selected.value ?: serverDefault
             applyModelDefaults(selected.value)
+            persistDefaultsCache()
             // One retry pass when the first round landed empty (boot-race
             // networks); the app-resume re-entry covers later failures.
             if (modelsState.value.isEmpty() || configFeaturesFlow.value == null) {
                 kotlinx.coroutines.delay(12_000)
                 fetchDefaults()
                 applyModelDefaults(selected.value)
+                persistDefaultsCache()
             }
         }
         // (the voice partials collector starts per-dictation in startDictation —
         // a construction-time collect here would see the not-yet-initialized
         // `voice` property: the crash on 2026-11-02's device log.)
+    }
+
+    /** Write the boot cache: names json + chip defaults/gates csv. */
+    private suspend fun persistDefaultsCache() {
+        val names = kotlinx.serialization.json.buildJsonObject {
+            modelsState.value.forEach { model ->
+                put(model.id, kotlinx.serialization.json.JsonPrimitive(model.name ?: model.id))
+            }
+        }
+        session.update { base ->
+            base.copy(
+                modelNamesJson = names.toString(),
+                cachedChipDefaults = dev.beacon.core.data.chipsCsv(
+                    buildList {
+                        if (toggles.value.webSearch) add("web")
+                        if (toggles.value.imageGeneration) add("image")
+                        if (toggles.value.codeInterpreter) add("code")
+                    },
+                ),
+                cachedChipGates = dev.beacon.core.data.chipsCsv(
+                    buildList {
+                        val gate = configFeaturesFlow.value
+                        if (gate != null) {
+                            if (gate.enable_web_search == true) add("web")
+                            if (gate.enable_image_generation == true) add("image")
+                            if (gate.enable_code_interpreter == true) add("code")
+                        }
+                    },
+                ),
+            )
+        }
+    }
+
+    /** A partial Features from the cached gates (chip visibility at boot). */
+    private fun cachedBootGate(settings: dev.beacon.core.data.ServerSettings?): dev.beacon.core.api.dto.Features? {
+        val csv = dev.beacon.core.data.parseChipCsv(settings?.cachedChipGates)
+        if (settings?.cachedChipGates == null) return null
+        return dev.beacon.core.api.dto.Features(
+            enable_web_search = "web" in csv,
+            enable_image_generation = "image" in csv,
+            enable_code_interpreter = "code" in csv,
+        )
     }
 
     /**

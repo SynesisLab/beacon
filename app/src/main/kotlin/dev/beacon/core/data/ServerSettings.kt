@@ -25,8 +25,32 @@ data class ServerSettings(
     val userName: String? = null,
     /** Forced light/dark or follow-the-system (user request 2026-11-03). */
     val themeMode: ThemeMode = ThemeMode.System,
+    /** Boot-flash cache (user request 2026-11-06): last-known model display
+     *  names {"id":"name",…} + the chip default/gate csv — the Web/Image/Code
+     *  chips and the resolved NAME paint at boot instead of popping in
+     *  seconds later when the defaults chain lands. Network refresh wins. */
+    val modelNamesJson: String? = null,
+    val cachedChipDefaults: String? = null,
+    val cachedChipGates: String? = null,
 ) {
     val isOnboarded: Boolean get() = serverUrl.isNotBlank() && authMethod != AuthMethod.None
+}
+
+/** csv codec for the cache fields (ids among web/image/code). */
+fun parseChipCsv(raw: String?): Set<String> =
+    raw?.takeIf { it.isNotBlank() }?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet() ?: emptySet()
+
+fun chipsCsv(ids: Collection<String>): String = ids.joinToString(",")
+
+/** ServerSettings model-name lookup against the boot cache ({"id":"name"} json). */
+fun ServerSettings.modelNameFor(modelId: String?): String? {
+    if (modelId.isNullOrBlank()) return null
+    val raw = modelNamesJson?.takeIf { it.isNotBlank() } ?: return null
+    return runCatching {
+        val obj = kotlinx.serialization.json.Json.parseToJsonElement(raw)
+        (obj as? kotlinx.serialization.json.JsonObject)?.get(modelId)
+            ?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+    }.getOrNull()
 }
 
 /**

@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -117,9 +118,9 @@ data class ChatActions(
 private val UserBubbleShape = RoundedCornerShape(12.dp)
 private val BubblePadding = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
 
-/** Pull-up-to-refetch trigger distance: a deliberate pull at the bottom must
- *  travel this far — a casual wiggle or a scroll tail won't (2026-11-06). */
-private const val PULL_TRIGGER_DP = 140
+/** Pull-up-to-refetch trigger distance (2026-11-06): a slow drag at the
+ *  bottom of the transcript must travel this far before the sync fires. */
+private const val PULL_TRIGGER_DP = 120
 
 /** Test hook: pins the time-aware greeting's hour so goldens are stable. */
 internal var testHourOverride: Int? = null
@@ -171,38 +172,74 @@ fun ChatScreen(
         }
     }
 
-    // §9.1 flick-to-refetch: at bottom + upward flick ⇒ sync. A slow PULL-UP
-    // from the bottom also refetches (user ask 2026-11-06): at the bottom the
-    // list can't consume an upward drag, so the unconsumed delta arrives in
-    // onPostScroll — accumulate negative available.y and fire past a
-    // threshold. A fast scroll that merely ENDS at the bottom only ever
-    // produces positive deltas, which reset the accumulator (intentionality).
-    // NOTE: do NOT move this to a pointerInput drag observer — that consumes
-    // drags and kills the sidebar's edge-swipe (2026-11-06 regression).
-    // The at-bottom check is canScrollBackward==false: in reverseLayout the
-    // visual bottom has canScrollForward==TRUE (the inversion that made
-    // flick/pull dead, fixed 2026-11-06).
+    // §9.1 flick-to-refetch: at bottom + upward flick ≥ ~4/3 viewport/sec ⇒ sync.
+    // 2026-11-06 (user ask): a slow PULL-UP from the bottom also refetches.
+    // Detected with a raw pointer drag observer (not nestedScroll): a list
+    // whose content is SHORTER than the viewport dispatches no scroll deltas
+    // at all, and even on long chats the bottom edge reports through here.
+    // The at-bottom check is canScrollBackward==false (reverseLayout: at the
+    // visual bottom canScrollForward is TRUE — the 2026-11-06 inversion bug).
     val density = androidx.compose.ui.platform.LocalDensity.current
     var pullAccum by remember { mutableStateOf(0f) }
+    // A hand-rolled observer that NEVER consumes (detectDragGestures consumes,
+    // which killed the sidebar's left-edge swipe — user report 2026-11-06).
+    // Axis-locked at the first slop crossing; only a VERTICAL pull that STARTS
+    // at the bottom counts (a fast scroll merely ENDING at the bottom doesn't).
+    val pullModifier = Modifier.pointerInput(listState) {
+        val slop = with(density) { 8.dp.toPx() } // touch slop approximation in px
+        var downX = 0f
+        var lastY = 0f
+        var axisLocked = false
+        var horizontal = false
+        var atBottomAtStart = false
+        awaitPointerEventScope {
+            while (true) {
+                val e = awaitPointerEvent()
+                val c = e.changes.firstOrNull() ?: continue
+                if (c.type != androidx.compose.ui.input.pointer.PointerType.Touch) continue
+                when (e.type) {
+                    androidx.compose.ui.input.pointer.PointerEventType.Press -> {
+                        downX = c.position.x
+                        lastY = c.position.y
+                        axisLocked = false
+                        horizontal = false
+                        atBottomAtStart = listState.canScrollBackward.not()
+                        pullAccum = 0f
+                    }
+                    androidx.compose.ui.input.pointer.PointerEventType.Move -> {
+                        val y = c.position.y
+                        val dy = y - lastY
+                        if (!axisLocked) {
+                            val dx = kotlin.math.abs(c.position.x - downX)
+                            val ady = kotlin.math.abs(dy)
+                            if (dx > slop || ady > slop) {
+                                axisLocked = true
+                                horizontal = dx > ady
+                            }
+                        }
+                        if (axisLocked && !horizontal && atBottomAtStart && dy < 0f) {
+                            pullAccum += -dy
+                            if (pullAccum >= with(density) { PULL_TRIGGER_DP.dp.toPx() }) {
+                                pullAccum = 0f
+                                fireFlick()
+                            }
+                        }
+                        lastY = y
+                    }
+                    androidx.compose.ui.input.pointer.PointerEventType.Release,
+                    androidx.compose.ui.input.pointer.PointerEventType.Exit -> {
+                        axisLocked = false
+                        atBottomAtStart = false
+                        pullAccum = 0f
+                    }
+                    else -> Unit
+                }
+                // never consume — the list and the drawer keep their gestures
+            }
+        }
+    }
     val flickConnection = remember(listState) {
         object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
-            override fun onPostScroll(
-                consumed: androidx.compose.ui.geometry.Offset,
-                available: androidx.compose.ui.geometry.Offset,
-                source: androidx.compose.ui.input.nestedscroll.NestedScrollSource,
-            ): androidx.compose.ui.geometry.Offset {
-                if (listState.canScrollBackward.not() && available.y < 0f && !refetching) {
-                    pullAccum += -available.y
-                    if (pullAccum >= with(density) { PULL_TRIGGER_DP.dp.toPx() }) {
-                        pullAccum = 0f
-                        fireFlick()
-                    }
-                } else if (available.y > 0f || listState.canScrollBackward) {
-                    pullAccum = 0f
-                }
-                return androidx.compose.ui.geometry.Offset.Zero
-            }
-
             override suspend fun onPostFling(
                 consumed: androidx.compose.ui.unit.Velocity,
                 available: androidx.compose.ui.unit.Velocity,
@@ -327,7 +364,8 @@ fun ChatScreen(
                 // The flick rides the WHOLE surface: a short, non-scrolling
                 // transcript never dispatches a list fling ("flick to update
                 // feels missing" — user report 2026-11-03).
-                .nestedScroll(flickConnection),
+                .nestedScroll(flickConnection)
+                .then(pullModifier),
         ) {
             state.engine.error?.let { error ->
                 Text(

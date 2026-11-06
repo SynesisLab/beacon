@@ -301,7 +301,13 @@ class OnboardingViewModel @Inject constructor(
     private suspend fun adoptUserName() {
         runCatching {
             val user = api.sessionUser()
-            session.update { it.copy(userName = user.name, signedInEmail = user.email ?: it.signedInEmail) }
+            session.update {
+                it.copy(
+                    userName = user.name,
+                    signedInEmail = user.email ?: it.signedInEmail,
+                    userRole = user.role,
+                )
+            }
         }
     }
 

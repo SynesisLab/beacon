@@ -5,21 +5,28 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -27,6 +34,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.navigation.NavType
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
 import kotlinx.coroutines.launch
 import androidx.navigation.compose.NavHost
@@ -34,11 +42,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import dagger.hilt.android.AndroidEntryPoint
 import dev.beacon.core.data.local.ChatEntity
-import dev.beacon.feature.chat.ChatsDrawer
 import dev.beacon.feature.chat.ChatActions
 import dev.beacon.feature.chat.ChatScreen
 import dev.beacon.feature.chat.ChatViewModel
-import dev.beacon.feature.home.HomeViewModel
 import dev.beacon.feature.onboarding.OnboardingActions
 import dev.beacon.feature.onboarding.OnboardingScreen
 import dev.beacon.feature.onboarding.OnboardingViewModel
@@ -50,26 +56,12 @@ private const val ROUTE_ONBOARDING = "onboarding"
 private const val ROUTE_SETTINGS = "settings"
 private const val ROUTE_CHAT_NEW = "chat/new"
 private const val ROUTE_CHAT = "chat/{chatId}"
-// UI v2.0 tab routes (beacon-ui-design.md §2): Chats/Notes/Files/More.
+// UI v3 navigation (beacon-ui-design.md §2): the sidebar owns it; routes here.
 private const val ROUTE_CHATS_HOME = "chats"
 private const val ROUTE_NOTES_TAB = "notes"
 private const val ROUTE_FILES_TAB = "files"
-private const val ROUTE_MORE_TAB = "more"
 
-/** Standard bottom-nav switching: single-top, state-preserved. */
-private fun navToTab(nav: androidx.navigation.NavController, key: String) {
-    val route = when (key) {
-        "chats" -> ROUTE_CHATS_HOME
-        "notes" -> ROUTE_NOTES_TAB
-        "files" -> ROUTE_FILES_TAB
-        else -> ROUTE_MORE_TAB
-    }
-    nav.navigate(route) {
-        launchSingleTop = true
-        popUpTo(ROUTE_CHATS_HOME) { inclusive = false; saveState = true }
-        restoreState = true
-    }
-}
+/** The v2 tab bar was retired by v3 (the sidebar owns navigation). */
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -124,6 +116,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
+@kotlin.OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 private fun BeaconNavHost(permanentSidebar: Boolean) {
     val main: MainViewModel = hiltViewModel()
     val settings by main.settings.collectAsStateWithLifecycle()
@@ -140,6 +133,97 @@ private fun BeaconNavHost(permanentSidebar: Boolean) {
                     }
                 }
             }
+            // ── v3 SIDEBAR scope (primary nav, beacon-ui-design.md §2) ─────
+            // ONE ChatsHomeViewModel (activity-scoped) feeds the sidebar's
+            // chats section AND the Chats home route; SurfaceViewModel owns
+            // the gates; the host carries the shared row-actions sheet.
+            val navScope = rememberCoroutineScope()
+            val drawerState = androidx.compose.material3.rememberDrawerState(
+                androidx.compose.material3.DrawerValue.Closed,
+            )
+            val homeVm: dev.beacon.feature.home.ChatsHomeViewModel = hiltViewModel()
+            val surfacesVm: dev.beacon.feature.surfaces.SurfaceViewModel = hiltViewModel()
+            var sidebarMenuChat by remember { mutableStateOf<dev.beacon.core.data.local.ChatEntity?>(null) }
+            var sidebarFolderCreate by remember { mutableStateOf(false) }
+            suspend fun openSidebar() {
+                surfacesVm.refresh()
+                drawerState.open()
+            }
+            val context = androidx.compose.ui.platform.LocalContext.current
+
+            androidx.compose.material3.ModalNavigationDrawer(
+                drawerState = drawerState,
+                gesturesEnabled = true,
+                drawerContent = {
+                    androidx.compose.material3.ModalDrawerSheet(
+                        Modifier.width(320.dp),
+                        drawerContainerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+                    ) {
+                        dev.beacon.feature.home.BeaconSidebar(
+                            state = run {
+                                val homeUi = homeVm.ui.collectAsStateWithLifecycle().value
+                                val gateUi = surfacesVm.state.collectAsStateWithLifecycle().value
+                                val currentEntry by nav.currentBackStackEntryAsState()
+                                dev.beacon.feature.home.SidebarState(
+                                    chats = homeUi.chats,
+                                    folders = homeUi.folders,
+                                    search = homeUi.search,
+                                    memoriesGate = gateUi.memoriesGate,
+                                    channelsGate = gateUi.channelsGate,
+                                    userName = snapshot.userName,
+                                    userEmail = snapshot.signedInEmail,
+                                    userRole = snapshot.userRole,
+                                    serverVersion = snapshot.serverVersion,
+                                    activeRow = when (currentEntry?.destination?.route) {
+                                        ROUTE_NOTES_TAB -> "notes"
+                                        ROUTE_FILES_TAB, "terminal" -> "files"
+                                        ROUTE_SETTINGS, "settings/headers" -> "settings"
+                                        ROUTE_CHAT_NEW, ROUTE_CHAT -> "chats"
+                                        "surface/workspace" -> "workspace"
+                                        "surface/memories" -> "memories"
+                                        "surface/channels" -> "channels"
+                                        else -> "chats"
+                                    },
+                                )
+                            },
+                            actions = dev.beacon.feature.home.SidebarActions(
+                                search = homeVm::setSearch,
+                                goto = { key ->
+                                    navScope.launch { drawerState.close() }
+                                    homeVm.setSearch("")
+                                    when (key) {
+                                        "chats" -> nav.navigate(ROUTE_CHATS_HOME) { launchSingleTop = true }
+                                        "notes" -> nav.navigate(ROUTE_NOTES_TAB) { launchSingleTop = true }
+                                        "files" -> nav.navigate(ROUTE_FILES_TAB) { launchSingleTop = true }
+                                        "settings" -> nav.navigate(ROUTE_SETTINGS)
+                                        "folders" -> nav.navigate("surface/folders") { launchSingleTop = true }
+                                        else -> nav.navigate("surface/$key") { launchSingleTop = true }
+                                    }
+                                },
+                                openChat = { chatId ->
+                                    navScope.launch { drawerState.close() }
+                                    homeVm.setSearch("")
+                                    nav.navigate("chat/$chatId")
+                                },
+                                chatActions = { chat ->
+                                    navScope.launch { drawerState.close() }
+                                    sidebarMenuChat = chat
+                                },
+                                createFolder = { sidebarFolderCreate = true },
+                                newChat = {
+                                    navScope.launch { drawerState.close() }
+                                    nav.navigate(ROUTE_CHAT_NEW)
+                                },
+                            ),
+                        )
+                    }
+                },
+            ) {
+                androidx.compose.runtime.CompositionLocalProvider(
+                    dev.beacon.feature.home.LocalSidebarOpener provides {
+                        navScope.launch { openSidebar() }
+                    },
+                ) {
             NavHost(
                 navController = nav,
                 // BOOT = a fresh chat (user instruction 2026-11-06 — the Chats
@@ -214,9 +298,9 @@ private fun BeaconNavHost(permanentSidebar: Boolean) {
                 }
                 // ── v2 tab-level surfaces (each hosts the tab bar) ────────
                 composable(ROUTE_CHATS_HOME) {
-                    val homeVm: dev.beacon.feature.home.ChatsHomeViewModel = hiltViewModel()
+                    // The hoisted (activity-scoped) home VM = the SAME instance
+                    // the sidebar reads — one source for recents/search.
                     val homeState = homeVm.ui.collectAsStateWithLifecycle().value
-                    val context = androidx.compose.ui.platform.LocalContext.current
                     dev.beacon.feature.home.ChatsHomeScreen(
                         state = homeState,
                         actions = dev.beacon.feature.home.ChatsHomeActions(
@@ -249,31 +333,28 @@ private fun BeaconNavHost(permanentSidebar: Boolean) {
                             renameFolder = { id, name -> homeVm.renameFolder(id, name) },
                             deleteFolder = homeVm::deleteFolder,
                         ),
-                        tabState = { TabBar(nav, active = "chats") },
                     )
                 }
+                // ── sidebar-reached surfaces: Notes / Files ────────────────
                 composable(ROUTE_NOTES_TAB) {
-                    val surfacesVm: dev.beacon.feature.surfaces.SurfaceViewModel = hiltViewModel()
+                    val surfacesVm2: dev.beacon.feature.surfaces.SurfaceViewModel = hiltViewModel()
                     val writeVm: dev.beacon.feature.surfaces.SurfaceWriteViewModel = hiltViewModel()
-                    val state = surfacesVm.state.collectAsStateWithLifecycle().value
+                    val state = surfacesVm2.state.collectAsStateWithLifecycle().value
                     androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
-                        surfacesVm.refresh()
+                        surfacesVm2.refresh()
                         onPauseOrDispose { }
                     }
-                    Column(Modifier.fillMaxSize()) {
-                        androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
-                            dev.beacon.feature.surfaces.NotesScreen(
-                                writeModel = writeVm,
-                                loaderState = state,
-                                onBack = { navToTab(nav, "chats") },
-                                onOpenNote = { note -> nav.navigate("note/$note") },
-                                onNewNote = { nav.navigate("note/new") },
-                                onChanged = { surfacesVm.refresh() },
-                                // v2 tab chrome: serif Notes (the FAB still creates).
-                                header = { dev.beacon.feature.home.TabHeader("Notes") },
-                            )
-                        }
-                        TabBar(nav, active = "notes")
+                    androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
+                        dev.beacon.feature.surfaces.NotesScreen(
+                            writeModel = writeVm,
+                            loaderState = state,
+                            onBack = { nav.popBackStack() },
+                            onOpenNote = { note -> nav.navigate("note/$note") },
+                            onNewNote = { nav.navigate("note/new") },
+                            onChanged = { surfacesVm2.refresh() },
+                            // v2 tab chrome: serif Notes (the FAB still creates).
+                            header = { dev.beacon.feature.home.TabHeader("Notes") },
+                        )
                     }
                 }
                 composable(ROUTE_FILES_TAB) {
@@ -293,33 +374,21 @@ private fun BeaconNavHost(permanentSidebar: Boolean) {
                             terminalVm.pendingDownload = null
                         }
                     }
-                    Column(Modifier.fillMaxSize()) {
-                        androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
-                            // v2 Files tab = the serif Files header + the terminal
-                            // one-list body (source chips land Stage C).
-                            dev.beacon.feature.terminal.TerminalScreen(
-                                vm = terminalVm,
-                                onBack = { navToTab(nav, "chats") },
-                                onSaveDownload = { bytes, name ->
-                                    terminalVm.pendingDownload = bytes to name
-                                    save.launch(name)
-                                },
-                                header = { dev.beacon.feature.home.TabHeader("Files") },
-                            )
-                        }
-                        TabBar(nav, active = "files")
+                    androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
+                        // v3 Files = serif Files header + the terminal one-list
+                        // body (source chips land Stage C).
+                        dev.beacon.feature.terminal.TerminalScreen(
+                            vm = terminalVm,
+                            onBack = { nav.popBackStack() },
+                            onSaveDownload = { bytes, name ->
+                                terminalVm.pendingDownload = bytes to name
+                                save.launch(name)
+                            },
+                            header = { dev.beacon.feature.home.TabHeader("Files") },
+                        )
                     }
                 }
-                composable(ROUTE_MORE_TAB) {
-                    val moreVm: dev.beacon.feature.home.MoreViewModel = hiltViewModel()
-                    val moreState = moreVm.ui.collectAsStateWithLifecycle().value
-                    dev.beacon.feature.home.MoreScreen(
-                        state = moreState,
-                        onOpenSurface = { key -> nav.navigate("surface/$key") },
-                        onOpenSettings = { nav.navigate(ROUTE_SETTINGS) },
-                        tabState = { TabBar(nav, active = "more") },
-                    )
-                }
+                // (v3: the More tab died — its rows are sidebar rows.)
                 composable(ROUTE_SETTINGS) {
                     val vm: SettingsViewModel = hiltViewModel()
                     SettingsScreen(
@@ -459,8 +528,64 @@ private fun BeaconNavHost(permanentSidebar: Boolean) {
                     )
                 }
             }
+            }
+
+            // ── sidebar-host sheets (the shared row actions / new folder) ──
+            sidebarMenuChat?.let { chat ->
+                androidx.compose.material3.ModalBottomSheet(onDismissRequest = { sidebarMenuChat = null }) {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+                        Text(
+                            chat.title.ifBlank { "Chat" },
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(vertical = 8.dp),
+                        )
+                        Text(
+                            if (chat.pinned) "Unpin" else "Pin",
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { sidebarMenuChat = null; homeVm.togglePin(chat.chatId) }
+                                .padding(vertical = 13.dp),
+                        )
+                        Text(
+                            "Delete",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { sidebarMenuChat = null; homeVm.delete(chat.chatId) }
+                                .padding(vertical = 13.dp),
+                        )
+                    }
+                }
+            }
+            if (sidebarFolderCreate) {
+                var folderDraft by remember { mutableStateOf("") }
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { sidebarFolderCreate = false },
+                    title = { Text("New folder") },
+                    text = {
+                        androidx.compose.material3.OutlinedTextField(
+                            value = folderDraft,
+                            onValueChange = { folderDraft = it },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            homeVm.createFolder(folderDraft.trim()) { }
+                            sidebarFolderCreate = false
+                        }) { Text("Create") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { sidebarFolderCreate = false }) { Text("Cancel") }
+                    },
+                )
+            }
         }
     }
+}
 }
 
 @Composable
@@ -570,12 +695,6 @@ private fun SurfaceRoute(
 
 private fun promptContent(prompt: dev.beacon.core.api.PromptRow): String = prompt.content.orEmpty()
 
-/** The v2 tab bar host: bottom chrome shared by every tab-level surface. */
-@Composable
-private fun TabBar(nav: androidx.navigation.NavController, active: String) {
-    dev.beacon.feature.chat.BeaconTabBar(active = active, onSelect = { key -> navToTab(nav, key) })
-}
-
 private fun navPopToChatHome(nav: androidx.navigation.NavController) {
     nav.navigate(ROUTE_CHATS_HOME) {
         popUpTo(ROUTE_ONBOARDING) { inclusive = true }
@@ -647,14 +766,6 @@ private fun BeaconChatSurface(
                 onDraft = vm::setDraft,
                 onSend = vm::send,
                 onStop = vm::stop,
-                // v2: back = Chats home — pop when the chat is pushed on it;
-                // on the BOOT surface (chat/new = the start entry) there is
-                // nothing beneath — navigate home instead.
-                onBack = {
-                    if (!nav.popBackStack()) {
-                        nav.navigate(ROUTE_CHATS_HOME) { launchSingleTop = true }
-                    }
-                },
                 onOpenModelPicker = { pickerOpen = true },
                 onAttach = { docPicker.launch(arrayOf("*/*")) },
                 onRemoveAttachment = vm::removeAttachment,
@@ -691,8 +802,6 @@ private fun BeaconChatSurface(
                     }
                     nav.navigate(base + suffix)
                 },
-                // v2 tabs: every tab = its own route (state-preserved switching).
-                onOpenSurfaceTab = { key -> navToTab(nav, key) },
                 onAnswerInput = vm::answerInput,
                 onCancelInput = vm::cancelInput,
             ),

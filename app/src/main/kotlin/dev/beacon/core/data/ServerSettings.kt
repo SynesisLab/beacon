@@ -23,6 +23,8 @@ data class ServerSettings(
     val signedInEmail: String? = null,
     /** Display name for the home greeting (GET /api/v1/auths/). */
     val userName: String? = null,
+    /** Role badge for the sidebar's identity bar (sessionUser().role). */
+    val userRole: String? = null,
     /** Forced light/dark or follow-the-system (user request 2026-11-03). */
     val themeMode: ThemeMode = ThemeMode.System,
     /** Boot-flash cache (user request 2026-11-06): last-known model display

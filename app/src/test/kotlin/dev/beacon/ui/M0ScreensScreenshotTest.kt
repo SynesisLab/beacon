@@ -81,7 +81,7 @@ class M0ScreensScreenshotTest {
     )
 
     private val chatActions = ChatActions(
-        onDraft = {}, onSend = {}, onStop = {}, onBack = {}, onOpenModelPicker = {},
+        onDraft = {}, onSend = {}, onStop = {}, onOpenModelPicker = {},
         onOpenFile = { _, _, _, _, _ -> },
     )
 
@@ -93,7 +93,7 @@ class M0ScreensScreenshotTest {
         chooseModel = {}, finish = {},
     )
     private val chatActionsAll = ChatActions(
-        onDraft = {}, onSend = {}, onStop = {}, onBack = {}, onOpenModelPicker = {},
+        onDraft = {}, onSend = {}, onStop = {}, onOpenModelPicker = {},
         onOpenFile = { _, _, _, _, _ -> },
         onReadAloud = { _, _ -> }, onRegenerate = {},
         onRate = { _, _ -> }, onShare = { _, _ -> },

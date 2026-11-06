@@ -73,7 +73,6 @@ data class ChatActions(
     val onDraft: (String) -> Unit,
     val onSend: () -> Unit,
     val onStop: () -> Unit,
-    val onBack: () -> Unit,
     val onOpenModelPicker: () -> Unit,
     val onOpenFile: (fileId: String, name: String, mime: String, terminalServerId: String?, terminalPath: String?) -> Unit,
     val onFlickRefetch: () -> Unit = {},
@@ -98,12 +97,10 @@ data class ChatActions(
     val onSetBranch: (holderId: String, index: Int) -> Unit = { _, _ -> },
     val onRate: (messageId: String, rating: Int) -> Unit = { _, _ -> },
     val onShare: (messageId: String, text: String) -> Unit = { _, _ -> },
-    /** Chat-level (⋮): server share link + md/json export. */
+    /** Chat-level ⋮→ sheet actions. */
     val onShareChat: () -> Unit = {},
     val onCopyMarkdown: () -> Unit = {},
     val onCopyJson: () -> Unit = {},
-    /** M4-d4+: the bottom tab bar's surface tabs. */
-    val onOpenSurfaceTab: (String) -> Unit = {},
     /** M4-d3: the model's ask_user interaction (answered via the socket ack). */
     val onAnswerInput: (Map<String, String>) -> Unit = {},
     val onCancelInput: () -> Unit = {},
@@ -198,15 +195,19 @@ fun ChatScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                // v2 §3.1: [‹ back] [context chip ⌄] [temp] — the chip = model
-                // name on a NEW chat, the auto-title once a chat exists. The
-                // model pill and hamburger died (the chip IS the model chip).
+                // v3 §3.1: [☰ bubble][context chip ⌄][temp] — the hamburger
+                // opens the slide-in sidebar (no back arrow, no tab bar, no ⋮;
+                // chat options live in the chip's sheet).
                 title = {
+                    var optionsOpen by remember { mutableStateOf(false) }
                     Surface(
-                        onClick = actions.onOpenModelPicker,
                         color = MaterialTheme.colorScheme.surface,
                         shape = RoundedCornerShape(50),
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                        modifier = Modifier.combinedClickable(
+                            onClick = { optionsOpen = true },
+                            onLongClick = actions.onOpenModelPicker,
+                        ),
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -215,8 +216,7 @@ fun ChatScreen(
                                 .widthIn(max = 220.dp),
                         ) {
                             Text(
-                                // New chat → the model; open chat → the title
-                                // (mock 01/02: Scarlet chip vs "Beacon UI audit").
+                                // New chat → the model; open chat → the title.
                                 state.engine.title ?: (state.modelLabel ?: "Model"),
                                 maxLines = 1,
                                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
@@ -229,16 +229,30 @@ fun ChatScreen(
                                 contentDescription = null,
                             )
                         }
+                        androidx.compose.material3.DropdownMenu(
+                            expanded = optionsOpen,
+                            onDismissRequest = { optionsOpen = false },
+                        ) {
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text("Share link") },
+                                onClick = { optionsOpen = false; actions.onShareChat() },
+                            )
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text("Copy as Markdown") },
+                                onClick = { optionsOpen = false; actions.onCopyMarkdown() },
+                            )
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text("Copy as JSON") },
+                                onClick = { optionsOpen = false; actions.onCopyJson() },
+                            )
+                        }
                     }
                 },
                 navigationIcon = {
-                    // v2: the hamburger is GONE — back = Chats home, always.
-                    IconButton(onClick = actions.onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
+                    dev.beacon.feature.home.SidebarBubble(Modifier.padding(start = 2.dp))
                 },
                 actions = {
-                    // Temp chat: the ghost affordance top-right (Claude parity).
+                    // Temp chat: the dashed ghost (coral when temporary).
                     IconButton(onClick = actions.onToggleTemp) {
                         Icon(
                             androidx.compose.ui.res.painterResource(dev.beacon.R.drawable.ic_ghost),
@@ -246,44 +260,6 @@ fun ChatScreen(
                             tint = if (state.tempMode) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                    }
-                    // Chat actions (⋮): share link + export md/json — the chat
-                    // options live here until the context chip grows the sheet.
-                    if (state.engine.chatId != null) {
-                        var menuOpen by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
-                        IconButton(onClick = { menuOpen = true }) {
-                            Text("⋮", style = MaterialTheme.typography.titleMedium)
-                        }
-                        androidx.compose.material3.DropdownMenu(
-                            expanded = menuOpen,
-                            onDismissRequest = { menuOpen = false },
-                        ) {
-                            androidx.compose.material3.DropdownMenuItem(
-                                text = { Text("Share link") },
-                                onClick = { menuOpen = false; actions.onShareChat() },
-                            )
-                            androidx.compose.material3.DropdownMenuItem(
-                                text = { Text("Copy as Markdown") },
-                                onClick = { menuOpen = false; actions.onCopyMarkdown() },
-                            )
-                            androidx.compose.material3.DropdownMenuItem(
-                                text = { Text("Copy as JSON") },
-                                onClick = { menuOpen = false; actions.onCopyJson() },
-                            )
-                        }
-                    }
-                },
-            )
-        },
-        bottomBar = {
-            // The v2 tab bar on the chat surface: Chats is ACTIVE (the chat
-            // lives in tab 1's stack) — other tabs route to their surfaces.
-            dev.beacon.feature.chat.BeaconTabBar(
-                active = "chats",
-                onSelect = { key ->
-                    when (key) {
-                        "chats" -> actions.onBack() // pop → Chats home
-                        else -> actions.onOpenSurfaceTab(key)
                     }
                 },
             )

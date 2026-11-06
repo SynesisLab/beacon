@@ -198,6 +198,16 @@ what the v2 simplification MOVED; §10.1-10.13 = per-surface tables.
 | Files = segmented panes | ONE list, source chips | both sources' endpoints unchanged |
 | Top bar hamburger/⋮ split | back + **context chip** (tap=options sheet, long-press=model) + dashed temp bubble | same actions |
 
+### §10.0b — v2→v3 amendments ("sidebar", 2026-11-06)
+
+| v2 | v3 | Wire effect |
+| --- | --- | --- |
+| Bottom tab bar (Chats/Notes/Files/More) | **DELETED** — navigation = the left slide-in sidebar (Claude drawer × OWUI web anatomy) | none |
+| `More` tab list | sidebar NAV rows (Workspace/Memories*/Channels*/Settings — gated rows vanish) | same reads |
+| Chat topbar `‹ back` | **hamburger bubble** top-left on every screen; system back pops routes (predictive) | none |
+| Chat ⋮ menu | dies — chat options consolidate into the CONTEXT CHIP (tap = options sheet; long-press = model sheet) | same actions |
+| Recents | sidebar CHATS section mirrors the Chats home (pinned ✦ → folders ▸ → date groups; paginates `?page=N`) + shared row-actions sheet | same reads |
+
 ### §10.1 Chats home (`ChatsHomeScreen`; start destination)
 - ⌕ search — client-side filter over Room rows (server search = §11 unified-search row, M4+).
 - ＋ (header) → new-folder dialog → `POST /api/v1/folders/` (WorkspaceApis:120).
@@ -241,8 +251,29 @@ Rows (title · snippet · updated · ✦ · ⋯ delete-confirm via swipe) → ed
 ### §10.7 More (tab 4)
 Rows (gated hide): Workspace › (`surface/workspace`: `GET prompts/tools/knowledge/*`) · Memories* › (gated enable_memories) · Channels* › (gated enable_channels) · Settings ›. Footer: app + server version caption.
 
-### §10.8-10.13
+### §10.8–10.13
 Memories cards/kebab/wipe (`/api/v1/memories/*`, typed-count confirm) · Channels (list + stream + `POST …/messages/post` + live refetch; create hidden unless admin, M5) · Settings three groups (instance re-probe `/api/version`, user row `GET /api/v1/auths/`, sign-out client-wipe; color trio, haptics, TTS `GET /api/v1/audio/models` + auto-read; Advanced: headers › + context-rail toggle) · Headers editor (ADR-0012 rules rows + add dialog + dead-state rejections + SecureStore caption) · Workspace detail sheets (prompt body / tool spec+valves / knowledge files → content, view-only caption) · Onboarding one-page (§2).
+
+### §10.14 — Sidebar controls (v3 §3.4, mockup 03)
+
+| Control | Action → wire |
+| --- | --- |
+| Wordmark `Beacon` + `v{app} · server v{ver}` | caption — versions from `/api/version` (probe) + the session store; tap = nothing |
+| ⌕ Search chats | filters the CHATS section live (client-side over Room; server unified search = §11, M4+) |
+| NAV `Chats` | route `chats` (the home list) |
+| NAV `Notes` | route `notes` → `GET /api/v1/notes/` |
+| NAV `Files` | route `files` → `GET /api/v1/terminals/` (source chips = Stage C) |
+| NAV `Workspace` | route `surface/workspace` → `GET /api/v1/prompts|tools|knowledge/` |
+| NAV `Memories*` | GATED `enable_memories` — row ABSENT without it; `GET /api/v1/memories/` |
+| NAV `Channels*` | GATED `enable_channels` — `GET /api/v1/channels/` |
+| NAV `Settings` | route `settings` (instance re-probe / user / sign-out) |
+| CHATS `✦ pinned` rows | tap = close + `chat/{id}`; ⋯ = the shared row-actions sheet (pin/share/delete) |
+| CHATS `▸ folder` rows (name · count) | tap = `surface/folders` drill (folder chips list; ＋ header = create → `POST /folders/`) |
+| CHATS date rows ( Today › / Yesterday › / Prev 7 › ) | tap = the chat; ⋯ = sheet; the section paginates on scroll (`GET /chats/?page=N`) |
+| Bottom identity bar: avatar initials · name · role badge | data = `GET /api/v1/auths/` (name/email/role, cached in ServerSettings) |
+| Bottom `＋ New chat` black pill | close + route `chat/new` |
+| Opening affordances | hamburger bubble (every screen's topbar) · left-edge swipe · NO system-back trap (back closes the drawer first, then pops routes) |
+| Behavior | scrim 40% · panel `drawer` token · ≤320dp · 260ms spring · gates hide rows (never gray) · models stay on the top chip |
 
 ## 11. Complete Open WebUI inventory → Beacon (2026-11-06)
 
@@ -295,3 +326,30 @@ have live code; MISSING rows are deliberately deferred to their milestone.
 | Unified workspace search (v0.12.3) | extends chat/notes search, M4+ |
 | Skills lazy-load / skill ids on wire | ✓ (sends skill_ids) |
 | Desktop tab bar (v0.13.0) | deliberately NOT mobile-targeted (tabs = app sections) |
+
+### §11.3b — the Frontier-UI tool contract (v2.2/v3, the inline-rendering authority)
+
+Read off the exported `render_frontier_ui` tool (v1.3.0; protocol-notes.md has
+the file:line table). Beacon accounts for it with the EXISTING pipeline:
+
+- **Channel**: the tool returns `(HTMLResponse inline, context)` → the server
+  rows the html list as `function_call_output.embeds` (middleware.py:745-752 →
+  :5844-5850; also `message.embeds` :3310) → `PartBuilder` folds CardKind.Embed
+  MEDIA cards (`PartBuilderEmbedsTest`).
+- **Pane**: `HtmlCardPane` — one WebView per card; theme seed + admin CSP
+  (`ui.iframe_csp`) handled (ADR-0013/0014; theme-follows-app 2026-11-05).
+- **Height**: the tool posts `iframe:height` postMessage; Beacon consumes the
+  same-document beacon bridge + the CSP-proof host measure (CSS-px-as-dp; the
+  stability loop). v2.2 target: cap ≈ 60% viewport → internal scroll w/ the
+  chat's autoscroll-pause — today = full measured height (web parity).
+- **Links**: web IFrames are sandboxed/COOP-hostile (the tool's copy-link
+  workaround) — native is not: intercepted links → Custom Tabs / OS handler
+  (EmbedPolicy) — the workaround is dormant here.
+- **Composer hand-off**: `{type:'input:prompt:submit'}` = the card's
+  action/follow-up chips ask the CLIENT to submit a prompt → Stage C: pre-fill
+  the composer (never auto-send).
+- **↔ oversize rule** (v2.2): wide blocks (tables / place-rows / galleries>3 /
+  wide SVGs) scroll left↔right IN-PANE (`overflow-x` + scroll-snap rows +
+  edge-fade mask), never shrink-to-fit; vertical drags keep handing off to the
+  chat list; ⤢ = fullscreen.
+- **Chrome: none** — tool cards borderless with a muted `tool · name` caption.

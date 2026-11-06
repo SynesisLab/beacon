@@ -87,8 +87,6 @@ data class ChatsHomeActions(
 fun ChatsHomeScreen(
     state: ChatsHomeViewModel.UiState,
     actions: ChatsHomeActions,
-    /** The bottom tab bar, provided by the host (active = Chats). */
-    tabState: @Composable () -> Unit,
 ) {
     var menuFolder by remember { mutableStateOf<Pair<String, String>?>(null) } // id to name
     var menuChat by remember { mutableStateOf<ChatEntity?>(null) }
@@ -130,7 +128,6 @@ fun ChatsHomeScreen(
                 }
             }
         },
-        bottomBar = tabState,
         modifier = Modifier.semantics { testTag = "chats_home" },
     ) { padding ->
         Column(

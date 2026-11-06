@@ -75,9 +75,6 @@ data class ChatActions(
     val onStop: () -> Unit,
     val onBack: () -> Unit,
     val onOpenModelPicker: () -> Unit,
-    /** The chats drawer (boot surface = hamburger home; Claude-app structure). */
-    val onOpenDrawer: () -> Unit = {},
-    val onNewChat: () -> Unit = {},
     val onOpenFile: (fileId: String, name: String, mime: String, terminalServerId: String?, terminalPath: String?) -> Unit,
     val onFlickRefetch: () -> Unit = {},
     val onAppResume: () -> Unit = {},
@@ -201,30 +198,47 @@ fun ChatScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                // One line, then ellipsis (user request): long titles must not
-                // blow the bar open.
+                // v2 §3.1: [‹ back] [context chip ⌄] [temp] — the chip = model
+                // name on a NEW chat, the auto-title once a chat exists. The
+                // model pill and hamburger died (the chip IS the model chip).
                 title = {
-                    Text(
-                        state.engine.title ?: "New chat",
-                        maxLines = 1,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                    )
-                },
-                navigationIcon = {
-                    if (state.engine.chatId == null) {
-                        IconButton(onClick = actions.onOpenDrawer) {
-                            // The drawer affordance on the boot surface (interface copy).
-                            Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Chats")
-                        }
-                    } else {
-                        IconButton(onClick = actions.onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    Surface(
+                        onClick = actions.onOpenModelPicker,
+                        color = MaterialTheme.colorScheme.surface,
+                        shape = RoundedCornerShape(50),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .padding(horizontal = 14.dp, vertical = 8.dp)
+                                .widthIn(max = 220.dp),
+                        ) {
+                            Text(
+                                // New chat → the model; open chat → the title
+                                // (mock 01/02: Scarlet chip vs "Beacon UI audit").
+                                state.engine.title ?: (state.modelLabel ?: "Model"),
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            androidx.compose.material3.Icon(
+                                Icons.Filled.KeyboardArrowDown,
+                                contentDescription = null,
+                            )
                         }
                     }
                 },
+                navigationIcon = {
+                    // v2: the hamburger is GONE — back = Chats home, always.
+                    IconButton(onClick = actions.onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
                 actions = {
-                    // Temp chat: the ghost affordance top-right beside the
-                    // model chip (Claude parity; the inline chip is gone).
+                    // Temp chat: the ghost affordance top-right (Claude parity).
                     IconButton(onClick = actions.onToggleTemp) {
                         Icon(
                             androidx.compose.ui.res.painterResource(dev.beacon.R.drawable.ic_ghost),
@@ -233,30 +247,8 @@ fun ChatScreen(
                             else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    // Model chip (restyled per the interface reference): the soft
-                    // gray pill + chevron — not a filled coral button.
-                    Surface(
-                        onClick = actions.onOpenModelPicker,
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(50),
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                        ) {
-                            Text(
-                                state.modelLabel ?: "Model",
-                                maxLines = 1,
-                                style = MaterialTheme.typography.labelLarge,
-                            )
-                            androidx.compose.material3.Icon(
-                                androidx.compose.material.icons.Icons.Filled.KeyboardArrowDown,
-                                contentDescription = null,
-                            )
-                        }
-                    }
-                    // Chat actions (⋮): share link + export (interface map row:
-                    // the ⋮ menu rides the top bar). Saved chats only.
+                    // Chat actions (⋮): share link + export md/json — the chat
+                    // options live here until the context chip grows the sheet.
                     if (state.engine.chatId != null) {
                         var menuOpen by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
                         IconButton(onClick = { menuOpen = true }) {
@@ -284,13 +276,13 @@ fun ChatScreen(
             )
         },
         bottomBar = {
-            // Claude's bottom tab bar on the chat surface (user request):
-            // Chat / Folders / Notes / Files; workspace stays in the drawer.
+            // The v2 tab bar on the chat surface: Chats is ACTIVE (the chat
+            // lives in tab 1's stack) — other tabs route to their surfaces.
             dev.beacon.feature.chat.BeaconTabBar(
-                active = "chat",
+                active = "chats",
                 onSelect = { key ->
                     when (key) {
-                        "chat" -> actions.onNewChat()
+                        "chats" -> actions.onBack() // pop → Chats home
                         else -> actions.onOpenSurfaceTab(key)
                     }
                 },

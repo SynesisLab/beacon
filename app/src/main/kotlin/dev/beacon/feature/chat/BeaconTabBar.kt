@@ -27,12 +27,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * Claude's bottom tab bar, copied from the live app (measured 2026-11-03):
- * a white float-pill with four tabs; the ACTIVE one = a gray chip that wraps
- * the icon + label, the icon tints Coral; inactive = black-on-white. Beacon
- * maps the tabs to: Chat / Folders / Notes / Files — Files OPENS THE TERMINAL
- * FILES SURFACE (user request 2026-11-03); the OWUI user-files list keeps its
- * viewer routes only. Workspace stays in the drawer.
+ * The Claude-style bottom tab bar (float pill, active = gray chip wrap) — v2.0
+ * "simplified" tabs (beacon-ui-design.md §2): **Chats / Notes / Files / More**.
+ * The drawer died (recents live in Chats home); Folders + Chat tabs retired.
+ * Files = the one-list file surface; More = the everything-else list.
  */
 data class TabDef(
     val key: String,
@@ -41,10 +39,10 @@ data class TabDef(
 )
 
 val BeaconTabs = listOf(
-    TabDef("chat", "Chat", dev.beacon.R.drawable.ic_beacon_logo),
-    TabDef("folders", "Folders", dev.beacon.R.drawable.ic_tab_folder),
+    TabDef("chats", "Chats", dev.beacon.R.drawable.ic_beacon_logo),
     TabDef("notes", "Notes", dev.beacon.R.drawable.ic_tab_notes),
     TabDef("files", "Files", dev.beacon.R.drawable.ic_tab_files),
+    TabDef("more", "More", dev.beacon.R.drawable.ic_tab_more),
 )
 
 @Composable

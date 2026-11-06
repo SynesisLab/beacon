@@ -5,31 +5,44 @@ data flow behind it. Read alongside `CLAUDE.md` (OWUI feature audit) and
 `docs/protocol-notes.md` (wire shapes with proof). Paths are
 `app/src/main/kotlin/dev/beacon/…`.
 
-## 1. Navigation (MainActivity.kt)
+**UI authority = `beacon-ui-design.md` v2.0 "simplified" + `beacon-ui-mockup.html`.
+§10 below is the control→wire mapping it points to; §11 is the complete
+Open WebUI inventory.**
 
-| Route | Surface | File |
-| --- | --- | --- |
-| `onboarding` | instance + sign-in + MFA + model pick | `feature/onboarding/OnboardingScreen.kt` + `OnboardingViewModel.kt` |
-| `chat/new` | fresh chat (app start destination when onboarded) | `feature/chat/ChatScreen.kt` |
-| `chat/{chatId}` | open chat (branch = current leaf) | `feature/chat/ChatScreen.kt` |
-| `settings` | account, appearance, sign-out, Advanced row | `feature/settings/SettingsScreen.kt` + `SettingsViewModel.kt` |
-| `settings/headers` | custom HTTP headers editor (ADR-0012) | `feature/settings/HeadersEditorScreen.kt` + `HeadersViewModel.kt` |
-| `surface/{key}` | key = `notes` / `memories` / `channels` / `files` / `workspace` | `feature/surfaces/*` (dispatch in `MainActivity.SurfaceRoute` :344) |
-| `folder/{id}/{name}/chats` | chats inside a folder | `feature/surfaces/FolderChatsScreen.kt` |
-| `note/{id}`, `note/new` | note editor (read/merge update) | `feature/surfaces/SurfaceWriteScreens.kt` |
-| `channel/{id}/{name}` | channel chat stream | `feature/surfaces/ChannelChatScreen.kt` |
-| `file/{fileId}/{name}/{mime}?server&path` | native file viewer (+ terminal files) | `feature/chat/FileViewerScreen.kt` + `FileViewerViewModel.kt` |
-| `terminal` | terminal surface (files tab, listing/CWD/read/upload) | `feature/terminal/TerminalScreen.kt` + `TerminalUi.kt` |
+## 1. Navigation — v2.0 "simplified" (no drawer, four tabs)
 
-Entry chrome: `feature/chat/BeaconTabBar.kt` (bottom tabs Chat / Folders /
-Notes / Files — Folders = chat home; Files tab routes to `terminal`),
-`feature/chat/ChatsDrawer.kt` (recents + gated
-drawer rows Memories/Channels + fixed trio Workspace/Terminal/Settings),
-share-target & `dev.beacon.NEW_CHAT` shortcut → `chat/new`
-(`MainActivity.handleShareIntent`, §9.3). Nav transitions: calm fade+slide,
-predictive-back scale (MainActivity :130-157).
+One hand, no drawer. Start destination (when onboarded) = **Chats home**.
+
+| Tab / route | v2 surface | Screens | Status in code |
+| --- | --- | --- | --- |
+| tab 1 `chats` (start) | Chats home: Pinned ✦ → Folders → date-grouped All; ⌕ search; ＋ new folder; FAB `+ New chat`; row ⋯ = row-actions sheet; 2FA nudge card when unenrolled | `feature/home/ChatsHomeScreen.kt` + `feature/home/ChatsHomeViewModel.kt` | v2 target (Stage B) |
+| `chat/new`, `chat/{chatId}` | chat conversation (tab 1 stack; back → Chats home) | `feature/chat/ChatScreen.kt` + `ChatViewModel.kt` | exists; topbar/composer per §3/§10.2 |
+| tab 2 `notes` | Notes list (title · snippet · updated · ✦ pin · ⋯) + editor | `feature/surfaces/SurfaceWriteScreens.kt` (NotesScreen/NoteEditorScreen) | editor exists; tab-level chrome pending |
+| tab 3 `files` | ONE list, source chips: Uploads + each terminal server; mono breadcrumb; folders-first rows; contextual upload FAB → `FileViewer` route | `feature/terminal/TerminalScreen.kt` (merged with uploads list) | v2 merge pending (Stage C) |
+| tab 4 `more` | everything else: Workspace › · Memories* › · Channels* › · Settings › · version caption | `feature/home/MoreScreen.kt` (new) | v2 target (Stage B) |
+| `settings`, `settings/headers` | pushed; headers editor unchanged (ADR-0012) | `feature/settings/*` | exists |
+| `folder/{id}/{name}/chats` | folder's chats | `feature/surfaces/FolderChatsScreen.kt` | exists |
+| `note/{id}`, `note/new` | note editor | `SurfaceWriteScreens` | exists |
+| `channel/{id}/{name}` | channel stream | `SurfaceWriteScreens` | exists |
+| `file/{fileId}/{name}/{mime}?server&path` | native viewer + overflow (save/copy path) | `feature/chat/FileViewerScreen.kt` | exists |
+| `surface/{key}` | remaining detail surfaces: memories / channels list / workspace / (notes+files pre-v2 keys) | `MainActivity.SurfaceRoute` :344 | exists (More rows navigate here) |
+
+v2 deletions: **the drawer** (ChatsDrawer.kt — recents + its gated trio move to
+`more`/Chats home), the old `chat`/`folders` tab pair (→ `chats`). Share-target
+and the `dev.beacon.NEW_CHAT` shortcut still jump to `chat/new`
+(`MainActivity.handleShareIntent`). Sheets everywhere: 24-top / 32×4 handle /
+40% scrim / 260ms. Nav transitions: fade+slide forward, predictive-back scale
+(MainActivity :130-157).
 
 ## 2. Onboarding & auth
+
+**v2 target: ONE page, three micro-steps** (beacon-ui-design.md §4.1) — a card
+stack on cream: Instance (URL + probe line) → Sign in → inline MFA when the
+challenge lands (code cells + recovery-link on the same card). Model pick is
+dropped (first model = default; change via the top chip). **2FA enroll defers**
+to a one-time coral-tint nudge card on Chats home → enroll sheet → dismiss
+forever. Current code keeps the multi-step flow (below) until the v2 page
+lands:
 
 Screen states: instance URL+version probe → sign-in → MFA challenge
 (TOTP/recovery toggle) → enroll (QR svg data-URI via JS-off WebView, manual
@@ -161,8 +174,124 @@ capture (M5 remainder).
 
 ## 9. Mapping rules for new UI work
 
-1. New screens route in `MainActivity` + a `feature/<name>/` package; list surfaces reuse `surface/{key}` + gated rows in the drawer.
+1. New screens route in `MainActivity` + a `feature/<name>/` package; list surfaces reuse `surface/{key}` + gated rows in the drawer (v2: the **More** tab).
 2. New wire shapes → **fixture + test first** (§13; real SSE transcripts under `app/src/test/**/fixtures/**`), file:line proof in `docs/protocol-notes.md`.
 3. New render output → extend `ChatPart` + both producers (Segmenter + PartBuilder) + goldens, never a bubble-only branch.
 4. Persistence stays derivational (Room mirrors the tree; partsJson normalized).
 5. Gates first: any surface that needs a server flag reads `GET /api/config` state and hides when absent.
+
+## 10. Control → wire authority (beacon-ui-design.md v2.0 / mockup)
+
+Every visible control → what it does → where it lands on the wire. §10.0 =
+what the v2 simplification MOVED; §10.1-10.13 = per-surface tables.
+
+### §10.0 — v1→v2 amendments (what moved where)
+
+| v1 | v2 | Wire effect |
+| --- | --- | --- |
+| Drawer (recents + gated trio) | DELETED — recents = Chats home sections; trio = More tab | none (same reads) |
+| Tabs Chat / Folders | retitled **Chats** (home) | none |
+| Composer chips Web/Image/Code (visible row) | ⊕ Add-to-chat sheet toggles | none — same flags in the request body |
+| Suggested prompt cards (shimmer) | ≤3 compact chips, no theater | featured prompts from workspace (hidden when none) |
+| Onboarding 5 steps | 1 page + inline MFA | same endpoints; enroll deferred to a home nudge (same enroll endpoints) |
+| Turn footer (icon row) | `↻ · ‹n/N› · ⋯` (sheet contents) | same actions (rating/copy/share endpoints) |
+| Files = segmented panes | ONE list, source chips | both sources' endpoints unchanged |
+| Top bar hamburger/⋮ split | back + **context chip** (tap=options sheet, long-press=model) + dashed temp bubble | same actions |
+
+### §10.1 Chats home (`ChatsHomeScreen`; start destination)
+- ⌕ search — client-side filter over Room rows (server search = §11 unified-search row, M4+).
+- ＋ (header) → new-folder dialog → `POST /api/v1/folders/` (WorkspaceApis:120).
+- FAB `+ New chat` → route `chat/new`.
+- Section rows:
+  - **Pinned ✦** = `chats.filter{pinned}` (Room; truth from `GET /api/v1/chats/pinned` merge).
+  - **Folders** (name · count · updated · ⋯) → tap = `folder/{id}/{name}/chats`; ⋯ = rename (`POST /api/v1/folders/{id}/update`) / delete (`DELETE /api/v1/folders/{id}`) — VM: `SurfaceWriteViewModel`.
+  - **All chats** date-grouped (Today/Yesterday/Prev 7) = Room rows, pagination via `GET /api/v1/chats/?page=N` (HomeViewModel.loadNextPage).
+- Row ⋯ → row-actions sheet: Pin/Unpin (`/pin`), Archive (`/archive`), Share (`POST /api/v1/chats/{id}/share` → chooser), Export md/json (client-built), Move-to-folder (server truth `chat.folder_id` PATCH-family — §11 note), Delete (`DELETE /api/v1/chats/{id}`).
+- Row tap → `chat/{id}`.
+- 2FA-enroll nudge card (coral-tint) when session is enrolled=false; tap → enroll sheet (`/enroll/start`, `/enroll/confirm`); dismiss = forever (per-install flag).
+
+### §10.2 Chat conversation (`ChatScreen`)
+- Top bar: `‹ back` → pop to `chats`; **context chip** = auto-title/model ⌄ → options sheet (below); **dashed temp bubble** → temp toggle (client-ephemeral; M5).
+- Detail-run `✓ Explored N ⌄` / "Exploring" — display-only (parts pipeline).
+- `Thought for 4s ⌄` — reasoning expand (Room parts).
+- Tool row ⌄ — pending → approval dialog (`POST /api/v1/chats/{id}/messages/{messageId}/resolve` w/ action approve/reject or ask_user answers).
+- Inline graphics (§4.3b/4.3c) — see §3 cards.
+- Citations `[n]` → display_file instance viewers (`GET files/{id}/content`).
+- Turn footer: `↻` regenerate (branch fork) · `‹n/N›` siblings when present (SetBranch) · `⋯` → sheet: Copy (client) / Read aloud (`POST /api/v1/audio/speech`) / 👍👎 (`POST /api/v1/evaluations/feedback`) / Export turn (client).
+- User-turn long-press → Edit inline (`POST /api/v1/chats/{id}/messages/{messageId}` edit — `updateMessageContent`) / Branch from here / Delete / Copy.
+- Context rail under composer (2dp coral) — `GET /api/v1/chats/{id}` `context_usage`; tap = usage popover; Settings toggle-hides.
+
+### §10.3 Composer + Add-to-chat
+- Text field + send/mic/stop state pill (send `POST /api/chat/completions`; mic = voice overlay w/ hold-to-talk `POST /api/v1/audio/transcriptions`; stop = `POST /api/tasks/chat/{chatId}/stop`).
+- ⊕ → **Add-to-chat sheet**: tiles Camera/Photos/Files → UploadQueue → `POST /api/v1/files/?process=false`; rows Attach Knowledge › / Attach Notes › (workspace pickers → file ids into the request body); divider; toggle rows **Web / Image / Code** — the SAME three flags as today (request `features.*`).
+- Attachment chips above composer (✕ removes; queued = local).
+
+### §10.4 Model sheet
+Search · models (`GET /api/v1/models/list?page=1`, caps badges from the defaults chain) · current ✓ · per-chat default (hold = set app default).
+
+### §10.5 Notes (tab 2)
+Rows (title · snippet · updated · ✦ · ⋯ delete-confirm via swipe) → editor (debounced `POST /api/v1/notes/{id}/update` content-merge). `+` → `POST /api/v1/notes/create` → editor route.
+
+### §10.6 Files (tab 3) — one list, source chips
+- Source chips: `Uploads` + ONE PER TERMINAL (`GET /api/v1/terminals/`).
+- Terminal source: mono breadcrumb (cwd) + ⌃ up + ↻ refresh; rows folders-first (`GET /api/v1/terminals/{id}/{path}?…` listing).
+- Rows: folder → drill-in; file → FileViewer route; ⋯ = save / copy path.
+- Upload FAB: uploads chip → `POST /api/v1/files/?process=false`; terminal chip → terminal upload (`?directory=` query — single-slash discipline).
+
+### §10.7 More (tab 4)
+Rows (gated hide): Workspace › (`surface/workspace`: `GET prompts/tools/knowledge/*`) · Memories* › (gated enable_memories) · Channels* › (gated enable_channels) · Settings ›. Footer: app + server version caption.
+
+### §10.8-10.13
+Memories cards/kebab/wipe (`/api/v1/memories/*`, typed-count confirm) · Channels (list + stream + `POST …/messages/post` + live refetch; create hidden unless admin, M5) · Settings three groups (instance re-probe `/api/version`, user row `GET /api/v1/auths/`, sign-out client-wipe; color trio, haptics, TTS `GET /api/v1/audio/models` + auto-read; Advanced: headers › + context-rail toggle) · Headers editor (ADR-0012 rules rows + add dialog + dead-state rejections + SecureStore caption) · Workspace detail sheets (prompt body / tool spec+valves / knowledge files → content, view-only caption) · Onboarding one-page (§2).
+
+## 11. Complete Open WebUI inventory → Beacon (2026-11-06)
+
+Authority mirror of CLAUDE.md's audit (+ releases audit). Landings marked ✓
+have live code; MISSING rows are deliberately deferred to their milestone.
+
+| OWUI feature (gate / route) | Beacon |
+| --- | --- |
+| Chats crud/pin/archive/search | ✓ (M1; search client-side; unified server search — §11 deltas) |
+| Folders | ✓ (M4) |
+| Chat completions + streaming/transports | ✓ (M1/M2; all three transport classifications) |
+| Tool call parts + display/hide rules | ✓ (M2-1, web-parity table) |
+| Inline HTML cards — Frontier-UI embeds channel | ✓ device-verified (`function_call_output.embeds` / `message.embeds`) |
+| HtmlCard pane + policy + CSP | ✓ M2-2 (`CardDocument`, ADR-0013/0014; theme follows app 2026-11-05) |
+| Terminal file browsing | ✓ M2-t (single-slash discipline) |
+| Terminal interactive sessions | post-M5 |
+| Composer feature toggles (features.*) | wire-ready; UI moves to ⊕ sheet (Stage C) |
+| Message edit/branch/regenerate + version pager | ✓ (verified live) |
+| Feedback/rating + read-aloud | ✓ M3-scheme (footer sheet) |
+| Attachments/UPLOAD queue + share-target | upload queue ✓ basic; share-target ✓; Camera/Photos tiles = Stage C |
+| Voice STT/TTS | ✓ M3 (overlay + hold-to-talk polish pending) |
+| Auto-titling (chat:title) | ✓ (live title + room-paint) |
+| Context usage | data ✓ shown when sent; v2 = context rail after send (Stage C) |
+| Reconciler + flick-to-refetch | ✓ |
+| Chat share (share_id) + export md/json | ✓ client-built export |
+| Shared chats w/ Allow-replies + reply streaming | MISSING — rides M3 share row (server flag) |
+| Comment threads (ENABLE_COMMENTS) | M5+ |
+| Notification inbox (notifications.*) | M4+ |
+| Side chats (temp side, /side) | M5+ (gate-hidden; v2 dashed temp bubble = client-ephemeral M5) |
+| MCP app frames + per-call confirm | ✓ embeds as Embed cards; confirm dialogs reuse resolve |
+| 3D previews (GLB/STL…) | M5+ (file viewer) |
+| Model controls knobs (params) | M4 params sheet |
+| Prompt autocomplete task | M4+ |
+| MFA verify/recovery/enroll | ✓ + deferred-enroll nudge (v2) |
+| Custom headers editor | ✓ (ADR-0012) |
+| Socket.IO transports/taskSocket | ✓ websocket-only; taskSocket stream = M4 legacy path + poll-recovery TODO |
+| Workspace screens incl. tool-servers | ✓ list surfaces (read-only) |
+| Memories | ✓ |
+| Notes | ✓ (+ pages/tabs/presence = M5+) |
+| Channels + E2EE | read/post/live ✓; E2EE decision row (MLS gate) open |
+| Apps panel (apps.*) | M4+ |
+| Calendar (calendar.*) | M4+ |
+| Automations (automations.*) | M4+ |
+| User notifications/targets | M4+ |
+| Image generation (render + trigger) | render ✓ M2; trigger toggle = Stage C ⊕ |
+| Realtime webrtc voice-call | P2 ✓-shaped (§3) |
+| Evaluations/leaderboards | post-M5, only if requested |
+| Model editor / custom model create | M4+ (view-only first) |
+| Admin plane (scim/groups/analytics/pipelines/retrieval) | **DELIBERATELY web-only** (client, not console) |
+| Unified workspace search (v0.12.3) | extends chat/notes search, M4+ |
+| Skills lazy-load / skill ids on wire | ✓ (sends skill_ids) |
+| Desktop tab bar (v0.13.0) | deliberately NOT mobile-targeted (tabs = app sections) |

@@ -29,6 +29,8 @@ class SettingsViewModel @Inject constructor(
         val themeMode: dev.beacon.core.data.ThemeMode = dev.beacon.core.data.ThemeMode.System,
         /** Sidebar NAV rows the user toggled off (Settings → Sidebar). */
         val hiddenNavRows: Set<String> = emptySet(),
+        /** Role badge on the account row (sessionUser().role, cached). */
+        val userRole: String? = null,
     )
 
     // Headers live in SecureStore (Keystore), not the settings DataStore — the
@@ -43,6 +45,7 @@ class SettingsViewModel @Inject constructor(
             signedInEmail = settings.signedInEmail,
             themeMode = settings.themeMode,
             hiddenNavRows = settings.hiddenNavRowsSet,
+            userRole = settings.userRole,
         )
     }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())

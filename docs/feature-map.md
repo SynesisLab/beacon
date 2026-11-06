@@ -290,7 +290,7 @@ have live code; MISSING rows are deliberately deferred to their milestone.
 | HtmlCard pane + policy + CSP | ✓ M2-2 (`CardDocument`, ADR-0013/0014; theme follows app 2026-11-05) |
 | Terminal file browsing | ✓ M2-t (single-slash discipline) |
 | Terminal interactive sessions | post-M5 |
-| Composer feature toggles (features.*) | wire-ready; UI moves to ⊕ sheet (Stage C) |
+| Composer feature toggles (features.*) | ✓ ⊕ Add-to-chat sheet (tiles + gated toggles), 2026-11-06 |
 | Message edit/branch/regenerate + version pager | ✓ (verified live) |
 | Feedback/rating + read-aloud | ✓ M3-scheme (footer sheet) |
 | Attachments/UPLOAD queue + share-target | upload queue ✓ basic; share-target ✓; Camera/Photos tiles = Stage C |

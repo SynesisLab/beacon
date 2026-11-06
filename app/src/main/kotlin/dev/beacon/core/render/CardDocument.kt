@@ -151,6 +151,7 @@ object CardDocument {
             append(" }")
             append("pre.mermaid { background: transparent; margin: 0; }")
             append("svg[id^='mermaid-'] { max-width: 100%; height: auto; }")
+            append(WIDE_CSS)
             if (!interactive) {
                 append("html, body { pointer-events: none; }")
             }
@@ -192,8 +193,14 @@ object CardDocument {
                 append("<meta charset=\"utf-8\">")
                 append("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">")
                 append("<style>html, body { margin: 0; padding: 8px; background: transparent; }</style>")
+                append("<style>$WIDE_CSS</style>")
             } else if (!html.contains("name=\"viewport\"")) {
                 append("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">")
+            }
+            if (!fragment) {
+                // §11.3b oversize rule for foreign docs too: wide media/blocks
+                // scroll in-pane, never shrink-to-fit the layout.
+                append("<style>$WIDE_CSS</style>")
             }
             vendorScriptTagsFor(html).forEach { append(it) }
             if (!interactive) {
@@ -226,10 +233,21 @@ object CardDocument {
     }
 
     /**
+     * §11.3b oversize CSS injected into every card document: wide media and
+     * blocks scroll in-pane (main frame included), never shrink-to-fit.
+     */
+    internal const val WIDE_CSS =
+        "img,video,svg{max-width:100%;height:auto}" +
+            "pre,table{max-width:100%;overflow-x:auto}" +
+            "body{overflow-x:auto}"
+
+    /**
      * One script for every card document: height reports (the shim) + vendor
      * rendering when the libs loaded (synthetics; foreign docs only carry the
      * tags our detection added). Height = the web's `iframe:height` contract,
-     * here via the same-document `Beacon.height` bridge.
+     * here via the same-document `Beacon.height` bridge. Also reports
+     * horizontal overflow (Beacon.wide) and forwards the tool cards'
+     * input:prompt:submit (Beacon.prompt) — measurement/prefill channels only.
      */
     internal const val BOOTSTRAP =
         "(function () {" +
@@ -245,8 +263,16 @@ object CardDocument {
             "    try {" +
             "      var h = measure();" +
             "      if (window.Beacon && Beacon.height) { Beacon.height(h); }" +
+            "      if (window.Beacon && Beacon.wide) { var dd = document.documentElement; Beacon.wide(dd && dd.scrollWidth > dd.clientWidth ? 1 : 0); }" +
             "    } catch (err) {}" +
             "  }" +
+            // §11.3b: the card's action chips ask the client to submit a
+            // prompt — input:prompt:submit (Chat.svelte:1853). We PREFILL the
+            // composer, never auto-send.
+            "  window.addEventListener('message', function (e) {" +
+            "    try { var m = e.data; if (m && m.type === 'input:prompt:submit' && m.text" +
+            "      && window.Beacon && Beacon.prompt) { Beacon.prompt(String(m.text)); } } catch (err) {}" +
+            "  });" +
             "  var timer = null;" +
             "  function scheduled() {" +
             "    if (timer) { return; }" +

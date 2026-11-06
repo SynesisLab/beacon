@@ -48,10 +48,12 @@ fun PartsView(
     httpClient: OkHttpClient? = null,
     instanceUrl: String? = null,
     iframeCsp: String? = null,
+    onPrompt: (String) -> Unit = {},
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         val host = PartHost(
             httpClient = httpClient,
+            onPrompt = onPrompt,
             instanceUrl = instanceUrl,
             iframeCsp = iframeCsp,
             onFollowUp = onFollowUp,
@@ -74,6 +76,8 @@ private data class PartHost(
     val onFollowUp: (String) -> Unit = {},
     val onOpenFile: (fileId: String, name: String, mime: String, terminalServerId: String?, terminalPath: String?) -> Unit =
         { _, _, _, _, _ -> },
+    /** Tool-card chip → composer prefill (input:prompt:submit). */
+    val onPrompt: (String) -> Unit = {},
 )
 
 /** One part, as before the grouping (the group's expanded view reuses this). */
@@ -98,7 +102,7 @@ private fun RenderPart(
         is dev.beacon.core.render.ChatPart.HtmlCard ->
             when {
                 host.httpClient != null && (part.html != null || part.srcUrl != null) ->
-                    HtmlCardPane(part, host.httpClient!!, host.instanceUrl, host.iframeCsp)
+                    HtmlCardPane(part, host.httpClient!!, host.instanceUrl, host.iframeCsp, onPrompt = host.onPrompt)
                 else -> HtmlCardPlaceholder(part)
             }
         is dev.beacon.core.render.ChatPart.File -> FileChip(part, host.onOpenFile)

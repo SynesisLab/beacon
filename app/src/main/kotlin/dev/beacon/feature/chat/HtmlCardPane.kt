@@ -26,6 +26,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -68,10 +73,14 @@ fun HtmlCardPane(
     client: OkHttpClient,
     instanceUrl: String?,
     iframeCsp: String? = null,
+    /** Card chip → composer prefill (input:prompt:submit; prefill only). */
+    onPrompt: (String) -> Unit = {},
 ) {
     val dark = LocalBeaconDark.current
     var heightDp by remember(card.id) { mutableStateOf(card.minHeightDp.dp) }
     var expanded by remember(card.id) { mutableStateOf(false) }
+    // §11.3b: the document overflows horizontally → edge-fade + hint row.
+    var wide by remember(card.id) { mutableStateOf(false) }
     // Streaming repaints grow the html; rebuilding per delta keeps previews
     // honest (§7.1). The document remembers on the WHOLE card value.
     val document = remember(card, instanceUrl, iframeCsp, dark) {
@@ -79,6 +88,8 @@ fun HtmlCardPane(
     }
 
     if (document != null) {
+        // Hoisted OUT of the draw lambda (MaterialTheme is @Composable).
+        val fadeColor = MaterialTheme.colorScheme.surface
         Column {
             Box(
                 Modifier
@@ -87,7 +98,30 @@ fun HtmlCardPane(
                     // Web parity: the card sits as a rounded block in the flow
                     // (FullHeightIframe's rounded-2xl) — the clip shows the app
                     // background at the corners, no hard rectangle seam.
-                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(16.dp)),
+                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(16.dp))
+                    // Oversize edge-fade mask (mockup 02/12: the ↔ scroll fades
+                    // at both edges instead of a hard clip).
+                    .then(
+                        if (wide) {
+                            Modifier.drawWithContent {
+                                drawContent()
+                                val w = size.width
+                                val fade = 20.dp.toPx()
+                                val gradL = androidx.compose.ui.graphics.Brush.horizontalGradient(
+                                    listOf(fadeColor.copy(alpha = 0.9f), fadeColor.copy(alpha = 0f)),
+                                    0f,
+                                    fade,
+                                )
+                                val gradR = androidx.compose.ui.graphics.Brush.horizontalGradient(
+                                    listOf(fadeColor.copy(alpha = 0f), fadeColor.copy(alpha = 0.9f)),
+                                    w - fade,
+                                    w,
+                                )
+                                drawRect(gradL)
+                                drawRect(gradR)
+                            }
+                        } else Modifier,
+                    ),
             ) {
                 CardWebView(
                     document = document,
@@ -102,10 +136,27 @@ fun HtmlCardPane(
                         // 1111css content → 456dp box, one viewport tall).
                         heightDp = px.dp.coerceIn(card.minHeightDp.dp, ExpandedCap)
                     },
+                    onWide = { w -> wide = w == 1 },
+                    // The prompt channel is for server-provenanced tool cards
+                    // only (Embed) — never raw model HTML (ADR-0013).
+                    onPrompt = if (card.kind == dev.beacon.core.render.CardKind.Embed) onPrompt else null,
                 )
             }
-            if (heightDp >= ExpandedCap) {
-                TextButton(onClick = { expanded = true }) { Text("Expand ⤢") }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                if (wide) {
+                    Text(
+                        "↔ oversize: scrolls, never shrinks",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+                if (heightDp >= ExpandedCap) {
+                    TextButton(onClick = { expanded = true }) { Text("Expand ⤢") }
+                }
             }
         }
 
@@ -118,6 +169,8 @@ fun HtmlCardPane(
                         instanceUrl = instanceUrl,
                         sandboxLevel = card.sandboxLevel,
                         onHeight = { },
+                        onWide = { },
+                        onPrompt = null,
                     )
                 }
             }
@@ -218,6 +271,8 @@ private fun CardWebView(
     instanceUrl: String?,
     sandboxLevel: SandboxLevel,
     onHeight: (Float) -> Unit,
+    onWide: (Int) -> Unit = {},
+    onPrompt: ((String) -> Unit)? = null,
 ) {
     val context = LocalContext.current
 
@@ -269,16 +324,18 @@ private fun CardWebView(
                         cm.setPrimaryClip(android.content.ClipData.newPlainText("beacon", text))
                     },
                     onLink = { url -> mainViewNavigation(url, webView, instanceUrl, context) },
+                    onWide = onWide,
+                    onPrompt = onPrompt,
                 )
             } else {
-                HeightOnlyBridge(onHeight = onHeight)
+                HeightOnlyBridge(onHeight = onHeight, onWide = onWide, onPrompt = onPrompt)
             },
             "Beacon",
         )
         webView.webChromeClient = PopupChromeClient(instanceUrl) { url ->
             mainViewNavigation(url, webView, instanceUrl, context)
         }
-        webView.webViewClient = EmbedWebViewClient(client, instanceUrl, onHeight)
+        webView.webViewClient = EmbedWebViewClient(client, instanceUrl, onHeight, onWide)
         onDispose {
             webView.stopLoading()
             webView.destroy()
@@ -307,10 +364,26 @@ private fun CardWebView(
 }
 
 /** Named public classes so the JS bridge sees visible `@JavascriptInterface` methods. */
-class HeightOnlyBridge(private val onHeight: (Float) -> Unit) {
+class HeightOnlyBridge(
+    private val onHeight: (Float) -> Unit,
+    private val onWide: ((Int) -> Unit)? = null,
+    private val onPrompt: ((String) -> Unit)? = null,
+) {
     @JavascriptInterface
     fun height(px: Float) {
         onHeight(px)
+    }
+
+    /** §11.3b: 1 when the document overflows horizontally (oversize scroll). */
+    @JavascriptInterface
+    fun wide(w: Int) {
+        onWide?.invoke(w)
+    }
+
+    /** input:prompt:submit from a tool card → composer PREFILL (never sends). */
+    @JavascriptInterface
+    fun prompt(text: String) {
+        onPrompt?.invoke(text)
     }
 }
 
@@ -318,6 +391,8 @@ class FullCardBridge(
     private val onHeight: (Float) -> Unit,
     private val onCopy: (String) -> Unit,
     private val onLink: (String) -> Unit,
+    private val onWide: ((Int) -> Unit)? = null,
+    private val onPrompt: ((String) -> Unit)? = null,
 ) {
     @JavascriptInterface
     fun height(px: Float) {
@@ -332,6 +407,16 @@ class FullCardBridge(
     @JavascriptInterface
     fun link(rawUrl: String) {
         onLink(rawUrl)
+    }
+
+    @JavascriptInterface
+    fun wide(w: Int) {
+        onWide?.invoke(w)
+    }
+
+    @JavascriptInterface
+    fun prompt(text: String) {
+        onPrompt?.invoke(text)
     }
 }
 
@@ -396,6 +481,8 @@ private class EmbedWebViewClient(
     private val instanceUrl: String?,
     /** Kotlin-side height measurement (the shim's CSP-proof fallback). */
     private val onMeasuredHeight: ((Float) -> Unit)? = null,
+    /** CSP-proof fallback for the shim's Beacon.wide report (oversize scroll). */
+    private val onMeasuredWide: ((Int) -> Unit)? = null,
 ) : WebViewClient() {
     private val measureJs =
         "(function(){var d=document.scrollingElement||document.documentElement;" +
@@ -404,6 +491,8 @@ private class EmbedWebViewClient(
             "var r=b?b.firstElementChild:null;" +
             "if(r){h=Math.max(h, r.scrollHeight, Math.ceil(r.getBoundingClientRect().height));}" +
             "return h;})()"
+    private val wideJs =
+        "(function(){var d=document.documentElement;return (d && d.scrollWidth > d.clientWidth) ? 1 : 0;})()"
 
     // Stability loop state: nonce-CSP'd cards (Frontier) can't run the injected
     // height shim, and their content lands LATE (staggered block animations +
@@ -446,6 +535,11 @@ private class EmbedWebViewClient(
                 prevHeight = px ?: -1f
                 if (px != null && stableRounds < 2) {
                     runCatching { view.postDelayed({ measureLoop(view) }, MEASURE_INTERVAL_MS) }
+                }
+            }
+            onMeasuredWide?.let { cb ->
+                view.evaluateJavascript(wideJs) { v ->
+                    v?.trim()?.removeSurrounding("\"")?.toIntOrNull()?.let(cb)
                 }
             }
         }

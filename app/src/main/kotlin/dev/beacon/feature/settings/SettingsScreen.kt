@@ -1,19 +1,24 @@
 package dev.beacon.feature.settings
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -24,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.unit.dp
@@ -72,34 +78,87 @@ fun SettingsScreen(
                 .padding(horizontal = Paddings.screenEdge.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-        Text("Settings", style = MaterialTheme.typography.headlineSmall)
-
-        SettingSection("Server") {
-            Text(state.serverUrl.ifBlank { "Not connected" })
-            state.serverVersion?.let { Text("Version $it", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        // Mockup 09: grouped cards. Account → Appearance (mode preview cards) →
+        // Sidebar toggles → Advanced → About caption.
+        SettingCard {
+            SettingRow(icon = "◈", title = { Text(state.serverUrl.ifBlank { "Not connected" }) },
+                value = state.serverVersion?.let { "v$it" }, chevron = true)
+            SettingRow(
+                icon = "◉",
+                title = {
+                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        Text(state.signedInEmail ?: "Not signed in")
+                        state.userRole?.let {
+                            Text(
+                                it.uppercase(),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier
+                                    .padding(start = 8.dp)
+                                    .border(1.dp, MaterialTheme.colorScheme.outline, androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                            )
+                        }
+                    }
+                },
+            )
+            SettingRow(
+                icon = "⇤",
+                title = { Text("Sign out", color = MaterialTheme.colorScheme.error) },
+                subtitle = "wipes keys on-device only",
+                danger = true,
+                onClick = { confirming = true },
+                enabled = state.authMethod != AuthMethod.None && !state.signingOut,
+            )
         }
-        HorizontalDivider()
-        SettingSection("Appearance") {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        SettingCard {
+            SettingRow(icon = "◐", title = { Text("Color mode") })
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)) {
                 listOf(
-                    dev.beacon.core.data.ThemeMode.System to "System",
                     dev.beacon.core.data.ThemeMode.Light to "Light",
                     dev.beacon.core.data.ThemeMode.Dark to "Dark",
+                    dev.beacon.core.data.ThemeMode.System to "System",
                 ).forEach { (mode, label) ->
-                    androidx.compose.material3.FilterChip(
-                        selected = state.themeMode == mode,
-                        onClick = { onThemeMode(mode) },
-                        label = { Text(label) },
-                    )
+                    val selected = state.themeMode == mode
+                    Column(
+                        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { onThemeMode(mode) },
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(60.dp)
+                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                                .border(
+                                    width = if (selected) 2.dp else 1.dp,
+                                    color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+                                )
+                                .background(
+                                    when (mode) {
+                                        dev.beacon.core.data.ThemeMode.Dark -> androidx.compose.ui.graphics.Color(0xFF232220)
+                                        dev.beacon.core.data.ThemeMode.System -> androidx.compose.ui.graphics.Color(0xFF232220) // split preview approximated
+                                        else -> MaterialTheme.colorScheme.surface
+                                    },
+                                )
+                                .padding(10.dp),
+                        ) {
+                            Column {
+                                Box(Modifier.fillMaxWidth(0.6f).height(4.dp).background(MaterialTheme.colorScheme.outlineVariant, androidx.compose.foundation.shape.RoundedCornerShape(2.dp)))
+                                Spacer(Modifier.height(5.dp))
+                                Box(Modifier.fillMaxWidth(0.4f).height(4.dp).background(MaterialTheme.colorScheme.outlineVariant, androidx.compose.foundation.shape.RoundedCornerShape(2.dp)))
+                            }
+                        }
+                        Text(label, style = MaterialTheme.typography.labelMedium, color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             }
         }
-        HorizontalDivider()
-        SettingSection("Sidebar") {
-            Text(
-                "Show or hide sidebar rows.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        SettingCard {
+            SettingRow(icon = "▤", title = { Text("Sidebar") }, subtitle = "show or hide sidebar rows")
             listOf(
                 "notes" to "Notes",
                 "files" to "Files",
@@ -127,51 +186,21 @@ fun SettingsScreen(
                 style = MaterialTheme.typography.bodySmall,
             )
         }
-        HorizontalDivider()
-        SettingSection("Authentication") {
-            Text(
-                when (state.authMethod) {
-                    AuthMethod.None -> "Not signed in"
-                    AuthMethod.ApiKey -> "API key (stored in Android Keystore)"
-                    AuthMethod.Password -> "Email + password (token in Keystore)"
-                },
-            )
-            state.signedInEmail?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        }
-        HorizontalDivider()
-        SettingSection("Advanced") {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onOpenHeaders() }
-                    .padding(vertical = 6.dp),
-            ) {
-                Column {
-                    Text("Custom headers")
-                    Text(
-                        state.customHeaders.let { if (it.isEmpty()) "None — sent to the instance only" else "${it.size} set — sent to the instance only" },
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-            }
-        }
-        HorizontalDivider()
-        SettingSection("About") {
-            Text("Beacon ${BuildConfig.VERSION_NAME}")
-            Text(
-                "A native client for your own Open WebUI instance. No provider credentials, no analytics.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+        SettingCard {
+            SettingRow(
+                icon = "⚙",
+                title = { Text("Custom HTTP headers") },
+                subtitle = state.customHeaders.let { if (it.isEmpty()) "None — sent to the instance only" else "${it.size} set — sent to the instance only" },
+                chevron = true,
+                onClick = onOpenHeaders,
             )
         }
-
-        Button(
-            onClick = { confirming = true },
-            enabled = state.authMethod != AuthMethod.None && !state.signingOut,
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text("Sign out and clear keys") }
-
-        OutlinedButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text("Done") }
+        Text(
+            "Beacon ${BuildConfig.VERSION_NAME}" + (state.serverVersion?.let { " · server v$it" } ?: "") + " — the admin plane lives on the web.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(horizontal = 4.dp),
+        )
         }
     } // Scaffold content
 
@@ -201,4 +230,51 @@ private fun SettingSection(title: String, content: @Composable () -> Unit) {
         Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
         content()
     }
+}
+
+/** Mockup 09 grouped card. */
+@Composable
+private fun SettingCard(content: @Composable () -> Unit) {
+    androidx.compose.material3.Surface(
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 4.dp)) { content() }
+    }
+}
+
+/** One row inside a SettingCard (icon · title/subtitle · value/chevron/toggle). */
+@Composable
+private fun SettingRow(
+    icon: String,
+    title: @Composable () -> Unit,
+    subtitle: String? = null,
+    value: String? = null,
+    chevron: Boolean = false,
+    danger: Boolean = false,
+    enabled: Boolean = true,
+    onClick: (() -> Unit)? = null,
+) {
+    val clickable = onClick != null && enabled
+    Row(
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (clickable) Modifier.clickable(onClick = onClick!!) else Modifier)
+            .padding(vertical = 12.dp),
+    ) {
+        Text(icon, color = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+        androidx.compose.foundation.layout.Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            title()
+            subtitle?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        value?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium) }
+        if (chevron) Text("›", color = MaterialTheme.colorScheme.outlineVariant)
+    }
+    HorizontalDivider()
 }

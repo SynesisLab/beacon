@@ -710,6 +710,7 @@ private fun navPopToChatHome(nav: androidx.navigation.NavController) {
  * (back ⇒ Chats home); the boot/new surface = the landing hero.
  */
 @Composable
+@androidx.compose.material3.ExperimentalMaterial3Api
 private fun BeaconChatSurface(
     nav: androidx.navigation.NavController,
     chatIdArg: String?,
@@ -717,6 +718,7 @@ private fun BeaconChatSurface(
 ) {
     val vm: ChatViewModel = hiltViewModel()
     var pickerOpen by rememberSaveable { mutableStateOf(false) }
+    var addToChatOpen by rememberSaveable { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
 
     val docPicker = androidx.activity.compose.rememberLauncherForActivityResult(
@@ -724,6 +726,31 @@ private fun BeaconChatSurface(
     ) { uri ->
         if (uri != null) {
             vm.attach(name = dev.beacon.core.data.contentQueryName(context, uri), mime = "", uri = uri)
+        }
+    }
+    val photoPicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri != null) {
+            vm.attach(name = dev.beacon.core.data.contentQueryName(context, uri), mime = "", uri = uri)
+        }
+    }
+    val cameraPicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.TakePicturePreview(),
+    ) { bmp ->
+        if (bmp != null) {
+            // Persist the snapshot into the FileProvider-covered cache dir,
+            // then attach it like any file.
+            runCatching {
+                val dir = java.io.File(context.cacheDir, "files").apply { mkdirs() }
+                val f = java.io.File(dir, "camera-${System.currentTimeMillis()}.jpg")
+                java.io.FileOutputStream(f).use { bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, it) }
+                vm.attach(
+                    name = f.name,
+                    mime = "image/jpeg",
+                    uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.files", f),
+                )
+            }
         }
     }
     val micPermission = androidx.activity.compose.rememberLauncherForActivityResult(
@@ -773,7 +800,7 @@ private fun BeaconChatSurface(
                 onSend = vm::send,
                 onStop = vm::stop,
                 onOpenModelPicker = { pickerOpen = true },
-                onAttach = { docPicker.launch(arrayOf("*/*")) },
+                onAttach = { addToChatOpen = true },
                 onRemoveAttachment = vm::removeAttachment,
                 onToggleWebSearch = vm::toggleWebSearch,
                 onToggleImageGeneration = vm::toggleImageGeneration,
@@ -787,6 +814,8 @@ private fun BeaconChatSurface(
                     }
                 },
                 onMicStop = { vm.stopDictation() },
+                onSendPrompt = vm::sendPrompt,
+                onPrompt = vm::setDraft,
                 onReadAloud = { id, text -> vm.readAloud(id, text) },
                 onRegenerate = { id -> vm.regenerate(id) },
                 onSetBranch = { holderId, index -> vm.setBranch(holderId, index) },
@@ -840,6 +869,20 @@ private fun BeaconChatSurface(
                 nav.navigate(base + suffix)
             }
         }
+        if (addToChatOpen) {
+            val chatUi = vm.ui.collectAsStateWithLifecycle().value
+            AddToChatSheet(
+                toggles = chatUi.toggles,
+                gate = chatUi.featuresGate,
+                onCamera = { cameraPicker.launch(null) },
+                onPhotos = { photoPicker.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                onFiles = { docPicker.launch(arrayOf("*/*")) },
+                onToggleWeb = vm::toggleWebSearch,
+                onToggleImage = vm::toggleImageGeneration,
+                onToggleCode = vm::toggleCodeInterpreter,
+                onDismiss = { addToChatOpen = false },
+            )
+        }
         if (authExpired) {
             SessionExpiredBanner(
                 onSignInAgain = {
@@ -849,6 +892,77 @@ private fun BeaconChatSurface(
                 modifier = Modifier
                     .align(androidx.compose.ui.Alignment.TopCenter)
                     .statusBarsPadding(),
+            )
+        }
+    }
+}
+
+/** One toggle row of the Add-to-chat sheet. */
+@Composable
+private fun AddToChatToggleRow(label: String, checked: Boolean, onToggle: () -> Unit) {
+    androidx.compose.foundation.layout.Row(
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+    ) {
+        Text(label, Modifier.weight(1f), style = androidx.compose.material3.MaterialTheme.typography.bodyLarge)
+        androidx.compose.material3.Switch(checked = checked, onCheckedChange = { onToggle() })
+    }
+}
+
+/**
+ * Mockup 05 — the ⊕ "Add to chat" sheet: Camera / Photos / Files tiles, then
+ * the Web / Image / Code toggles (the chips' only home; server-gated rows
+ * hide). feature-map §10.3.
+ */
+@androidx.compose.material3.ExperimentalMaterial3Api
+@Composable
+private fun AddToChatSheet(
+    toggles: dev.beacon.feature.chat.ChatViewModel.Toggles,
+    gate: dev.beacon.core.api.dto.Features?,
+    onCamera: () -> Unit,
+    onPhotos: () -> Unit,
+    onFiles: () -> Unit,
+    onToggleWeb: () -> Unit,
+    onToggleImage: () -> Unit,
+    onToggleCode: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss) {
+        androidx.compose.foundation.layout.Column(
+            Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp),
+        ) {
+            Text("Add to chat", style = androidx.compose.material3.MaterialTheme.typography.titleLarge)
+            androidx.compose.foundation.layout.Row(
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                listOf("Camera" to onCamera, "Photos" to onPhotos, "Files" to onFiles).forEach { (label, action) ->
+                    androidx.compose.material3.Surface(
+                        onClick = action,
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+                        color = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, androidx.compose.material3.MaterialTheme.colorScheme.outline),
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        androidx.compose.foundation.layout.Column(
+                            horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+                            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.padding(vertical = 16.dp),
+                        ) {
+                            Text(label, style = androidx.compose.material3.MaterialTheme.typography.labelLarge)
+                        }
+                    }
+                }
+            }
+            androidx.compose.material3.HorizontalDivider()
+            if (gate?.enable_web_search == true) AddToChatToggleRow("Web search", toggles.webSearch, onToggleWeb)
+            if (gate?.enable_image_generation == true) AddToChatToggleRow("Image gen", toggles.imageGeneration, onToggleImage)
+            if (gate?.enable_code_interpreter == true) AddToChatToggleRow("Code interpreter", toggles.codeInterpreter, onToggleCode)
+            Text(
+                "Defaults pre-seeded from the server: user settings → model defaults → capabilities.",
+                style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+                color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }

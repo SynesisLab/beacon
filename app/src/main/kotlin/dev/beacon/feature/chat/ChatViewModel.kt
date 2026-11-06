@@ -74,6 +74,8 @@ class ChatViewModel @Inject constructor(
         /** Boot cache (ServerSettings, 2026-11-06): paints chip gates/flags and
          *  the resolved model NAME before the defaults chain lands. */
         val cachedSettings: dev.beacon.core.data.ServerSettings? = null,
+        /** /api/config default_prompt_suggestions → the hero's ≤3 ✦ chips (mockup 01). */
+        val promptSuggestions: List<dev.beacon.core.api.dto.PromptSuggestion> = emptyList(),
     ) {
         /** Display label: name when known → boot-cache name → the id. */
         val modelLabel: String?
@@ -109,6 +111,9 @@ class ChatViewModel @Inject constructor(
     private val httpClient = api.publicClient()
     private val instanceUrl = session.instanceUrlSnapshot()
 
+    /** /api/config default_prompt_suggestions (ui.prompt_suggestions). */
+    private val promptSuggestionsFlow = MutableStateFlow<List<dev.beacon.core.api.dto.PromptSuggestion>>(emptyList())
+
     val ui: StateFlow<UiState> =
         combine(
             engine.state,
@@ -126,6 +131,7 @@ class ChatViewModel @Inject constructor(
             configFeaturesFlow,
             iframeCspFlow,
             cachedSettings,
+            promptSuggestionsFlow,
         ) { values ->
             @Suppress("UNCHECKED_CAST")
             UiState(
@@ -149,6 +155,7 @@ class ChatViewModel @Inject constructor(
                 micError = values[11] as String?,
                 iframeCsp = values[13] as String?,
                 cachedSettings = values[14] as dev.beacon.core.data.ServerSettings?,
+                promptSuggestions = values[15] as List<dev.beacon.core.api.dto.PromptSuggestion>,
                 // §8.5: the mic STAYS visible; the tap requests the permission
                 // (a hidden mic would never produce the prompt).
                 micAvailable = true,
@@ -252,6 +259,7 @@ class ChatViewModel @Inject constructor(
             models.await()?.let { modelsState.value = it }
             config.await()?.also {
                 configFeaturesFlow.value = it.features
+                promptSuggestionsFlow.value = it.default_prompt_suggestions.orEmpty()
                 // OWUI admin-assigned default: "model-a,model-b" list → first id
                 serverDefault = it.default_models
                     ?.split(',')?.firstOrNull()?.trim()
@@ -266,6 +274,12 @@ class ChatViewModel @Inject constructor(
 
     fun setDraft(value: String) {
         draft.value = value
+    }
+
+    /** A hero prompt chip (mockup 01): prefill + send immediately. */
+    fun sendPrompt(text: String) {
+        draft.value = text
+        send()
     }
 
     fun attach(name: String, mime: String, uri: android.net.Uri) {

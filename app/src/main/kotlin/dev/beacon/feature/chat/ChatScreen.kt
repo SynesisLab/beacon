@@ -30,6 +30,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
@@ -73,6 +74,10 @@ data class ChatActions(
     val onDraft: (String) -> Unit,
     val onSend: () -> Unit,
     val onStop: () -> Unit,
+    /** Hero prompt chip (mockup 01): prefill + send. */
+    val onSendPrompt: (String) -> Unit = {},
+    /** Tool-card chip (input:prompt:submit): prefill the composer. */
+    val onPrompt: (String) -> Unit = {},
     val onOpenModelPicker: () -> Unit,
     val onOpenFile: (fileId: String, name: String, mime: String, terminalServerId: String?, terminalPath: String?) -> Unit,
     val onFlickRefetch: () -> Unit = {},
@@ -379,14 +384,43 @@ fun ChatScreen(
                                 )
                             } else {
                                 LandingCritter(size = 96.dp)
+                                // Time-aware greeting (mockup 01: "Late night,
+                                // Anthony?") with the signed-in name.
+                                val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+                                val part = when (hour) {
+                                    in 5..11 -> "morning"
+                                    in 12..17 -> "afternoon"
+                                    in 18..22 -> "evening"
+                                    else -> "night"
+                                }
+                                val name = state.cachedSettings?.userName?.takeIf { it.isNotBlank() } ?: "there"
                                 Text(
-                                    text = "Hello, I'm ${state.modelLabel ?: "your model"}.",
+                                    text = "Good $part, $name?",
                                     style = MaterialTheme.typography.headlineLarge,
                                 )
                                 Text(
-                                    text = "Ask anything — everything runs on your server.",
+                                    text = "Ask ${state.modelLabel ?: "your model"} anything — everything runs on your server.",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+                // Hero prompt chips (mockup 01): the server's
+                // default_prompt_suggestions as ≤3 coral ✦ pills; tap sends.
+                if (state.engine.messages.isEmpty() && !state.tempMode && state.promptSuggestions.isNotEmpty()) {
+                    item(key = "prompt_chips") {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp, vertical = 4.dp),
+                        ) {
+                            state.promptSuggestions.take(3).forEach { s ->
+                                androidx.compose.material3.SuggestionChip(
+                                    onClick = { actions.onSendPrompt(s.content) },
+                                    label = { Text("✦ ${s.title}", maxLines = 1) },
                                 )
                             }
                         }
@@ -406,6 +440,7 @@ fun ChatScreen(
                         onReadAloud = actions.onReadAloud,
                         onRate = actions.onRate,
                         onShare = actions.onShare,
+                        onPrompt = actions.onPrompt,
                         onSetBranch = actions.onSetBranch,
                     )
                 }
@@ -677,15 +712,30 @@ fun ChatScreen(
     }   // Scaffold content
 
     if (showModelPicker) {
-        // "Select model" sheet (interface copy, 2026-11-02): name + description
-        // rows, the chosen one checked; HOLD a model to set it as the default
-        // (user request): the default = the persisted selection.
+        // "Select model" sheet (mockup 04): search + avatar initials + caps
+        // badges (🌐/🖼/⌘ from the model's defaultFeatureIds, server-gated);
+        // the chosen one checked; HOLD a model to set it as the default.
+        var query by remember { mutableStateOf("") }
+        val visible = state.models.filter {
+            query.isBlank() || it.name.contains(query, ignoreCase = true) || it.id.contains(query, ignoreCase = true)
+        }
         ModalBottomSheet(onDismissRequest = onDismissPicker) {
             Column(Modifier.padding(horizontal = 16.dp)) {
                 Text(
                     "Select model",
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier.padding(bottom = 8.dp),
+                )
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    singleLine = true,
+                    shape = CircleShape,
+                    placeholder = { Text("Search models") },
+                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 6.dp),
                 )
                 LazyColumn(
                     // The jumping = the sheet re-measuring itself while the
@@ -695,9 +745,17 @@ fun ChatScreen(
                         .fillMaxWidth()
                         .heightIn(max = 460.dp),
                 ) {
-                    items(state.models.size, key = { state.models[it].id }) { index ->
-                        val model = state.models[index]
+                    items(visible.size, key = { visible[it].id }) { index ->
+                        val model = visible[index]
                         val chosen = model.id == state.selectedModelId
+                        // Caps badges from the model's defaultFeatureIds, only
+                        // when the server exposes the feature (mockup 04).
+                        val gate = state.featuresGate
+                        val badges = buildList {
+                            if ("web_search" in model.default_feature_ids && gate?.enable_web_search == true) add("🌐")
+                            if ("image_generation" in model.default_feature_ids && gate?.enable_image_generation == true) add("🖼")
+                            if ("code_interpreter" in model.default_feature_ids && gate?.enable_code_interpreter == true) add("⌘")
+                        }
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
@@ -707,6 +765,22 @@ fun ChatScreen(
                                     onLongClick = { onSetDefault(model.id) },
                                 ),
                         ) {
+                            // Avatar initials (mockup 04).
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                modifier = Modifier.size(34.dp),
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(
+                                        model.name.split(Regex("[\\s_\\-]+")).filter { it.isNotBlank() }
+                                            .take(2).joinToString("") { it.first().uppercase() },
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.width(11.dp))
                             Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(model.name, style = MaterialTheme.typography.titleMedium)
@@ -718,9 +792,16 @@ fun ChatScreen(
                                         )
                                     }
                                 }
-                                model.description?.let {
+                                val sub = buildString {
+                                    model.description?.let { append(it) }
+                                    if (badges.isNotEmpty()) {
+                                        if (isNotEmpty()) append(" · ")
+                                        append(badges.joinToString(" "))
+                                    }
+                                }
+                                if (sub.isNotBlank()) {
                                     Text(
-                                        it,
+                                        sub,
                                         style = MaterialTheme.typography.labelLarge,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1,
@@ -763,6 +844,7 @@ private fun MessageBubble(
     onReadAloud: (messageId: String, text: String) -> Unit = { _, _ -> },
     onRate: (messageId: String, rating: Int) -> Unit = { _, _ -> },
     onShare: (messageId: String, text: String) -> Unit = { _, _ -> },
+    onPrompt: (String) -> Unit = {},
     /** Branch stepper / the version-tree fork (§4). */
     onSetBranch: (holderId: String, index: Int) -> Unit = { _, _ -> },
 ) {
@@ -790,6 +872,7 @@ private fun MessageBubble(
                 onReadAloud = onReadAloud,
                 onRate = onRate,
                 onShare = onShare,
+                onPrompt = onPrompt,
                 onSetBranch = onSetBranch,
             )
         }
@@ -807,6 +890,7 @@ private fun MessageBubble(
             onReadAloud = onReadAloud,
             onRate = onRate,
             onShare = onShare,
+            onPrompt = onPrompt,
             onSetBranch = onSetBranch,
         )
     }
@@ -827,6 +911,7 @@ private fun MessageBody(
     onReadAloud: (messageId: String, text: String) -> Unit,
     onRate: (messageId: String, rating: Int) -> Unit,
     onShare: (messageId: String, text: String) -> Unit,
+    onPrompt: (String) -> Unit = {},
     onSetBranch: (holderId: String, index: Int) -> Unit,
 ) {
     if (message.role == "user") {
@@ -872,6 +957,7 @@ private fun MessageBody(
                         httpClient = httpClient,
                         instanceUrl = instanceUrl,
                         iframeCsp = iframeCsp,
+                        onPrompt = onPrompt,
                     )
                 }
             }

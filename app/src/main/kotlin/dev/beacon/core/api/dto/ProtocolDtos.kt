@@ -30,9 +30,18 @@ data class AppConfig(
     val default_models: String? = null,
     /** ui.* — stores/index.ts:437-446 (iframe_csp = the admin's artifact-embed CSP). */
     val ui: UiConfig? = null,
+    /** ui.prompt_suggestions → /api/config default_prompt_suggestions (main.py:2505;
+     *  web renders ≤3 as chips on the empty-chat placeholder, ChatPlaceholder.svelte). */
+    val default_prompt_suggestions: List<PromptSuggestion>? = null,
 ) {
     val hasFeatures: Boolean get() = features != null
 }
+
+@Serializable
+data class PromptSuggestion(
+    val title: String,
+    val content: String,
+)
 
 @Serializable
 data class UiConfig(

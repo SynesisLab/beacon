@@ -527,8 +527,8 @@ fun ChatScreen(
                         ) {
                             state.promptSuggestions.take(3).forEach { s ->
                                 androidx.compose.material3.SuggestionChip(
-                                    onClick = { actions.onSendPrompt(s.content) },
-                                    label = { Text("✦ ${s.title}", maxLines = 1) },
+                                    onClick = { actions.onSendPrompt(s.contentText) },
+                                    label = { Text("✦ ${s.titleText}", maxLines = 1) },
                                 )
                             }
                         }
@@ -553,7 +553,11 @@ fun ChatScreen(
                     )
                 }
                 }
-                if (syncing || refetching || pullAccum > 0f) {
+                // A brand-new chat (no id, no messages) has nothing to
+                // refetch until the first message is sent (user report
+                // 2026-11-06) — no pill during the pull either.
+                val canSync = state.engine.chatId != null || state.engine.messages.isNotEmpty()
+                if (syncing || refetching || (pullAccum > 0f && canSync)) {
                     // Visible during the PULL itself (user report 2026-11-06:
                     // the loading pill only appeared once the network call ran —
                     // too subtle), while the bounce plays, and while syncing.

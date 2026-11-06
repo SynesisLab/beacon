@@ -39,9 +39,22 @@ data class AppConfig(
 
 @Serializable
 data class PromptSuggestion(
-    val title: String,
-    val content: String,
-)
+    // The server sends title/content as a plain string OR an array of
+    // per-language variants (default_prompt_suggestions vs _i18n; the live
+    // 0.13 payload has arrays — a string-only decode crashed ALL of
+    // /api/config, blanking every feature gate, 2026-11-06).
+    val title: kotlinx.serialization.json.JsonElement? = null,
+    val content: kotlinx.serialization.json.JsonElement? = null,
+) {
+    private fun firstString(e: kotlinx.serialization.json.JsonElement?): String = when (e) {
+        is kotlinx.serialization.json.JsonPrimitive -> e.content
+        is kotlinx.serialization.json.JsonArray ->
+            (e.firstOrNull() as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
+        else -> ""
+    }
+    val titleText: String get() = firstString(title)
+    val contentText: String get() = firstString(content)
+}
 
 @Serializable
 data class UiConfig(

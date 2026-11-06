@@ -431,6 +431,10 @@ class ChatViewModel @Inject constructor(
      * re-synced — the user's escape hatch for a stuck generation (2026-11-06).
      */
     fun flickRefetch() {
+        // A brand-new chat has nothing on the server to refetch until the
+        // first message is sent (user report 2026-11-06) — skip the sync
+        // (and the pill) entirely.
+        if (engine.state.value.chatId == null && engine.state.value.messages.isEmpty()) return
         viewModelScope.launch {
             syncing.value = true
             try {

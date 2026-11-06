@@ -71,6 +71,35 @@ class ProtocolDecodeTest {
         assertEquals("default-src 'self'", config.ui?.iframe_csp)
     }
 
+    // GET /api/config default_prompt_suggestions — 0.13 servers send
+    // title/content as per-language ARRAYS; older servers send plain strings.
+    // BOTH must decode: a decode crash on the array form threw away ALL of
+    // /api/config, blanking every feature gate (user report 2026-11-06).
+    @Test
+    fun config_promptSuggestions_arrayAndStringForms() {
+        val config = json.decodeFromString<AppConfig>(
+            """
+            {
+              "status": true,
+              "features": {"enable_web_search": true, "enable_image_generation": true},
+              "default_prompt_suggestions": [
+                {"title": ["Sentiment Analysis", "Sentimentanalyse"], "content": ["Analyze the sentiment of: ", "Analysiere: "]},
+                {"title": "Translate to Chinese", "content": "Translate to Chinese: "}
+              ]
+            }
+            """.trimIndent(),
+        )
+        val suggestions = config.default_prompt_suggestions.orEmpty()
+        assertEquals(2, suggestions.size)
+        assertEquals("Sentiment Analysis", suggestions[0].titleText)
+        assertEquals("Analyze the sentiment of: ", suggestions[0].contentText)
+        assertEquals("Translate to Chinese", suggestions[1].titleText)
+        assertEquals("Translate to Chinese: ", suggestions[1].contentText)
+        // the gates decode alongside the array-form suggestions
+        assertTrue(config.features!!.enable_web_search == true)
+        assertTrue(config.features!!.enable_image_generation == true)
+    }
+
     // POST /api/v1/auths/signin — models/auths.py:96-133
     @Test
     fun signin_successResponse() {

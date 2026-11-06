@@ -463,6 +463,12 @@ class ChatEngine(
 
     private fun launchStream(block: suspend () -> SendPlan) {
         if (_state.value.busy) return
+        // Set busy SYNCHRONOUSLY: the guard above reads state before the
+        // coroutine gets a chance to run, so a double-tap could launch two
+        // streams and paint the optimistic pair twice (user report
+        // 2026-11-06: the first message of a chat showed duplicated until
+        // reboot repainted from Room).
+        _state.value = _state.value.copy(busy = true)
         // A new send abandons any open interactive leg (the server times the
         // held calls out on its own).
         _inputPrompt.value = null

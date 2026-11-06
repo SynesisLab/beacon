@@ -119,6 +119,8 @@ fun ChatScreen(
     showModelPicker: Boolean,
     onDismissPicker: () -> Unit,
     onPickModel: (String) -> Unit,
+    /** True while a flick re-sync is on the wire → the "Syncing…" pill. */
+    syncing: Boolean = false,
     /** Hold-to-set-default (user request): persists the model across sessions. */
     onSetDefault: (String) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -163,7 +165,10 @@ fun ChatScreen(
                 val info = listState.layoutInfo
                 val viewport = info.viewportSize.height.toFloat().coerceAtLeast(1f)
                 val upward = -available.y
-                val threshold = (viewport * (1f / 0.3f) * 0.4f) // 40% of viewport per 300ms
+                // §9.1 spec = 40% of viewport per 300ms — relaxed to 25%:
+                // onPostFling sees only the UNCONSUMED remainder of the fling
+                // (user report 2026-11-06: the flick often didn't register).
+                val threshold = (viewport * (1f / 0.3f) * 0.25f)
                 val atBottom = listState.canScrollForward.not()
                 if (atBottom && upward >= threshold) {
                     fireFlick()
@@ -405,7 +410,7 @@ fun ChatScreen(
                     )
                 }
                 }
-                if (refetching) {
+                if (syncing || refetching) {
                     Box(Modifier.align(Alignment.BottomCenter)) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,

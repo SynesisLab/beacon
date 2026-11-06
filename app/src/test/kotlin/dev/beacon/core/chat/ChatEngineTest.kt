@@ -41,9 +41,11 @@ class ChatEngineTest {
      * immune to the stream/completed arrival races that made FIFO enqueue flaky.
      */
     private val pendingStreams = ArrayDeque<Pair<String, String>>() // content-type, body
+    private val recordedBodies = ArrayDeque<String>()
     private val dispatcher = object : mockwebserver3.Dispatcher() {
         override fun dispatch(request: mockwebserver3.RecordedRequest): MockResponse {
             if (request.url.encodedPath == "/api/chat/completions") {
+                request.body?.let { synchronized(recordedBodies) { recordedBodies.addLast(it.utf8()) } }
                 val next = synchronized(pendingStreams) { pendingStreams.removeFirstOrNull() }
                     ?: return MockResponse.Builder().code(404).build()
                 if (next.first == "HANG") {
@@ -196,6 +198,32 @@ class ChatEngineTest {
     }
 
     @Test
+    fun firstTurnOfAppCreatedChatStillRequestsTitleGeneration() = runBlocking {
+        // The app creates the chat via POST /chats/new BEFORE the first send
+        // (the web's initChatHandler) — so chat_id is already set and the
+        // old isNewChat gate never fired. The web's actual rule is FIRST
+        // TURN (Chat.svelte:4491-4497) — user report 2026-11-06: app-started
+        // chats never got LLM-generated titles.
+        val (engine, store) = newEngine()
+        store.fabricateNewChat = dev.beacon.core.api.dto.ChatPayload(id = "chat-app-1", title = "New Chat")
+        enqueueStream(FIRST_SHORT)
+        engine.load(null)
+        engine.send("hi", "m1")
+        awaitIdle(engine)
+        val first = synchronized(recordedBodies) { recordedBodies.removeFirst() }
+        assertTrue(first, first.contains("\"chat_id\":\"chat-app-1\""))
+        assertTrue(first, first.contains("\"title_generation\":true"))
+        assertTrue(first, first.contains("\"tags_generation\":true"))
+
+        // Second turn in the same chat: no title/tags generation.
+        enqueueStream(FIRST_SHORT)
+        engine.send("and again", "m1")
+        awaitIdle(engine)
+        val second = synchronized(recordedBodies) { recordedBodies.removeFirst() }
+        assertTrue(second, !second.contains("\"title_generation\":true"))
+    }
+
+    @Test
     fun regenerateCreatesSiblingBranch() = runBlocking {
         // First a normal exchange… (orders FIFO: stream, completed, stream, completed)
         enqueueStream(FIRST_MESSAGE_TWO_TURNS)
@@ -345,7 +373,9 @@ class InMemoryChatStore : ChatStore {
     /** Default: no /chats/new endpoint (the 0.9-era servers the fixtures
      *  captured) — the fresh turn keeps the chat-less M1 flow (chat:list
      *  discovery). Tests exercising the create-first flow override this. */
-    override suspend fun createServerChat(title: String, modelId: String): dev.beacon.core.api.dto.ChatPayload? = null
+    /** When set, createServerChat fabricates this payload (the app-first flow). */
+    var fabricateNewChat: dev.beacon.core.api.dto.ChatPayload? = null
+    override suspend fun createServerChat(title: String, modelId: String): dev.beacon.core.api.dto.ChatPayload? = fabricateNewChat
 
     override suspend fun serverVersion(): String? = "0.12.5"
 

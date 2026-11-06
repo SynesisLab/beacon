@@ -418,12 +418,21 @@ class ChatViewModel @Inject constructor(
      */
     fun flickRefetch() {
         viewModelScope.launch {
+            syncing.value = true
             try {
                 if (engine.flickSync()) justUpdated.value = true
             } catch (_: Exception) {
+            } finally {
+                syncing.value = false
             }
         }
     }
+
+    /** True while a flick-triggered re-sync is actually on the wire — the
+     *  ChatScreen "Syncing…" pill rides this (user request 2026-11-06), not
+     *  a fixed 600 ms bounce. */
+    val syncing: kotlinx.coroutines.flow.MutableStateFlow<Boolean> =
+        kotlinx.coroutines.flow.MutableStateFlow(false)
 
     fun chooseModel(modelId: String) {
         selected.value = modelId

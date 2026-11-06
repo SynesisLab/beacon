@@ -623,6 +623,9 @@ class ChatEngine(
         }
         val existingChatId = _state.value.chatId
         val isNewChat = existingChatId == null
+        // True when THIS send created the saved chat (the app-first flow) —
+        // the web's first-turn rule for title/tags generation (Chat.svelte:4491-4497).
+        val createdNow = !isNewChat && _state.value.messages.isEmpty()
         // Join the ROOM the moment the id is real: the shared output throttle
         // is the live stream (§streaming).
         joinChatRoom(existingChatId)
@@ -754,6 +757,14 @@ class ChatEngine(
             }
         }
 
+        // First turn of the chat (the web's createMessagesList(...).length
+        // === 2 rule): a fresh temp send (no id yet) OR this send just created
+        // the saved chat. Gating on isNewChat alone never fired for Beacon —
+        // we create the chat first via /chats/new — which is why app-started
+        // chats never got LLM titles (user report 2026-11-06).
+        val firstTurn = plan.regenerate.not() && plan.continueAssistantId == null &&
+            (isNewChat || createdNow)
+
         val request = CompletionRequest(
             model = plan.modelId,
             messages = projection,
@@ -783,7 +794,14 @@ class ChatEngine(
             skill_ids = plan.skillIds,
             background_tasks = when {
                 plan.temporary -> BackgroundTasks() // nothing persists for temp chats
-                isNewChat -> BackgroundTasks(title_generation = true, tags_generation = true, follow_up_generation = true)
+                // The web's rule (Chat.svelte:4491-4497): title/tags generation
+                // rides the FIRST TURN — 'createMessagesList(history).length
+                // === 2' — even when the chat id was created client-side a
+                // moment ago. isNewChat (no id yet) is never true for Beacon
+                // (we create the chat first via /chats/new), which is why
+                // app-started chats never got LLM titles (user report
+                // 2026-11-06): gate on the projection instead.
+                firstTurn -> BackgroundTasks(title_generation = true, tags_generation = true, follow_up_generation = true)
                 else -> BackgroundTasks(follow_up_generation = true)
             },
         )

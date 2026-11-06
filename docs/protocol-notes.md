@@ -261,3 +261,15 @@ the engine matches the pending path against the folded `ChatPart.File`
 native file viewer. The instance-file branch (`source:'open_webui'`) never
 emits the event (`displayed:true` — it renders inline as a File part chip;
 web parity getInlineFileFromToolOutput).
+
+## Title generation on app-created chats (2026-11-06)
+
+| Topic | Finding | Proof |
+| --- | --- | --- |
+| The gate | `is_new_chat = 'parent_id' in form_data and form_data['parent_id'] is None and not form_data.get('chat_id')` — the server pops `title_generation` ONLY for id-less sends; the per-completion `background_tasks_handler` (middleware.py:3620+ `TASKS.TITLE_GENERATION in tasks`, saved chats only) is what actually generates + emits `chat:title` | main.py:1259, :1367-1370, :1538-1559; middleware.py:3653-3660 |
+| Web rule | the client creates the chat first (initChatHandler → POST /chats/new) AND still sends `title_generation` on the first turn: `!_chatId \|\| (userMessage.parentId === null && createMessagesList(...).length === 2)` | Chat.svelte:4489-4500 |
+
+Beacon delta: gate on FIRST TURN, not on chat-id-absent — Beacon's create-first
+flow always has the id by send time, so the old `isNewChat` gate never fired
+and app-started chats got no LLM title. `firstTurn = !regenerate && !continue &&
+(isNewChat || createdThisSend)`.

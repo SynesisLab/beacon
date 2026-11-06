@@ -764,8 +764,10 @@ private fun BeaconChatSurface(
     val authExpired by vm.authExpired.collectAsStateWithLifecycle()
 
     androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
+        val syncing by vm.syncing.collectAsStateWithLifecycle()
         ChatScreen(
             state = vm.ui.collectAsStateWithLifecycle().value,
+            syncing = syncing,
             actions = ChatActions(
                 onDraft = vm::setDraft,
                 onSend = vm::send,

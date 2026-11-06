@@ -397,7 +397,13 @@ fun ChatScreen(
                                     in 18..22 -> "evening"
                                     else -> "night"
                                 }
-                                val name = state.cachedSettings?.userName?.takeIf { it.isNotBlank() } ?: "there"
+                                // First name only for the greeting (user ask
+                                // 2026-11-06 — the sidebar keeps the full name).
+                                val name = state.cachedSettings?.userName
+                                    ?.takeIf { it.isNotBlank() }
+                                    ?.substringBefore(' ')
+                                    ?.takeIf { it.isNotBlank() }
+                                    ?: "there"
                                 Text(
                                     text = "Good $part, $name?",
                                     style = MaterialTheme.typography.headlineLarge,

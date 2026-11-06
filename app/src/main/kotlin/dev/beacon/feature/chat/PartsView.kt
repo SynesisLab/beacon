@@ -413,17 +413,34 @@ private fun CitationsPill(part: dev.beacon.core.render.ChatPart.Citations) {
     )
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun FollowUpRow(
     part: dev.beacon.core.render.ChatPart.FollowUps,
     onFollowUp: (String) -> Unit,
 ) {
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-        part.items.take(2).forEach { followUp ->
-            androidx.compose.material3.Button(
+    // Mockup 02/12: wrapped row of outlined chips (hairline border, surface
+    // bg, 14dp radius, muted ink) with a "→" prefix; tap sends.
+    androidx.compose.foundation.layout.FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        part.items.take(3).forEach { followUp ->
+            androidx.compose.material3.Surface(
                 onClick = { onFollowUp(followUp) },
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(50),
-            ) { Text(followUp, maxLines = 1) }
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surface,
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            ) {
+                Text(
+                    "→ $followUp",
+                    maxLines = 1,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
+                )
+            }
         }
     }
 }

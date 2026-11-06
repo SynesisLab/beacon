@@ -116,6 +116,10 @@ data class ChatActions(
 private val UserBubbleShape = RoundedCornerShape(12.dp)
 private val BubblePadding = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
 
+/** Pull-up-to-refetch trigger distance (2026-11-06): a slow drag at the
+ *  bottom of the transcript must travel this far before the sync fires. */
+private const val PULL_TRIGGER_DP = 96
+
 /** Test hook: pins the time-aware greeting's hour so goldens are stable. */
 internal var testHourOverride: Int? = null
 
@@ -164,8 +168,30 @@ fun ChatScreen(
     }
 
     // §9.1 flick-to-refetch: at bottom + upward flick ≥ ~4/3 viewport/sec ⇒ sync.
+    // 2026-11-06 (user ask): a slow PULL-UP from the bottom also refetches —
+    // the list can't consume an upward drag at the bottom, so the unconsumed
+    // delta arrives in onPostScroll; accumulate it and fire past a threshold.
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    var pullAccum by remember { mutableStateOf(0f) }
     val flickConnection = remember(listState) {
         object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+            override fun onPostScroll(
+                consumed: androidx.compose.ui.geometry.Offset,
+                available: androidx.compose.ui.geometry.Offset,
+                source: androidx.compose.ui.input.nestedscroll.NestedScrollSource,
+            ): androidx.compose.ui.geometry.Offset {
+                if (listState.canScrollForward.not() && available.y < 0f && !refetching) {
+                    pullAccum += -available.y
+                    if (pullAccum >= with(density) { PULL_TRIGGER_DP.dp.toPx() }) {
+                        pullAccum = 0f
+                        fireFlick()
+                    }
+                } else if (available.y > 0f || listState.canScrollForward) {
+                    pullAccum = 0f
+                }
+                return androidx.compose.ui.geometry.Offset.Zero
+            }
+
             override suspend fun onPostFling(
                 consumed: androidx.compose.ui.unit.Velocity,
                 available: androidx.compose.ui.unit.Velocity,

@@ -126,5 +126,5 @@ code is copied from the server or from other clients.
 
 ## License
 
-Personal project — use at your own risk. Open WebUI remains the property of its
+Released under the [MIT License](LICENSE). Open WebUI remains the property of its
 authors and is not affiliated with this project.

@@ -1,44 +1,75 @@
 # Beacon
 
-**Beacon is an experimental, unofficial mobile client for [Open WebUI](https://github.com/open-webui/open-webui).**
+**Beacon is a native Android client for [Open WebUI](https://github.com/open-webui/open-webui).**
 
-It is a native Android app (Kotlin + Jetpack Compose) that connects to **your own,
-self-hosted Open WebUI server** and gives it a fast, phone-shaped chat experience —
-the way a first-class native client should feel. All intelligence and all model
-wiring stay on your server; Beacon is a client, and only a client. Nothing is sent
-anywhere except to the instance you configure.
+Kotlin + Jetpack Compose, built for phones and foldables. Point it at your own
+self-hosted Open WebUI server and it becomes a fast, purpose-built chat client with
+the full Open WebUI surface — chat, files, notes, memories, channels, workspace — all
+rendered natively. All intelligence and all model wiring stay on your server; Beacon
+is a client, and only a client. Nothing is sent anywhere except to the instance you
+configure, and there is no telemetry.
 
-> Experimental: the UI and feature set are under active development and change
-> frequently. Expect rough edges.
+## Features
 
-## What it does
+### Chat
+- **Live streaming** over SSE and Socket.IO task streams, with stop, regenerate,
+  edit-and-resend, and continue.
+- **The full message tree** — sibling branches per message with `‹n/N›` steppers;
+  regenerate and edits fork real branches that survive on the server.
+- **Rich rendering** — Markdown, reasoning traces ("Thought for 4s" collapse),
+  tool calls with results and approvals, citations, follow-up suggestions, and
+  generated images.
+- **Inline HTML artifacts** — sandboxed WebView panes that size themselves, scroll
+  wide content horizontally with edge fades, prefill the composer from tool prompts,
+  and route links to the browser.
+- **Model control** — per-chat model switching from the top chip or the model sheet;
+  reasoning-effort control (Default / Low / Medium / High) sent as the server's
+  `params.reasoning_effort`.
+- **Composer toggles** — web search, image generation, and code interpreter, gated by
+  the server's declared capabilities.
+- **Temporary chats** — client-side ephemeral conversations that are never persisted.
+- **Attachments** — camera, photos, and documents via the ⊕ sheet, with an offline
+  upload queue.
 
-- **Chat with streaming** — token-by-token over SSE / Socket.IO task streams, with
-  stop, regenerate, edit, and sibling **branches** (the full Open WebUI message tree),
-  including regeneration branches and per-message branching on the server tree.
-- **Rich inline rendering** — full Markdown, reasoning traces, tool calls, citations,
-  follow-up suggestions, generated images, and **inline HTML tool cards** (sandboxed
-  WebView panes that size themselves, scroll wide content horizontally, and hand links
-  to the OS). `display_file` outputs open in a native file viewer; HTML artifacts
-  render in a sandboxed, pinch-zoomable WebView pane.
-- **Works on phones and foldables** — a posture-aware layout: on large screens and
-  unfolded devices the sidebar becomes a resident icon rail and chats/artifacts dock
-  in true multi-pane layouts (responsive split, snap-drag dividers); on tablets and
-  foldables the same single-pane screens reflow. No device-specific hacks — the
-  layout adapts from the fold state and window size.
-- **The whole surface** — chat list with folders, pins, archive, search; Notes;
-  Memories; Channels; Files (uploads + terminal file browsing); Workspace (prompts,
-  tools, knowledge, models); all gated by your server's `/api/config` feature flags,
-  so screens the server doesn't expose simply don't appear.
-- **Attachments** — camera / photos / files via the ⊕ sheet, with an upload queue.
-- **Voice** — hold-to-talk speech-to-text and read-aloud (server TTS).
-- **Offline-first** — everything reads from a local Room database; the network
-  refreshes it. Pull up at the bottom of a conversation to re-sync (it also rescues a
-  hung stream). LLM-generated titles, tags, and follow-ups work for app-started chats.
-- **Private by construction** — credentials live in the Android Keystore; custom
-  headers are validated and same-origin-only; there are no direct connections to
-  third-party model providers and no telemetry. App lock (device-credential gate)
-  keeps the conversation private on shared devices.
+### Voice
+- **Hold-to-talk** dictation (on-device STT or server Whisper transcription).
+- **Read-aloud** for any assistant turn (server TTS), with voice selection.
+
+### Designed for foldables
+- **Posture-aware layout adapts in place** — phone, book (unfolded/large screens), and
+  tabletop (half-opened) postures switch without recreating the app: navigation,
+  scroll positions, and drafts all survive a fold or rotate.
+- **Icon rail** — on wide screens the sidebar demotes to a slim resident rail; the
+  full drawer stays available on demand.
+- **Companion artifact pane** — files, cards, and generated content dock in a real
+  split view beside the chat: draggable divider with snap points, history arrows, and
+  full-height previews.
+- **Tabletop mode** — the transcript reads on the far pane while the composer moves
+  to the near pane, with a reading rail that keeps the last answer in view.
+
+### Everything Open WebUI has
+- **Chats home** — pinned, folders, archive, date grouping, server-side search with
+  offline fallback, and tag chips.
+- **Files** — uploads plus terminal file browsing; native viewers for images
+  (pinch-zoom), PDFs (paged), text/code, audio/video, and HTML artifacts
+  (sandboxed, pinch-zoomable WebView).
+- **Notes** — list + editor with debounced merge-save, pin, and swipe-delete.
+- **Memories, Channels, Workspace** — prompts, tools, knowledge, models; all
+  capability-gated so screens your server doesn't enable simply don't appear.
+- **Terminal access** — browse and read terminal files through the server proxy.
+
+### Trust & privacy
+- **Offline-first** — every screen reads a local Room database; the network refreshes
+  it. Pull up at the bottom of a conversation to re-sync — it also rescues a hung
+  stream instead of silently dropping it.
+- **Credentials in the Android Keystore** — never in app data, never in WebViews.
+- **App lock** — require biometric or device-PIN authentication before the app opens.
+- **Custom HTTP headers** — an editor for instance-bound headers (gateways, proxies),
+  validated and stored encrypted.
+- **Capability-gated, not hardcoded** — feature visibility follows the server's
+  `/api/config` flags; unknown fields never crash the app.
+- **No third parties** — no direct connections to model providers, no analytics, no
+  crash reporting.
 
 ## Build
 
@@ -50,9 +81,28 @@ Requires JDK 21 and the Android SDK.
 ./gradlew :app:verifyRoborazziDebug   # screenshot goldens
 ```
 
-Install the debug APK on a device (`app/build/outputs/apk/debug/app-debug.apk`), open
-the app, point it at your Open WebUI instance URL, and sign in. CI runs the same
-build + test + golden checks on every push (`.github/workflows/ci.yml`).
+Install the debug APK (`app/build/outputs/apk/debug/app-debug.apk`), open the app,
+point it at your Open WebUI instance URL, and sign in. CI runs the same build + test
++ golden checks on every push (`.github/workflows/ci.yml`).
+
+## Architecture
+
+```
+feature (screens, Compose)
+   │        unidirectional state: UI → engine intents → StateFlow<ChatUiModel>
+chat engine (transports, reconciliation, branches, version tree)
+   │
+{api, render} ── OWUI REST + Socket.IO client, render-part model, SSE parser
+   │
+{network, speech}
+   │
+data ── Room (offline-first), Keystore, DataStore
+```
+
+Messages are a tree, not an array: the app reconciles Open WebUI's
+`history.messages` shape and treats every edit/regenerate as a branch. The render-part
+model (`ChatPart`) is the central contract the segmenter, UI, storage, and screenshot
+tests all hang off.
 
 ## Repository map
 
@@ -70,10 +120,11 @@ build + test + golden checks on every push (`.github/workflows/ci.yml`).
 ## Protocol honesty
 
 Beacon speaks the Open WebUI HTTP/Socket.IO protocol as documented by the server's own
-source (`open-webui` is used as the protocol reference). All application code in this
-repository is original; no code is copied from the server or from other clients.
+source (`open-webui` is the protocol reference; every shape in `docs/protocol-notes.md`
+carries `file:line` proof). All application code in this repository is original; no
+code is copied from the server or from other clients.
 
 ## License
 
-Experimental personal project — use at your own risk. Open WebUI remains the property
-of its authors and is not affiliated with this project.
+Personal project — use at your own risk. Open WebUI remains the property of its
+authors and is not affiliated with this project.

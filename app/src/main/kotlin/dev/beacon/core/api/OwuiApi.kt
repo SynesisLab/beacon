@@ -203,19 +203,39 @@ class OwuiApi @Inject constructor(
         }
     }
 
+    /**
+     * The chat model list — `GET /api/models` (main.py:933-977; the web model
+     * selector's source: base provider models ∪ ACTIVE workspace models ∪
+     * arena, filter pipelines dropped, access-filtered). Falls back to the
+     * workspace-record route `/api/v1/models/list` on failure, so very old
+     * servers still render something.
+     */
     suspend fun models(): ModelsPage = withContext(Dispatchers.IO) {
-        val request = Request.Builder()
-            .url(joinUrl(instance(), "/api/v1/models/list?page=1"))
-            .get()
-            .build()
-        val page = client.newCall(request).await().decodeJson<ModelsPage>(json)
+        val chatModels = runCatching {
+            val request = Request.Builder()
+                .url(joinUrl(instance(), "/api/models"))
+                .get()
+                .build()
+            client.newCall(request).await()
+                .decodeJson<dev.beacon.core.api.dto.ModelDataEnvelope>(json)
+                .data
+        }.getOrNull()
+        val page = if (chatModels != null) {
+            dev.beacon.core.api.dto.ModelsPage(items = chatModels, total = chatModels.size)
+        } else {
+            val request = Request.Builder()
+                .url(joinUrl(instance(), "/api/v1/models/list?page=1"))
+                .get()
+                .build()
+            client.newCall(request).await().decodeJson<ModelsPage>(json)
+        }
         // Live-payload evidence (device loop 2026-11-03): the first item's
         // shape decides where defaultFeatureIds/capabilities actually ride.
         (page.items.firstOrNull())
             ?.let { m ->
                 val raw = json.encodeToString(kotlinx.serialization.json.JsonElement.serializer(),
                     json.encodeToJsonElement(OwuiModel.serializer(), m))
-                android.util.Log.d("BeaconDefaults", "models/list first item: ${raw.take(400)}")
+                android.util.Log.d("BeaconDefaults", "models first item: ${raw.take(400)}")
             }
         page.copy(items = page.items.distinctBy { it.id })
     }

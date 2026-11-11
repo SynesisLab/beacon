@@ -167,6 +167,28 @@ fun ChatsHomeScreen(
             Column(listSegmentModifier) {
             SearchField(state.search, actions.search)
 
+            // Fetching latest chats: hairline indeterminate progress under the
+            // search field — cached rows keep painting underneath.
+            if (state.loading) {
+                androidx.compose.material3.LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 2.dp),
+                    strokeCap = androidx.compose.ui.graphics.StrokeCap.Round,
+                )
+            }
+
+            // Fetch failure must be VISIBLE — a silent empty list is what made
+            // refresh problems look like "no chats exist".
+            state.error?.let { error ->
+                Text(
+                    error,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                )
+            }
+
             if (state.chats.isEmpty() && state.folders.isEmpty() && !state.loading) {
                 EmptyState()
             } else {

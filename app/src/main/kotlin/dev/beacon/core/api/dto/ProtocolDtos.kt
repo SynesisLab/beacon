@@ -128,6 +128,17 @@ data class MfaSetupData(
     val qr_code: String? = null,
 )
 
+/**
+ * GET /api/models (main.py:933-977; also aliased /api/v1/models) — the CHAT
+ * model list, the exact list the web's model selector shows: base provider
+ * models ∪ ACTIVE workspace models ∪ arena, filter pipelines dropped, duplicate
+ * ids collapsed, access-filtered. `{"data": [...]}` envelope.
+ */
+@Serializable
+data class ModelDataEnvelope(
+    val data: List<OwuiModel> = emptyList(),
+)
+
 /** GET /api/v1/models/list → routers/models.py:227-241 ({items, total}). */
 @Serializable
 data class ModelsPage(
@@ -145,6 +156,9 @@ data class OwuiModel(
     val name: String,
     val info: OwuiModelInfo? = null,
     val meta: OwuiModelMeta? = null,
+    /** /api/models only (ollama base models): currently resident in memory
+     *  (utils/models.py:69 — `expires_at` present on the raw model). */
+    val loaded: Boolean? = null,
 ) {
     val description: String? get() = info?.meta?.description ?: meta?.description
 

@@ -159,6 +159,16 @@ The M4 "memories" item lands gated by `enable_memories`
 | Public link | `${origin}/s/${share_id}` (a web route; the client shows/sends the URL) | src/lib ShareChatModal.svelte:35 |
 | Export md/json | CLIENT-built from the chat tree — no server export endpoint (the stats/export routes are admin analytics only) | web ExportMenu; chats.py:622-720 |
 
+## Model picker source (2026-11-11, main.py + utils/models.py)
+
+| Topic | Finding | Proof |
+| --- | --- | --- |
+| `GET /api/models` | the CHAT model list the web selector uses: base provider models ∪ ACTIVE workspace models ∪ arena; filter pipelines dropped; duplicate ids collapsed; access-filtered (`get_filtered_models`); response `{"data": [...]}` | main.py:933-977 (alias decorator at :934 for `/api/v1/models`); utils/models.py:93-199 |
+| Disabled models | `is_active == false` workspace models NEVER reach /api/models (skipped at merge: models with no base override are omitted, base overrides are REMOVED) | utils/models.py:239 (`else: models = [m for m in models if m is not model]`) |
+| `/api/v1/models/list` | workspace RECORDS ({items,total}, ModelAccessResponse) — NOT the chat list; lists inactive models too; paging/view_option live here | routers/models.py:232-300; models/models.py:508-511 |
+| `loaded` | ollama base models carry `loaded: bool` = resident in memory (`expires_at` in the raw model); presets inherit it | utils/models.py:69, :271 |
+| Beacon uses | the picker fetches `/api/models` (fallback `/api/v1/models/list` for very old servers); shows a dot for `loaded == true` | app/src/main/kotlin/dev/beacon/core/api/OwuiApi.kt `models()` |
+
 ## Chat search (2026-11-10, chats.py)
 
 | Call | Behavior | Proof |

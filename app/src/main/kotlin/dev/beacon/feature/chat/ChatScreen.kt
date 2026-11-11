@@ -1053,6 +1053,15 @@ private fun ModelMenuBody(
                             Column(Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(model.name, style = MaterialTheme.typography.titleMedium)
+                                    // /api/models `loaded` (ollama resident in memory).
+                                    if (model.loaded == true) {
+                                        Spacer(Modifier.width(6.dp))
+                                        Box(
+                                            Modifier
+                                                .size(7.dp)
+                                                .background(MaterialTheme.colorScheme.primary, CircleShape),
+                                        )
+                                    }
                                     if (chosen) {
                                         Text(
                                             "  Default",
@@ -1090,7 +1099,7 @@ private fun ModelMenuBody(
                     }
                 }
                 Text(
-                    "Per-chat default · GET /api/v1/models/list?page=1 · hold a model to make it the app default.",
+                    "Per-chat default · GET /api/models · hold a model to make it the app default.",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 10.dp),

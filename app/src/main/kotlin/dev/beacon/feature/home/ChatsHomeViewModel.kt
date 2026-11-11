@@ -102,9 +102,16 @@ class ChatsHomeViewModel @Inject constructor(
             // Independent fetches (defaults-chain rule): a folder failure must
             // not blank the chat list.
             val chats = runCatching { repository.refreshChats(page = 1) }
+            if (chats.isFailure) {
+                timber.log.Timber.w(chats.exceptionOrNull(), "chats refresh failed")
+            }
             page = 1
             exhausted = false
-            foldersFlow.value = runCatching { apis.folders() }.getOrDefault(foldersFlow.value)
+            foldersFlow.value = runCatching { apis.folders() }
+                .getOrElse { e ->
+                    timber.log.Timber.w(e, "folders fetch failed")
+                    foldersFlow.value
+                }
             load.value = Load(loading = false, error = chats.exceptionOrNull()?.message)
         }
     }

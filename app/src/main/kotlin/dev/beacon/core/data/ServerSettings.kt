@@ -77,9 +77,15 @@ fun ServerSettings.modelNameFor(modelId: String?): String? {
 fun normalizeInstanceUrl(raw: String): String {
     val trimmed = raw.trim().trimEnd('/')
     if (trimmed.isEmpty()) return ""
-    return if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-        trimmed
-    } else {
-        "https://$trimmed"
+    // The scheme acceptor is case-insensitive: mobile keyboards auto-capitalize
+    // and a pasted "Http://…" (or "HTTP://…") must not fall through to the
+    // "no scheme" branch, which would yield "https://Http://host[:port]".
+    val lower = trimmed.lowercase()
+    if (lower.startsWith("http://")) {
+        return "http://" + trimmed.substring("http://".length)
     }
+    if (lower.startsWith("https://")) {
+        return "https://" + trimmed.substring("https://".length)
+    }
+    return "https://$trimmed"
 }

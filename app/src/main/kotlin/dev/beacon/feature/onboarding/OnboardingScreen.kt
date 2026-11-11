@@ -32,6 +32,7 @@ import androidx.compose.ui.autofill.contentType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -123,6 +124,13 @@ private fun OnePage(
             onValueChange = actions.setUrlDraft,
             label = { Text("Instance") },
             placeholder = { Text("ai.example.com") },
+            // No auto-capitalize/autocorrect: a leading capital turns a typed
+            // "http://…" into "Http://…" and breaks scheme detection.
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Uri,
+                capitalization = KeyboardCapitalization.None,
+                autoCorrect = false,
+            ),
             singleLine = true,
             isError = state.error != null && state.step == OnboardingViewModel.Step.Url,
             shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),

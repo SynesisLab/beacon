@@ -2,17 +2,21 @@ package dev.beacon
 
 import android.content.Intent
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.MaterialTheme
@@ -64,7 +68,8 @@ private const val ROUTE_FILES_TAB = "files"
 /** The v2 tab bar was retired by v3 (the sidebar owns navigation). */
 
 @AndroidEntryPoint
-class MainActivity : ComponentActivity() {
+// FragmentActivity: the AppLock BiometricPrompt requires it (ComponentActivity throws).
+class MainActivity : androidx.fragment.app.FragmentActivity() {
     @javax.inject.Inject
     lateinit var session: dev.beacon.core.data.SessionStore
 
@@ -86,8 +91,11 @@ class MainActivity : ComponentActivity() {
                 dev.beacon.core.data.ThemeMode.Dark -> true
             }
             BeaconTheme(darkTheme = darkTheme) {
-                val wide = windowSizeClass.widthSizeClass != androidx.compose.material3.windowsizeclass.WindowWidthSizeClass.Compact
-                BeaconNavHost(permanentSidebar = wide)
+                AppLockGate(
+                    activity = this@MainActivity,
+                    enabled = settings.appLock,
+                    content = { BeaconNavHost(windowSizeClass = windowSizeClass) },
+                )
             }
         }
     }
@@ -117,9 +125,17 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 @kotlin.OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-private fun BeaconNavHost(permanentSidebar: Boolean) {
+private fun BeaconNavHost(
+    windowSizeClass: androidx.compose.material3.windowsizeclass.WindowSizeClass,
+) {
     val main: MainViewModel = hiltViewModel()
     val settings by main.settings.collectAsStateWithLifecycle()
+    // v4 FoldAware (beacon-foldable-design.md §1): the single BeaconPosture flow,
+    // collected at the route root from WindowInfoTracker + the width class.
+    // Layout switches are recompositions, never re-navigation — nothing below
+    // is keyed by posture, so back stack / scroll / composer drafts survive.
+    val activity = LocalActivity.current!!
+    val posture = dev.beacon.feature.home.rememberBeaconPosture(activity, windowSizeClass.widthSizeClass)
 
     when (val snapshot = settings) {
         null -> Surface(Modifier.fillMaxSize()) { } // DataStore hydration flash
@@ -150,6 +166,80 @@ private fun BeaconNavHost(permanentSidebar: Boolean) {
                 drawerState.open()
             }
             val context = androidx.compose.ui.platform.LocalContext.current
+            val currentEntry by nav.currentBackStackEntryAsState()
+
+            // v4 FoldAware: the SAME state/actions feed the v3 drawer (phone /
+            // on-demand in book) and the book-mode icon rail — no new screens,
+            // only new containers (§2.1).
+            val homeUi = homeVm.ui.collectAsStateWithLifecycle().value
+            val gateUi = surfacesVm.state.collectAsStateWithLifecycle().value
+            val sidebarState = dev.beacon.feature.home.SidebarState(
+                chats = homeUi.chats,
+                folders = homeUi.folders,
+                search = homeUi.search,
+                memoriesGate = gateUi.memoriesGate,
+                channelsGate = gateUi.channelsGate,
+                userName = snapshot.userName,
+                userEmail = snapshot.signedInEmail,
+                userRole = snapshot.userRole,
+                serverVersion = snapshot.serverVersion,
+                hiddenRows = snapshot.hiddenNavRowsSet,
+                activeRow = when (currentEntry?.destination?.route) {
+                    ROUTE_NOTES_TAB -> "notes"
+                    ROUTE_FILES_TAB, "terminal" -> "files"
+                    ROUTE_SETTINGS, "settings/headers" -> "settings"
+                    ROUTE_CHAT_NEW, ROUTE_CHAT -> "chats"
+                    "surface/workspace" -> "workspace"
+                    "surface/memories" -> "memories"
+                    "surface/channels" -> "channels"
+                    else -> "chats"
+                },
+            )
+            fun navGoto(key: String) {
+                homeVm.setSearch("")
+                when (key) {
+                    "chats" -> nav.navigate(ROUTE_CHATS_HOME) { launchSingleTop = true }
+                    "notes" -> nav.navigate(ROUTE_NOTES_TAB) { launchSingleTop = true }
+                    "files" -> nav.navigate(ROUTE_FILES_TAB) { launchSingleTop = true }
+                    "settings" -> nav.navigate(ROUTE_SETTINGS)
+                    "folders" -> nav.navigate("surface/folders") { launchSingleTop = true }
+                    else -> nav.navigate("surface/$key") { launchSingleTop = true }
+                }
+            }
+            val sidebarActions = dev.beacon.feature.home.SidebarActions(
+                search = homeVm::setSearch,
+                goto = { key ->
+                    navScope.launch { drawerState.close() }
+                    navGoto(key)
+                },
+                openChat = { chatId ->
+                    navScope.launch { drawerState.close() }
+                    homeVm.setSearch("")
+                    nav.navigate("chat/$chatId")
+                },
+                chatActions = { chat ->
+                    navScope.launch { drawerState.close() }
+                    sidebarMenuChat = chat
+                },
+                createFolder = { sidebarFolderCreate = true },
+                newChat = {
+                    navScope.launch { drawerState.close() }
+                    nav.navigate(ROUTE_CHAT_NEW)
+                },
+            )
+            // The book-mode rail's actions: identical targets, but the rail is
+            // resident — no drawer to close.
+            val railActions = dev.beacon.feature.home.RailActions(
+                goto = { key -> navGoto(key) },
+                openChat = { chatId ->
+                    homeVm.setSearch("")
+                    nav.navigate("chat/$chatId")
+                },
+                chatActions = { chat -> sidebarMenuChat = chat },
+                newChat = { nav.navigate(ROUTE_CHAT_NEW) },
+                expandDrawer = { navScope.launch { surfacesVm.refresh(); drawerState.open() } },
+                search = homeVm::setSearch,
+            )
 
             androidx.compose.material3.ModalNavigationDrawer(
                 drawerState = drawerState,
@@ -160,62 +250,8 @@ private fun BeaconNavHost(permanentSidebar: Boolean) {
                         drawerContainerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
                     ) {
                         dev.beacon.feature.home.BeaconSidebar(
-                            state = run {
-                                val homeUi = homeVm.ui.collectAsStateWithLifecycle().value
-                                val gateUi = surfacesVm.state.collectAsStateWithLifecycle().value
-                                val currentEntry by nav.currentBackStackEntryAsState()
-                                dev.beacon.feature.home.SidebarState(
-                                    chats = homeUi.chats,
-                                    folders = homeUi.folders,
-                                    search = homeUi.search,
-                                    memoriesGate = gateUi.memoriesGate,
-                                    channelsGate = gateUi.channelsGate,
-                                    userName = snapshot.userName,
-                                    userEmail = snapshot.signedInEmail,
-                                    userRole = snapshot.userRole,
-                                    serverVersion = snapshot.serverVersion,
-                                    hiddenRows = snapshot.hiddenNavRowsSet,
-                                    activeRow = when (currentEntry?.destination?.route) {
-                                        ROUTE_NOTES_TAB -> "notes"
-                                        ROUTE_FILES_TAB, "terminal" -> "files"
-                                        ROUTE_SETTINGS, "settings/headers" -> "settings"
-                                        ROUTE_CHAT_NEW, ROUTE_CHAT -> "chats"
-                                        "surface/workspace" -> "workspace"
-                                        "surface/memories" -> "memories"
-                                        "surface/channels" -> "channels"
-                                        else -> "chats"
-                                    },
-                                )
-                            },
-                            actions = dev.beacon.feature.home.SidebarActions(
-                                search = homeVm::setSearch,
-                                goto = { key ->
-                                    navScope.launch { drawerState.close() }
-                                    homeVm.setSearch("")
-                                    when (key) {
-                                        "chats" -> nav.navigate(ROUTE_CHATS_HOME) { launchSingleTop = true }
-                                        "notes" -> nav.navigate(ROUTE_NOTES_TAB) { launchSingleTop = true }
-                                        "files" -> nav.navigate(ROUTE_FILES_TAB) { launchSingleTop = true }
-                                        "settings" -> nav.navigate(ROUTE_SETTINGS)
-                                        "folders" -> nav.navigate("surface/folders") { launchSingleTop = true }
-                                        else -> nav.navigate("surface/$key") { launchSingleTop = true }
-                                    }
-                                },
-                                openChat = { chatId ->
-                                    navScope.launch { drawerState.close() }
-                                    homeVm.setSearch("")
-                                    nav.navigate("chat/$chatId")
-                                },
-                                chatActions = { chat ->
-                                    navScope.launch { drawerState.close() }
-                                    sidebarMenuChat = chat
-                                },
-                                createFolder = { sidebarFolderCreate = true },
-                                newChat = {
-                                    navScope.launch { drawerState.close() }
-                                    nav.navigate(ROUTE_CHAT_NEW)
-                                },
-                            ),
+                            state = sidebarState,
+                            actions = sidebarActions,
                         )
                     }
                 },
@@ -224,7 +260,25 @@ private fun BeaconNavHost(permanentSidebar: Boolean) {
                     dev.beacon.feature.home.LocalSidebarOpener provides {
                         navScope.launch { openSidebar() }
                     },
+                    dev.beacon.feature.home.LocalPosture provides posture,
                 ) {
+            // v4 FoldAware §2: in book the v3 drawer demotes to a resident 72dp
+            // icon rail; onboarding always runs full-window single-pane (§2.3).
+            val chrome = posture.isBook && currentEntry?.destination?.route != ROUTE_ONBOARDING
+            androidx.compose.foundation.layout.Row(Modifier.fillMaxSize()) {
+                if (chrome) {
+                    // v4.1: the rail is RESIDENT in book — including while an
+                    // artifact is docked (no auto-hide, no glyph chip). The
+                    // artifact split lives in the content pane right of the rail.
+                    androidx.compose.foundation.layout.Row {
+                        dev.beacon.feature.home.IconRail(state = sidebarState, actions = railActions)
+                        // half-opened VERTICAL hinge in book = pane divider (§1)
+                        posture.hinge?.let { h ->
+                            if (!h.isHorizontal) dev.beacon.feature.home.HingeGap(h)
+                        }
+                    }
+                }
+                androidx.compose.foundation.layout.Box(Modifier.weight(1f).fillMaxSize()) {
             NavHost(
                 navController = nav,
                 // BOOT = a fresh chat (user instruction 2026-11-06 — the Chats
@@ -289,13 +343,13 @@ private fun BeaconNavHost(permanentSidebar: Boolean) {
                 }
                 // Boot surface: a fresh chat (chats live in the drawer).
                 composable(ROUTE_CHAT_NEW) {
-                    BeaconChatSurface(nav, chatIdArg = "new", permanentSidebar)
+                    BeaconChatSurface(nav, chatIdArg = "new", posture = posture)
                 }
                 composable(
                     route = ROUTE_CHAT,
                     arguments = listOf(navArgument("chatId") { type = NavType.StringType }),
                 ) { entry ->
-                    BeaconChatSurface(nav, chatIdArg = entry.arguments?.getString("chatId"), permanentSidebar)
+                    BeaconChatSurface(nav, chatIdArg = entry.arguments?.getString("chatId"), posture = posture)
                 }
                 // ── v2 tab-level surfaces (each hosts the tab bar) ────────
                 composable(ROUTE_CHATS_HOME) {
@@ -334,6 +388,9 @@ private fun BeaconNavHost(permanentSidebar: Boolean) {
                             renameFolder = { id, name -> homeVm.renameFolder(id, name) },
                             deleteFolder = homeVm::deleteFolder,
                         ),
+                        // v4 FoldAware §3: tabletop splits home into list (far
+                        // pane) + FAB (near pane); phone/book unchanged.
+                        posture = posture,
                     )
                 }
                 // ── sidebar-reached surfaces: Notes / Files ────────────────
@@ -418,6 +475,7 @@ private fun BeaconNavHost(permanentSidebar: Boolean) {
                         onThemeMode = vm::setThemeMode,
                         onOpenHeaders = { nav.navigate("settings/headers") },
                         onNavRowVisible = { row, visible -> vm.setNavRowHidden(row, !visible) },
+                        onAppLock = vm::setAppLock,
                         onClose = { nav.popBackStack() },
                     )
                 }
@@ -552,7 +610,9 @@ private fun BeaconNavHost(permanentSidebar: Boolean) {
                     )
                 }
             }
-            }
+                } // content Box (rail's host)
+            } // Row
+            } // CompositionLocalProvider
 
             // ── sidebar-host sheets (the shared row actions / new folder) ──
             sidebarMenuChat?.let { chat ->
@@ -734,7 +794,7 @@ private fun navPopToChatHome(nav: androidx.navigation.NavController) {
 private fun BeaconChatSurface(
     nav: androidx.navigation.NavController,
     chatIdArg: String?,
-    permanentSidebar: Boolean,
+    posture: dev.beacon.feature.home.PostureState,
 ) {
     val vm: ChatViewModel = hiltViewModel()
     var pickerOpen by rememberSaveable { mutableStateOf(false) }
@@ -800,20 +860,85 @@ private fun BeaconChatSurface(
     }
 
     val surfacesVm: dev.beacon.feature.surfaces.SurfaceViewModel = hiltViewModel()
-    // Fold-aware note : on expanded widths the chats panel will
-    // be a PERMANENT two-pane surface instead of the modal drawer — deferred here
-    // pending a careful extraction of the surface body; the window-size class
-    // plumbing (permanentSidebar) is ready.
-
     // M4: the interceptor raises session.authExpired on any credentialed 401 —
     // surface a re-auth banner instead of silently-empty screens (2026-11-03:
     // the expired token 401'd EVERYTHING behind /api/config).
     val authExpired by vm.authExpired.collectAsStateWithLifecycle()
 
+    // v4 FoldAware §2.3b/§2.4: in book ≥840dp, artifacts (file rows, ⤢ on
+    // tool cards) DOCK into the right companion pane instead of navigating.
+    // Docking is view-state, not navigation — back never closes it first.
+    val canDock = posture.canDockArtifacts
+    val fileVm: dev.beacon.feature.chat.FileViewerViewModel = hiltViewModel()
+    var dockHistory by remember(chatIdArg) { mutableStateOf(listOf<dev.beacon.feature.chat.DockedArtifact>()) }
+    var dockIndex by remember(chatIdArg) { mutableStateOf(-1) }
+    var paneFraction by rememberSaveable { mutableStateOf(0.45f) }
+    val docked: dev.beacon.feature.chat.DockedArtifact? =
+        if (dockIndex in dockHistory.indices) dockHistory[dockIndex] else null
+    fun dock(artifact: dev.beacon.feature.chat.DockedArtifact) {
+        val next = (dockHistory + artifact).takeLast(dev.beacon.feature.chat.DOCK_HISTORY_LIMIT)
+        dockHistory = next
+        dockIndex = next.lastIndex
+    }
+    fun closeDock() { dockIndex = -1 }
+    // §2.4 lifecycle: fold back to phone → an open docked FILE becomes the
+    // full-screen artifact route (state preserved, same content); a card just
+    // collapses back inline (phone behavior).
+    LaunchedEffect(posture.isPhone, docked) {
+        val d = docked ?: return@LaunchedEffect
+        if (posture.isPhone) {
+            if (d.kind == dev.beacon.feature.chat.DockedArtifact.Kind.File) {
+                val id = d.fileId.ifBlank { "-" }
+                val base = "file/${android.net.Uri.encode(id)}/${android.net.Uri.encode(d.name)}/${android.net.Uri.encode(d.mime)}"
+                val suffix = buildString {
+                    d.terminalServerId?.let { append("?server=${android.net.Uri.encode(it)}") }
+                    d.terminalPath?.let {
+                        append((if (d.terminalServerId == null) "?" else "&") + "path=${android.net.Uri.encode(it)}")
+                    }
+                }
+                nav.navigate(base + suffix)
+            }
+            dockHistory = emptyList()
+            dockIndex = -1
+        }
+    }
+    val chatUiState = vm.ui.collectAsStateWithLifecycle().value
+
+    // v4 §2.3b/§2.4 layout: docked → Row[thread | divider | companion pane].
+    // The Row is always present (thread takes weight 1 when nothing is docked)
+    // so the chat area is never conditionally skipped.
+    val dockedNow = canDock && docked != null
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+        val dockDensity = androidx.compose.ui.platform.LocalDensity.current
+        // v4.1 split: pane min 280dp, thread floor 320dp; the rest is the pane.
+        val fMin = (280.dp / maxWidth).coerceIn(0.2f, 0.6f)
+        val fMax = (1f - (320.dp / maxWidth)).coerceIn(fMin, 0.7f)
+        // Animated fraction: the pane glides open/closed (~200ms) and the
+        // thread reflows with it (weight(1f) takes whatever remains).
+        val targetF = if (dockedNow) paneFraction.coerceIn(fMin, fMax) else 0f
+        val animF by androidx.compose.animation.core.animateFloatAsState(
+            targetF,
+            animationSpec = androidx.compose.animation.core.tween(200),
+        )
+        val paneWidth = maxWidth * animF
+        val maxWidthPx = with(dockDensity) { maxWidth.toPx() }
+        androidx.compose.foundation.layout.Row(Modifier.fillMaxSize()) {
+            androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
     androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
         val syncing by vm.syncing.collectAsStateWithLifecycle()
         ChatScreen(
-            state = vm.ui.collectAsStateWithLifecycle().value,
+            state = chatUiState,
+            posture = posture,
+            onDockCard = if (canDock) {
+                { card ->
+                    dock(dev.beacon.feature.chat.DockedArtifact(
+                        id = "card:${card.id}",
+                        kind = dev.beacon.feature.chat.DockedArtifact.Kind.Card,
+                        title = card.title ?: "Card",
+                        card = card,
+                    ))
+                }
+            } else null,
             syncing = syncing,
             actions = ChatActions(
                 onDraft = vm::setDraft,
@@ -826,6 +951,7 @@ private fun BeaconChatSurface(
                 onToggleImageGeneration = vm::toggleImageGeneration,
                 onToggleCodeInterpreter = vm::toggleCodeInterpreter,
                 onToggleTemp = vm::toggleTempMode,
+                onSetReasoningEffort = vm::setReasoningEffort,
                 onMicTap = {
                     if (vm.micPermissionGranted()) {
                         vm.startDictation()
@@ -848,6 +974,21 @@ private fun BeaconChatSurface(
                 onAppResume = vm::onAppResume,
                 onClearUpdatedPill = vm::clearUpdatedPill,
                 onOpenFile = { fileId, name, mime, terminalServer, terminalPath ->
+                    if (canDock) {
+                        // v4 §2.4: a file row tap DOCKS into the companion pane
+                        // (book ≥840dp) instead of navigating fullscreen.
+                        dock(dev.beacon.feature.chat.DockedArtifact(
+                            id = "file:${fileId.ifBlank { "-" }}:$name",
+                            kind = dev.beacon.feature.chat.DockedArtifact.Kind.File,
+                            title = name,
+                            fileId = fileId,
+                            name = name,
+                            mime = mime,
+                            terminalServerId = terminalServer,
+                            terminalPath = terminalPath,
+                        ))
+                        return@ChatActions
+                    }
                     // Terminal files carry NO fileId — an empty path segment
                     // can't match the {fileId} nav pattern (NavController needs
                     // ≥1 char/segment; the old "file//…" tap silently died).
@@ -878,6 +1019,20 @@ private fun BeaconChatSurface(
         // engine resolves the fold's File part.
         androidx.compose.runtime.LaunchedEffect(Unit) {
             vm.fileDisplays.collect { file ->
+                if (canDock) {
+                    // v4 §2.4: display_file docks into the companion pane in book ≥840dp.
+                    dock(dev.beacon.feature.chat.DockedArtifact(
+                        id = "file:${file.fileId.ifBlank { "-" }}:${file.name}",
+                        kind = dev.beacon.feature.chat.DockedArtifact.Kind.File,
+                        title = file.name,
+                        fileId = file.fileId,
+                        name = file.name,
+                        mime = file.mime,
+                        terminalServerId = file.terminalServerId,
+                        terminalPath = file.terminalPath,
+                    ))
+                    return@collect
+                }
                 val id = file.fileId.ifBlank { "-" }
                 val base = "file/${android.net.Uri.encode(id)}/${android.net.Uri.encode(file.name)}/${android.net.Uri.encode(file.mime)}"
                 val suffix = buildString {
@@ -914,7 +1069,41 @@ private fun BeaconChatSurface(
                     .statusBarsPadding(),
             )
         }
-    }
+    } // chat area Box
+            } // thread pane Box
+            // v4.1: stays composed while the close animation runs (animF → 0).
+            if (dockedNow || animF > 0.01f) {
+                dev.beacon.feature.chat.PaneDivider(
+                    onDragDelta = { dx ->
+                        // The pane sits RIGHT of the divider: a rightward drag
+                        // (dx>0) must SHRINK the pane — adding dx inverted both sides.
+                        val nf = paneFraction - dx / maxWidthPx
+                        // §2.4: drag the divider fully right (past the min) → collapse inline.
+                        if (nf < fMin) closeDock() else paneFraction = nf.coerceIn(fMin, fMax)
+                    },
+                    onDragEnd = { paneFraction = dev.beacon.feature.chat.snapPaneFraction(paneFraction, fMin, fMax) },
+                    onDoubleTap = { paneFraction = 0.5f.coerceIn(fMin, fMax) },
+                )
+                androidx.compose.foundation.layout.Box(Modifier.width(paneWidth)) {
+                    dev.beacon.feature.chat.CompanionPane(
+                        artifact = docked!!,
+                        historyIndex = dockIndex,
+                        historySize = dockHistory.size,
+                        onPrev = { if (dockIndex > 0) dockIndex = dockIndex - 1 },
+                        onNext = { if (dockIndex < dockHistory.lastIndex) dockIndex = dockIndex + 1 },
+                        onClose = { closeDock() },
+                        filesApi = fileVm.api,
+                        terminalsApi = fileVm.terminals,
+                        httpClient = chatUiState.httpClient,
+                        instanceUrl = chatUiState.instanceUrl,
+                        iframeCsp = chatUiState.iframeCsp,
+                        onPrompt = vm::setDraft,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+        } // Row
+    } // BoxWithConstraints
 }
 
 /** One toggle row of the Add-to-chat sheet. */
@@ -1013,6 +1202,67 @@ private fun SessionExpiredBanner(onSignInAgain: () -> Unit, modifier: Modifier =
             }
             androidx.compose.material3.TextButton(onClick = onSignInAgain) {
                 androidx.compose.material3.Text("Sign in", color = androidx.compose.ui.graphics.Color.White)
+            }
+        }
+    }
+}
+
+/**
+ * App lock (Settings → App lock, pure client-side): while enabled, the whole
+ * window sits behind a device-credential check (biometric or PIN/pattern —
+ * `AppLock`, the same gate class the TTS flow reaches for). The gate re-arms
+ * on every activity recreation by design; posture changes are recompositions
+ * (manifest configChanges opt-out), so they never re-lock.
+ */
+@Composable
+private fun AppLockGate(
+    activity: androidx.fragment.app.FragmentActivity,
+    enabled: Boolean,
+    content: @Composable () -> Unit,
+) {
+    if (!enabled) {
+        content()
+        return
+    }
+    var unlocked by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    val lock = remember {
+        dev.beacon.core.speech.AppLock(activity, onUnlocked = { unlocked = true })
+    }
+    androidx.compose.runtime.LaunchedEffect(enabled) {
+        if (!unlocked) lock.requireUnlock()
+    }
+    if (unlocked) {
+        content()
+        return
+    }
+    androidx.compose.foundation.layout.Box(
+        androidx.compose.ui.Modifier
+            .fillMaxSize()
+            .background(androidx.compose.material3.MaterialTheme.colorScheme.background),
+        contentAlignment = androidx.compose.ui.Alignment.Center,
+    ) {
+        androidx.compose.foundation.layout.Column(
+            horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+        ) {
+            androidx.compose.material3.Icon(
+                androidx.compose.material.icons.Icons.Filled.Lock,
+                contentDescription = null,
+                tint = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(44.dp),
+            )
+            androidx.compose.material3.Text(
+                "Beacon is locked",
+                style = androidx.compose.material3.MaterialTheme.typography.titleLarge,
+                color = androidx.compose.material3.MaterialTheme.colorScheme.onBackground,
+            )
+            androidx.compose.material3.Text(
+                "Verify it's you to continue",
+                style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            androidx.compose.material3.Button(onClick = { lock.requireUnlock() }) {
+                androidx.compose.material3.Text("Unlock")
             }
         }
     }

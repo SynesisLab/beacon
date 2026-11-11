@@ -71,7 +71,7 @@ data class SidebarState(
 
 data class SidebarActions(
     val search: (String) -> Unit = {},
-    /** NAV rows: "chats" / "notes" / "files" / "workspace" / "memories" / "channels" / "settings". */
+    /** NAV rows: "chats" / "notes" / "files" / "workspace" / "memories" / "channels" — Settings opens from the identity bar. */
     val goto: (String) -> Unit = {},
     val openChat: (String) -> Unit = {},
     /** Chat/folder ⋯ / long-press → the shared row-actions sheet (host-level). */
@@ -153,9 +153,7 @@ fun BeaconSidebar(
         if (state.channelsGate && "channels" !in state.hiddenRows) {
             SidebarRow("channels", "◈", "Channels", state.activeRow == "channels", actions.goto)
         }
-        if ("settings" !in state.hiddenRows) {
-            SidebarRow("settings", "⚙", "Settings", state.activeRow == "settings", actions.goto)
-        }
+        // Settings has NO nav row — it opens from the bottom identity bar.
         // ── CHATS (mirrors the home list) ─────────────────────────────────
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -223,6 +221,14 @@ fun BeaconSidebar(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth(),
             ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .weight(1f)
+                        // Settings lives here (the nav row is gone): the whole
+                        // identity grouping opens it.
+                        .clickable { actions.goto("settings") },
+                ) {
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
@@ -251,6 +257,7 @@ fun BeaconSidebar(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                }
                 }
                 Box(
                     contentAlignment = Alignment.Center,

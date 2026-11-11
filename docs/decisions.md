@@ -256,3 +256,58 @@ PartBuilder so chips show prose, not the wrapper. The card's own theme
 (attribute-baked dark/light at render time) wins over the app scheme
 (server-side provenance); admin `ui.iframe_csp` still injects first-in-head
 when configured (web injectCsp parity).
+
+## ADR-0015 — FoldAware posture system (v4.0): WindowManager-driven layout modes
+
+*Date:* 2026-11-10 · *Milestone:* M4.5 (after Files, before polish) · *Spec:* `beacon-foldable-design.md` + `beacon-foldable-mockup.html` (repo root)
+
+**Decision.** Beacon observes fold state + hinge bounds via Jetpack
+WindowManager (`WindowInfoTracker.windowLayoutInfo` → `FoldingFeature`,
+`androidx.window:window:1.5.0`) and adapts LAYOUT, not just resize, through
+three modes: `phone` (v3 unchanged, <600dp), `book` (≥600dp flat or
+half-opened vertical hinge — the sidebar demotes to a resident fixed-72dp
+icon rail; artifacts dock into a right companion pane ≥840dp on a
+snap-draggable divider while the rail stays resident, v4.1), `tabletop` (half-opened horizontal hinge —
+transcript far pane, composer + reading rail near pane). The pure mapping
+(`Posture.kt`) is plain-JUnit tested (`PostureTest`); the tracker is
+`PostureTracker.kt`. The Activity opts out of config-driven recreation
+(manifest `configChanges`) so posture changes are recompositions — back
+stack, scroll positions, and composer drafts survive unfold.
+
+**Why.** The spec's portability trick: no new screens, only new containers —
+the same list/sheet components render in the drawer, the rail popovers, and
+the panes. Hinge-aware, not device-specific: no OEM lists, bounds/occlusion
+consumed as insets. No new server endpoints (feature-map §10.15); wire
+authority stays with §10/§11.
+
+**Consequences.** Phone-mode goldens (M0/V3) must stay pixel-identical —
+posture defaults to `PHONE` everywhere a screen is rendered without the
+tracker. Book/tabletop goldens live in `V4/*`. The companion pane is
+view-state, not navigation: back never closes it first in book; folding back
+to phone promotes an open docked file to the full-screen `file/…` route.
+
+## ADR-0016 — HTML file artifacts render in a sandboxed pane WebView (M4.5)
+
+*Date:* 2026-11-10 · *Milestone:* M4.5 · *Spec:* `beacon-foldable-design.md` §2.4 (companion pane)
+
+**Decision.** `display_file` artifacts with mime `text/html` /
+`application/xhtml+xml` route to a new `FileViewer.Html` instead of the raw
+monospace text dump. `HtmlFileView.kt` renders the downloaded file (or
+terminal-read text) in a dedicated WebView with the card pane's §11 rules:
+JS on, DOM storage off, no file/content access, blocked schemes 404, http(s)
+subresources proxied through the app OkHttp client (instance-origin auth),
+user links/popups external unless instance-origin. The app scheme is
+injected as markup (`CardDocument.THEME_SEED` + `color-scheme` meta, keyed
+off `LocalBeaconDark`) so artifacts follow the app theme; fragments get a
+transparent background. The pane claims all drags past slop
+(`HtmlPaneWebView`) so swipes never leak to the drawer edge-swipe, and
+pinch-zoom is enabled (`setSupportZoom` + `builtInZoomControls`, no on-screen
+buttons) so oversize HTML can be shrunk to fit. Pure injection logic is
+JUnit-tested (`HtmlFileViewTest`); mime routing in `PartBuilderTest`.
+
+**Why.** Raw source was unreadable for real artifacts (mockups, dashboards);
+reusing the card sandbox keeps one origin policy for all untrusted HTML.
+
+**Consequences.** `FileViewerScreen` takes optional `httpClient` /
+`instanceUrl` (the companion pane passes its own; the fullscreen `file/…`
+route renders without auth-proxied subresources). File rows show a 🌐 icon.

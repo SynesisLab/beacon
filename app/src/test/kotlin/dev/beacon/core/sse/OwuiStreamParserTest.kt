@@ -159,6 +159,32 @@ class OwuiStreamParserTest {
             } ?: ""
         }
 
+    @Test
+    fun messageErrorEvent_detailEnvelopeSurfaces() {
+        // FastAPI-style detail envelope: the server's own words must surface
+        // (the user diagnoses from them, not from a generic label).
+        val raw = """{"type":"chat:message:error","data":{"detail":"Quota exceeded for the day"}}"""
+        val surface = parser.onFrame(SseFrameScanner.Frame("unknown", raw))
+            .filterIsInstance<StreamEvent.ErrorSurface>().single()
+        assertEquals("Quota exceeded for the day", surface.message)
+    }
+
+    @Test
+    fun messageErrorEvent_fallbackContent() {
+        val raw = """{"type":"chat:message:error","data":{"content":"Backend exploded"}}"""
+        val surface = parser.onFrame(SseFrameScanner.Frame("unknown", raw))
+            .filterIsInstance<StreamEvent.ErrorSurface>().single()
+        assertEquals("Backend exploded", surface.message)
+    }
+
+    @Test
+    fun errorFrame_test() {
+        val raw = """{"error":{"message":"Model 'gpt-x' not found","type":"not_found"}}"""
+        val surface = parser.onFrame(SseFrameScanner.Frame("unknown", raw))
+            .filterIsInstance<StreamEvent.ErrorSurface>().single()
+        assertEquals("Model 'gpt-x' not found", surface.message)
+    }
+
     private fun parserFramesByName(name: String): List<StreamEvent> {
         val bytes = File("src/test/fixtures/sse/$name.sse").readBytes()
         val scanner2 = SseFrameScanner()

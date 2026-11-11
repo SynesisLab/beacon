@@ -41,6 +41,9 @@ data class CompletionRequest(
     /** Continue: append to this assistant turn (Chat.svelte:4478). */
     val assistant_message_id: String? = null,
     val features: Features = Features(),
+    /** Request `params` — carries `reasoning_effort` (Chat.svelte:4420-4495;
+     *  docs/interface-mapping.md). Null = server default. */
+    val params: Params? = null,
     val tool_ids: List<String> = emptyList(),
     val filter_ids: List<String> = emptyList(),
     val skill_ids: List<String> = emptyList(),
@@ -68,6 +71,12 @@ data class ProjectionMessage(
         fun assistant(content: String) = ProjectionMessage(role = ROLE_ASSISTANT, content = content)
     }
 }
+
+/** The request's `params` dict (verified key subset — Chat.svelte:4420-4495). */
+@Serializable
+data class Params(
+    val reasoning_effort: String? = null,
+)
 
 @Serializable
 data class Features(

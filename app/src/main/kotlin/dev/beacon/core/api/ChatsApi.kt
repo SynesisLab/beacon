@@ -26,6 +26,7 @@ internal fun joinUrl(baseUrl: String, path: String): String {
 
 // ── M1 · chats table (verified: docs/protocol-notes.md) ─────────────────────
 // list:        GET  /api/v1/chats/?page=N (chats.py:261; 60/page, sort updated_at desc)
+// search:      GET  /api/v1/chats/search?q=… (chats.py:900; ChatTitleIdResponse rows, same shape as list)
 // pinned rows: GET  /api/v1/chats/pinned (chats.py:994; list rows lack `pinned`)
 // full tree:   GET  /api/v1/chats/{id}  (chats.py:1380)
 // create:      POST /api/v1/chats/new (chats.py:789; ChatForm {chat, variables?, folder_id?})
@@ -45,6 +46,18 @@ class ChatsApi @Inject constructor(
     suspend fun list(page: Int = 1): List<ChatsListRow> = withContext(Dispatchers.IO) {
         client.newCall(
             Request.Builder().url(joinUrl(instance(), "/api/v1/chats/?page=$page")).get().build(),
+        ).await().decodeJson(rows, json)
+    }
+
+    /**
+     * GET /api/v1/chats/search?q=… — server-side title search
+     * (chats.py:900, verified via docs/interface-mapping.md; response rows are
+     * the same ChatTitleIdResponse shape as the list endpoint).
+     */
+    suspend fun search(q: String): List<ChatsListRow> = withContext(Dispatchers.IO) {
+        val enc = java.net.URLEncoder.encode(q, "utf-8")
+        client.newCall(
+            Request.Builder().url(joinUrl(instance(), "/api/v1/chats/search?q=$enc")).get().build(),
         ).await().decodeJson(rows, json)
     }
 

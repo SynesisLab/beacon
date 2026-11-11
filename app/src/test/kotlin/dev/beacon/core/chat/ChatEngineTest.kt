@@ -126,6 +126,28 @@ class ChatEngineTest {
     }
 
     @Test
+    fun tagsEventUpdatesEngineStateAndStore() = runBlocking {
+        // chat:tags envelope: {"type":"chat:tags","data":[…]} (middleware.py:3694-3715)
+        enqueueStream(
+            """
+            data: {"type":"chat:list","data":{"chat_id":"chat-77","folder_id":null}}
+
+            data: {"choices":[{"delta":{"content":"Tagged"}}]}
+
+            data: {"type":"chat:tags","data":["foldable","ui"]}
+
+            data: [DONE]
+            """.trimIndent() + "\n",
+        )
+        val (engine, store) = newEngine()
+        engine.load(null)
+        engine.send("hi", "m1")
+        val final = awaitIdle(engine)
+        assertEquals(listOf("foldable", "ui"), final.tags)
+        assertEquals(listOf("foldable", "ui"), store.chatTags("chat-77"))
+    }
+
+    @Test
     fun jsonCompletionBodyFallsBack() = runBlocking {
         enqueueJson("""{"choices":[{"message":{"role":"assistant","content":"Whole answer"}}]}""")
                 val (engine, _) = newEngine()
@@ -249,6 +271,80 @@ class ChatEngineTest {
     }
 
 
+    @Test
+    fun regenerateAtMidChatWipesOnlyAfterThePressedMessage() = runBlocking {
+        // Two turns: [u1, a1, u2, a2] — then ↻ on the FIRST assistant (a1).
+        enqueueStream(FIRST_MESSAGE_TWO_TURNS)
+        val (engine, store) = newEngine()
+        engine.load(null)
+        engine.send("q1", "m1")
+        awaitIdle(engine)
+        enqueueStream(SECOND_TURN)
+        engine.send("q2", "m1")
+        val mid = awaitIdle(engine)
+        assertEquals(listOf("user", "assistant", "user", "assistant"), mid.messages.map { it.role })
+        val a1 = mid.messages[1].id
+
+        enqueueStream(FIRST_SHORT)
+        engine.regenerateAt(a1, "m1")
+        val final = awaitIdle(engine)
+        // Everything BEFORE the pressed message stays; the pressed assistant and
+        // everything after it are replaced by the new sibling.
+        assertEquals(listOf("user", "assistant"), final.messages.map { it.role })
+        assertEquals("q1", final.messages[0].markdown)
+        assertEquals("short regen", final.messages[1].markdown)
+        // The fork hangs off the pressed turn's user message, so a later repaint
+        // from Room keeps the prefix instead of collapsing to the fork.
+        val fork = store.messages.single { it.messageId != a1 && it.role == "assistant" && it.messageId != mid.messages[3].id }
+        assertEquals(mid.messages[0].id, fork.parentId)
+    }
+
+    @Test
+    fun syncAfterRegenerateKeepsEarlierMessagesWhenServerOrphansFork() = runBlocking {
+        // Regenerate the only turn, then a sync whose server tree carries the
+        // fork with parentId=null (the streaming-upsert orphan, models/chats.py:1134).
+        // The visible thread must still include the user turn — not collapse to
+        // the fork alone (user report: regenerate wiped all previous messages).
+        enqueueStream(FIRST_MESSAGE_TWO_TURNS)
+        val (engine, store) = newEngine()
+        engine.load(null)
+        engine.send("q1", "m1")
+        val first = awaitIdle(engine)
+        val u1 = first.messages[0].id
+        val a1 = first.messages[1].id
+
+        enqueueStream(FIRST_SHORT)
+        engine.regenerateAt(a1, "m1")
+        val regen = awaitIdle(engine)
+        val fork = regen.messages[1].id
+
+        store.chats["chat-88"] = dev.beacon.core.api.dto.ChatPayload(
+            id = "chat-88",
+            title = "t",
+            chat = dev.beacon.core.api.dto.ChatStorage(
+                history = dev.beacon.core.api.dto.ChatHistory(
+                    messages = mapOf(
+                        u1 to dev.beacon.core.api.dto.StoredMessage(id = u1, parentId = null, role = "user", content = "q1", done = true),
+                        a1 to dev.beacon.core.api.dto.StoredMessage(id = a1, parentId = u1, role = "assistant", content = "First answer", done = true),
+                        fork to dev.beacon.core.api.dto.StoredMessage(
+                            id = fork,
+                            parentId = null, // server orphaned the fork
+                            role = "assistant",
+                            content = "short regen",
+                            done = true,
+                            output = kotlinx.serialization.json.buildJsonArray { },
+                        ),
+                    ),
+                    currentId = fork,
+                ),
+            ),
+        )
+        engine.sync()
+        val after = engine.state.value.messages
+        assertTrue("expected the user turn to survive sync, got $after", after.any { it.id == u1 && it.role == "user" })
+        assertTrue(after.any { it.id == fork })
+    }
+
     private companion object {
         val FIRST_MESSAGE = """
             data: {"type":"chat:list","data":{"chat_id":"chat-77","folder_id":null}}
@@ -280,6 +376,15 @@ class ChatEngineTest {
             data: {"type":"chat:list","data":{"chat_id":"chat-88","folder_id":null}}
 
             data: {"choices":[{"delta":{"content":"First answer"}}]}
+
+            data: {"choices":[{"finish_reason":"stop"}]}
+
+            data: [DONE]
+
+        """.trimIndent() + "\n"
+
+        val SECOND_TURN = """
+            data: {"choices":[{"delta":{"content":"Second answer"}}]}
 
             data: {"choices":[{"finish_reason":"stop"}]}
 
@@ -329,6 +434,8 @@ class InMemoryChatStore : ChatStore {
     }
 
     override suspend fun chatTitle(chatId: String): String? = titles[chatId]
+
+    override suspend fun chatTags(chatId: String): List<String> = tags[chatId] ?: emptyList()
 
     override suspend fun setChatTags(chatId: String, tags: List<String>) {
         this.tags[chatId] = tags

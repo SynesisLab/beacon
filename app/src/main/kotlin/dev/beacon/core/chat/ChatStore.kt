@@ -48,6 +48,9 @@ interface ChatStore {
      *  the room-first paint's topbar source. */
     suspend fun chatTitle(chatId: String): String?
 
+    /** The ROOM row's tags (the server-generated tags ride chat:tags events). */
+    suspend fun chatTags(chatId: String): List<String>
+
     /** All nodes of the chat (tree, not just the active path). */
     suspend fun messages(chatId: String): List<MessageEntity>
 

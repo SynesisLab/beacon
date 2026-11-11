@@ -55,6 +55,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import dev.beacon.core.api.FilesApi
 import dev.beacon.core.render.DisplayFile
+import okhttp3.OkHttpClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -74,6 +75,9 @@ fun FileViewerScreen(
     mime: String,
     terminalServerId: String? = null,
     terminalPath: String? = null,
+    /** HTML artifacts proxy http(s) subresources through the app client (auth). */
+    httpClient: OkHttpClient? = null,
+    instanceUrl: String? = null,
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -133,6 +137,9 @@ fun FileViewerScreen(
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.padding(16.dp),
                     )
+                    // HTML terminal artifacts render in the sandboxed WebView pane.
+                    viewer == dev.beacon.core.render.FileViewer.Html && text != null ->
+                        HtmlFileView(html = text, client = httpClient, instanceUrl = instanceUrl)
                     text != null -> TextView(file = null, fallbackText = text)
                     else -> androidx.compose.material3.CircularProgressIndicator(
                         Modifier
@@ -179,6 +186,8 @@ fun FileViewerScreen(
                 else -> when (viewer) {
                     dev.beacon.core.render.FileViewer.Image -> ImageView(localFile!!)
                     dev.beacon.core.render.FileViewer.Pdf -> PdfView(localFile!!, name)
+                    dev.beacon.core.render.FileViewer.Html ->
+                        HtmlFileView(file = localFile!!, client = httpClient, instanceUrl = instanceUrl)
                     dev.beacon.core.render.FileViewer.Text -> TextView(localFile!!)
                     dev.beacon.core.render.FileViewer.AudioVideo ->
                         dev.beacon.core.speech.Media3Card(localFile!!, mime)

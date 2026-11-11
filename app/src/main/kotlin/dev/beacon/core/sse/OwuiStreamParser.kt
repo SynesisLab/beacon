@@ -122,10 +122,26 @@ class OwuiStreamParser(
         return foldObject(element)
     }
 
+    /**
+     * First readable text on an error envelope: `message`, or a FastAPI-style
+     * `detail` (string / {message} object). The raw server words matter — the
+     * user diagnoses from them (quota, model gone, RBAC, bad key).
+     */
+    private fun errorMessageIn(obj: JsonObject?): String? {
+        (obj?.get("message") as? JsonPrimitive)?.takeIf { it.content.isNotBlank() }?.let { return it.content }
+        val detail = obj?.get("detail") ?: return null
+        if (detail is JsonPrimitive) return detail.content.takeIf { it.isNotBlank() }
+        if (detail is JsonObject) {
+            (detail["message"] as? JsonPrimitive)?.takeIf { it.content.isNotBlank() }?.let { return it.content }
+            (detail["detail"] as? JsonPrimitive)?.takeIf { it.content.isNotBlank() }?.let { return it.content }
+        }
+        return null
+    }
+
     private fun foldObject(obj: JsonObject): List<StreamEvent> {
         // 1. error frames (mid-stream failure, middleware.py:6527)
         (obj["error"] as? JsonObject)?.let { err ->
-            val message = (err["message"] as? JsonPrimitive)?.content ?: "Stream error"
+            val message = errorMessageIn(err) ?: (err["message"] as? JsonPrimitive)?.content ?: "Stream error"
             return listOf(StreamEvent.ErrorSurface(message, err))
         }
 
@@ -200,6 +216,9 @@ class OwuiStreamParser(
             "chat:message:error" -> {
                 val body = obj["data"]
                 val message = (body as? JsonObject)?.get("content")?.primitiveOrNull()?.content
+                    // FastAPI-style detail / nested message shapes (the server
+                    // sometimes bubbles the raw backend envelope verbatim).
+                    ?: (body as? JsonObject)?.get("detail")?.primitiveOrNull()?.content
                     ?: "Message error"
                 return listOf(StreamEvent.ErrorSurface(message, obj))
             }

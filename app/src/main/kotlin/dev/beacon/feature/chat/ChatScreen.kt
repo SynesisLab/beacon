@@ -71,6 +71,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 import dev.beacon.core.chat.ChatEngine
 import kotlinx.coroutines.launch
 
@@ -96,6 +98,8 @@ data class ChatActions(
     val onToggleImageGeneration: () -> Unit = {},
     val onToggleCodeInterpreter: () -> Unit = {},
     val onToggleTemp: () -> Unit = {},
+    /** Model sheet's Effort row → request `params.reasoning_effort` (null = default). */
+    val onSetReasoningEffort: (String?) -> Unit = {},
     /** §8 mic: tap-dictation/stop; the screen handles the permission prompt. */
     val onMicTap: () -> Unit = {},
     val onMicStop: () -> Unit = {},
@@ -143,6 +147,16 @@ fun ChatScreen(
     syncing: Boolean = false,
     /** Hold-to-set-default (user request): persists the model across sessions. */
     onSetDefault: (String) -> Unit = {},
+    /**
+     * v4 FoldAware posture (beacon-foldable-design.md §1/§2/§3). Default PHONE =
+     * the v3 layout untouched (goldens render without it). BOOK caps the
+     * transcript at a 720dp centered measure (§2.2) and anchors the model sheet
+     * under the context chip (§2.3); TABLETOP splits at the hinge: transcript
+     * on the far pane, composer + reading rail on the near pane (§3).
+     */
+    posture: dev.beacon.feature.home.PostureState = dev.beacon.feature.home.PostureState.PHONE,
+    /** v4 §2.4: non-null in book ≥840dp — ⤢ on a card docks it into the companion pane. */
+    onDockCard: ((dev.beacon.core.render.ChatPart.HtmlCard) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -297,6 +311,8 @@ fun ChatScreen(
                 // options menu (share/copy).
                 title = {
                     var optionsOpen by remember { mutableStateOf(false) }
+                    var modelQuery by remember { mutableStateOf("") }
+                    Box {
                     Surface(
                         color = MaterialTheme.colorScheme.surface,
                         shape = RoundedCornerShape(50),
@@ -344,9 +360,33 @@ fun ChatScreen(
                             )
                         }
                     }
+                    // v4 §2.3: in book the model sheet is an ANCHORED POPOVER under
+                    // the context chip (not a modal sheet) — destructive confirms
+                    // stay dialogs.
+                    if (showModelPicker && posture.isBook) {
+                        androidx.compose.material3.DropdownMenu(
+                            expanded = true,
+                            onDismissRequest = onDismissPicker,
+                            modifier = Modifier.width(320.dp),
+                        ) {
+                            ModelMenuBody(
+                                state = state,
+                                query = modelQuery,
+                                onQuery = { modelQuery = it },
+                                onPick = { onPickModel(it) },
+                                onSetDefault = onSetDefault,
+                                onSetEffort = actions.onSetReasoningEffort,
+                            )
+                        }
+                    }
+                    }
                 },
                 navigationIcon = {
-                    dev.beacon.feature.home.SidebarBubble(Modifier.padding(start = 2.dp))
+                    // v4 §2.1: in book the hamburger bubble stays gone — the rail
+                    // icons are the nav (the glyph chip covers the docked case).
+                    if (!posture.isBook) {
+                        dev.beacon.feature.home.SidebarBubble(Modifier.padding(start = 2.dp))
+                    }
                 },
                 actions = {
                     // Temp chat: the dashed ghost (coral when temporary).
@@ -375,6 +415,50 @@ fun ChatScreen(
                 .nestedScroll(flickConnection)
                 .then(pullModifier),
         ) {
+            // v4 FoldAware §3 (tabletop, horizontal hinge): the transcript segment
+            // occupies the FAR pane at exactly the hinge's top height (minus the
+            // chrome above); then the hinge gap; then the NEAR pane carries the
+            // reading rail + meter + composer. In phone/book the SAME segment is
+            // just the weighted area — one container, layout by posture only.
+            val hinge = posture.hinge
+            val tabletop = posture.isTabletop && hinge != null && hinge.isHorizontal &&
+                hinge.topPanePx > 0 && hinge.bottomPanePx > 0
+            val topSegmentModifier = if (tabletop) {
+                // Hinge bounds are window coordinates — subtract the chrome above
+                // the content (status bar + top app bar) so the gap lands on the hinge.
+                val topDp = with(density) {
+                    (hinge!!.topPanePx - padding.calculateTopPadding().roundToPx()).coerceAtLeast(1).toDp()
+                }
+                Modifier.height(topDp).fillMaxWidth()
+            } else {
+                Modifier.weight(1f).fillMaxWidth()
+            }
+            Column(topSegmentModifier) {
+            // Tag chips under the title (server-generated; chat:tags events →
+            // Room row → engine state; middleware.py:3694-3715).
+            if (state.engine.tags.isNotEmpty()) {
+                androidx.compose.foundation.layout.FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                ) {
+                    state.engine.tags.forEach { tag ->
+                        Surface(
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(999.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                        ) {
+                            Text(
+                                tag,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            )
+                        }
+                    }
+                }
+            }
             state.engine.error?.let { error ->
                 Text(
                     text = error,
@@ -410,13 +494,18 @@ fun ChatScreen(
 
             // The transcript + the sync-circle overlay (floats over the list's
             // bottom edge while the flick's sync runs).
-            Box(Modifier.weight(1f).fillMaxWidth()) {
+            // v4 §2.2: in book the transcript box itself is capped at a centered
+            // 720dp measure — unfolded text must not sprawl across the pane.
+            val listBoxModifier = if (posture.isBook) {
+                Modifier.weight(1f).align(Alignment.CenterHorizontally).widthIn(max = 720.dp)
+            } else {
+                Modifier.weight(1f).fillMaxWidth()
+            }
+            Box(listBoxModifier) {
                 LazyColumn(
                     state = listState,
                     reverseLayout = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .graphicsLayer { translationY = pullUp.value },
+                    modifier = Modifier.fillMaxWidth().graphicsLayer { translationY = pullUp.value },
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom),
                 ) {
@@ -577,6 +666,7 @@ fun ChatScreen(
                         onShare = actions.onShare,
                         onPrompt = actions.onPrompt,
                         onSetBranch = actions.onSetBranch,
+                        onDockCard = onDockCard,
                     )
                 }
                 }
@@ -606,6 +696,13 @@ fun ChatScreen(
                         }
                     }
                 }
+            }
+            } // close the transcript segment Column
+            if (tabletop) {
+                dev.beacon.feature.home.HingeGap(hinge!!)
+                // §3: the hairline reading rail on the NEAR pane keeps the last
+                // assistant turn visible when the far pane is scrolled away.
+                ReadingRail(state)
             }
 
             // The "Latest ⇅" fallback pill was REMOVED (user request
@@ -821,13 +918,12 @@ fun ChatScreen(
         }   // Column
     }   // Scaffold content
 
-    if (showModelPicker) {
+    if (showModelPicker && !posture.isBook) {
         // Mockup 04: handle + "Model" + ✕, search, avatar-initial rows with
         // caps badges, coral ✓ on the chosen one; hold = set app default.
+        // (v4 §2.3: in book this sheet is an anchored popover under the context
+        // chip instead — see the topBar title.)
         var query by remember { mutableStateOf("") }
-        val visible = state.models.filter {
-            query.isBlank() || it.name.contains(query, ignoreCase = true) || it.id.contains(query, ignoreCase = true)
-        }
         ModalBottomSheet(onDismissRequest = onDismissPicker) {
             Column(Modifier.padding(horizontal = 16.dp)) {
                 Box(
@@ -847,9 +943,68 @@ fun ChatScreen(
                         Icon(Icons.Filled.Close, contentDescription = "Close")
                     }
                 }
+                ModelMenuBody(state = state, query = query, onQuery = { query = it }, onPick = onPickModel, onSetDefault = onSetDefault, onSetEffort = actions.onSetReasoningEffort)
+            }
+        }
+    }
+}
+
+/**
+ * v4: the model-list body shared by the phone bottom sheet (mockup 04) and the
+ * book-mode anchored popover under the context chip (§2.3) — same list, only
+ * the container changes (the §2.1 portability trick).
+ */
+@Composable
+private fun ModelMenuBody(
+    state: ChatViewModel.UiState,
+    query: String,
+    onQuery: (String) -> Unit,
+    onPick: (String) -> Unit,
+    onSetDefault: (String) -> Unit,
+    onSetEffort: (String?) -> Unit = {},
+) {
+    val visible = state.models.filter {
+        query.isBlank() || it.name.contains(query, ignoreCase = true) || it.id.contains(query, ignoreCase = true)
+    }
+    Column {
+                // Effort row (Claude-app parity; wire: params.reasoning_effort,
+                // Chat.svelte:4420-4495). Default = server-side recommended.
+                Text(
+                    "Effort",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf<Pair<String, String?>>(
+                        "Default" to null,
+                        "Low" to "low",
+                        "Medium" to "medium",
+                        "High" to "high",
+                    ).forEach { (label, value) ->
+                        val selected = state.reasoningEffort == value
+                        Surface(
+                            onClick = { onSetEffort(value) },
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(999.dp),
+                            color = if (selected) MaterialTheme.colorScheme.primaryContainer
+                            else MaterialTheme.colorScheme.surfaceVariant,
+                            border = if (selected) null else androidx.compose.foundation.BorderStroke(
+                                1.dp, MaterialTheme.colorScheme.outline,
+                            ),
+                        ) {
+                            Text(
+                                label,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            )
+                        }
+                    }
+                }
                 OutlinedTextField(
                     value = query,
-                    onValueChange = { query = it },
+                    onValueChange = onQuery,
                     singleLine = true,
                     shape = CircleShape,
                     placeholder = { Text("Search models") },
@@ -873,7 +1028,7 @@ fun ChatScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .combinedClickable(
-                                    onClick = { onPickModel(model.id) },
+                                    onClick = { onPick(model.id) },
                                     onLongClick = { onSetDefault(model.id) },
                                 )
                                 .padding(vertical = 11.dp),
@@ -940,7 +1095,45 @@ fun ChatScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 10.dp),
                 )
-            }
+    }
+}
+
+/**
+ * v4 FoldAware §3: the hairline "reading rail" on the tabletop NEAR pane —
+ * the last assistant turn stays visible when the far pane is scrolled away.
+ */
+@Composable
+private fun ReadingRail(state: ChatViewModel.UiState) {
+    val lastTurn = remember(state.engine.messages) {
+        state.engine.messages.asReversed().firstOrNull { it.role != "user" }
+            ?.markdown?.replace('\n', ' ')?.take(140)
+    }
+    if (lastTurn != null) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 4.dp)
+                .background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(12.dp))
+                .padding(horizontal = 12.dp, vertical = 9.dp),
+        ) {
+            Text(
+                "LAST TURN",
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                    letterSpacing = 0.6.sp,
+                ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(end = 10.dp),
+            )
+            Text(
+                lastTurn,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
         }
     }
 }
@@ -961,6 +1154,8 @@ private fun MessageBubble(
     onPrompt: (String) -> Unit = {},
     /** Branch stepper / the version-tree fork (§4). */
     onSetBranch: (holderId: String, index: Int) -> Unit = { _, _ -> },
+    /** v4 §2.4: ⤢ on a card docks it into the companion pane (book ≥840dp). */
+    onDockCard: ((dev.beacon.core.render.ChatPart.HtmlCard) -> Unit)? = null,
 ) {
     val streaming = message.id == streamingMessageId
     // The native compaction checkpoint renders as its own row ABOVE the
@@ -988,6 +1183,7 @@ private fun MessageBubble(
                 onShare = onShare,
                 onPrompt = onPrompt,
                 onSetBranch = onSetBranch,
+                onDockCard = onDockCard,
             )
         }
     } else {
@@ -1006,6 +1202,7 @@ private fun MessageBubble(
             onShare = onShare,
             onPrompt = onPrompt,
             onSetBranch = onSetBranch,
+            onDockCard = onDockCard,
         )
     }
 }
@@ -1027,6 +1224,7 @@ private fun MessageBody(
     onShare: (messageId: String, text: String) -> Unit,
     onPrompt: (String) -> Unit = {},
     onSetBranch: (holderId: String, index: Int) -> Unit,
+    onDockCard: ((dev.beacon.core.render.ChatPart.HtmlCard) -> Unit)? = null,
 ) {
     if (message.role == "user") {
         // Right-hugging warm pill (user request 2026-11-03: sent turns belong
@@ -1072,6 +1270,7 @@ private fun MessageBody(
                         instanceUrl = instanceUrl,
                         iframeCsp = iframeCsp,
                         onPrompt = onPrompt,
+                        onDockCard = onDockCard,
                     )
                 }
             }

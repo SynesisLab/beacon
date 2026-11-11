@@ -84,6 +84,8 @@ class ChatEngine(
     data class ChatUiModel(
         val chatId: String? = null,
         val title: String? = null,
+        /** Server-generated tags (chat:tags events; middleware.py:3694-3715). */
+        val tags: List<String> = emptyList(),
         val messages: List<RenderMessage> = emptyList(),
         val streamingMessageId: String? = null,
         val statusText: String? = null,
@@ -184,6 +186,9 @@ class ChatEngine(
     private var lastRoomWrite = 0L
     private var lastSyncAt = 0L
     private var activeModelId: String? = null
+    /** Request `params.reasoning_effort` (Chat.svelte:4420-4495); null = server
+     *  default. Set by the view model from the persisted setting. */
+    var reasoningEffort: String? = null
     private var projectionSnapshot: List<ProjectionMessage> = emptyList()
     private var joinedChatId: String? = null
 
@@ -228,6 +233,7 @@ class ChatEngine(
             _state.value = ChatUiModel(
                 chatId = existingChatId,
                 title = runCatching { store.chatTitle(existingChatId) }.getOrNull(),
+                tags = runCatching { store.chatTags(existingChatId) }.getOrDefault(emptyList()),
                 loading = true,
             )
         }
@@ -257,9 +263,11 @@ class ChatEngine(
         // there) — the fresh-VM paint has no engine title yet, and a failed
         // adopt no longer strands the topbar at "New chat" (2026-11-04).
         val roomTitle = runCatching { store.chatTitle(chatId) }.getOrNull()
+        val roomTags = runCatching { store.chatTags(chatId) }.getOrDefault(emptyList())
         _state.value = ChatUiModel(
             chatId = chatId,
             title = roomTitle ?: _state.value.title,
+            tags = roomTags,
             messages = path.map { row ->
                 // §4 version count: a node's siblings = its PARENT's childrenIds
                 // (the assistant versions under the user turn); the index = this
@@ -817,6 +825,7 @@ class ChatEngine(
             regeneration_prompt = null,
             assistant_message_id = plan.continueAssistantId,
             features = plan.features ?: Features(),
+            params = reasoningEffort?.takeIf { it.isNotBlank() }?.let { Params(reasoning_effort = it) },
             tool_ids = plan.toolIds,
             skill_ids = plan.skillIds,
             background_tasks = when {
@@ -1273,7 +1282,10 @@ class ChatEngine(
                 // every chat created in-app titled "New chat" (2026-11-04).
                 _state.value = _state.value.copy(title = event.title)
             }
-            is StreamEvent.TagsUpdate -> chatId?.let { store.setChatTags(it, event.tags) }
+            is StreamEvent.TagsUpdate -> chatId?.let { chat ->
+                store.setChatTags(chat, event.tags)
+                _state.value = _state.value.copy(tags = event.tags)
+            }
             is StreamEvent.ChatListDiscovered -> adoptLearnedChat(event.chatId, assistantMessageId)
             is StreamEvent.Embeds -> {
                 embedsHtml = event.htmlList
@@ -1488,10 +1500,18 @@ class ChatEngine(
         patch { copy(messages = messages.map { if (it.id == id) transform(it) else it }) }
 
     private fun describe(e: Exception): String = when (e) {
-        is OwuiApiException -> when (e.code) {
-            0 -> e.message ?: "Not connected"
-            401, 403 -> "The server rejected the request (${e.code})."
-            else -> "Server error ${e.code}: ${e.bodyExcerpt?.take(160) ?: "no details"}"
+        is OwuiApiException -> {
+            // The server's own message (FastAPI envelope) beats a generic line.
+            val detail = dev.beacon.core.api.ApiErrorText.display(e.code, e.bodyExcerpt)
+            if (detail != null) {
+                detail
+            } else {
+                when (e.code) {
+                    0 -> e.message ?: "Not connected"
+                    401, 403 -> "The server rejected the request (${e.code})."
+                    else -> "Server error ${e.code}: ${e.bodyExcerpt?.take(160) ?: "no details"}"
+                }
+            }
         }
         else -> e.message ?: e.javaClass.simpleName
     }

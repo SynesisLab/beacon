@@ -47,6 +47,8 @@ fun SettingsScreen(
     onOpenHeaders: () -> Unit = {},
     /** Sidebar row visibility ([rowKey], visible). */
     onNavRowVisible: (String, Boolean) -> Unit = { _, _ -> },
+    /** App lock toggle (biometric/device-credential gate at app open). */
+    onAppLock: (Boolean) -> Unit = {},
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -158,6 +160,24 @@ fun SettingsScreen(
             }
         }
         SettingCard {
+            SettingRow(icon = "◼", title = { Text("App lock") }, subtitle = "verify it's you when the app opens")
+            Row(
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onAppLock(!state.appLock) }
+                    .padding(vertical = 4.dp),
+            ) {
+                Text(
+                    if (state.appLock) "Biometric / device credential required" else "Off",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                androidx.compose.material3.Switch(checked = state.appLock, onCheckedChange = onAppLock)
+            }
+        }
+        SettingCard {
             SettingRow(icon = "▤", title = { Text("Sidebar") }, subtitle = "show or hide sidebar rows")
             listOf(
                 "notes" to "Notes",
@@ -165,7 +185,8 @@ fun SettingsScreen(
                 "workspace" to "Workspace",
                 "memories" to "Memories",
                 "channels" to "Channels",
-                "settings" to "Settings",
+                // "settings" is not toggleable — the nav row never hides
+                // (Settings opens from the identity bar above the list).
             ).forEach { (key, label) ->
                 Row(
                     verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,

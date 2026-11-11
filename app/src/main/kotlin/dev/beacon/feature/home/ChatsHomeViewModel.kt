@@ -11,7 +11,10 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -34,7 +37,7 @@ class ChatsHomeViewModel @Inject constructor(
         val folders: List<FolderRow> = emptyList(),
         val loading: Boolean = false,
         val error: String? = null,
-        /** Client-side search (server unified search = feature-map §11, M4+). */
+        /** Server-side search query (GET /api/v1/chats/search, chats.py:900). */
         val search: String = "",
     )
 
@@ -44,22 +47,44 @@ class ChatsHomeViewModel @Inject constructor(
     private val load = MutableStateFlow(Load())
     private val foldersFlow = MutableStateFlow<List<FolderRow>>(emptyList())
     private val searchFlow = MutableStateFlow("")
+    /** Server search hits for the active query; null = blank query or request failed (→ local filter). */
+    private val serverSearchFlow = MutableStateFlow<List<ChatEntity>?>(null)
     private var page = 1
     private var exhausted = false
 
     init {
         refresh()
+        // Debounced server search (chats.py:900); on failure fall back to the
+        // local Room filter so the field never goes dead offline.
+        viewModelScope.launch {
+            searchFlow
+                .debounce(300)
+                .distinctUntilChanged()
+                .collectLatest { q ->
+                    val query = q.trim()
+                    serverSearchFlow.value = if (query.isBlank()) {
+                        null
+                    } else {
+                        runCatching { repository.searchServer(query) }.getOrNull()
+                    }
+                }
+        }
     }
 
     val ui: StateFlow<UiState> = combine(
         roomChats,
         foldersFlow,
         searchFlow,
+        serverSearchFlow,
         load,
-    ) { chats, folders, search, l ->
+    ) { chats, folders, search, serverSearch, l ->
         val q = search.trim()
         UiState(
-            chats = if (q.isBlank()) chats else chats.filter { it.title.contains(q, ignoreCase = true) },
+            chats = when {
+                q.isBlank() -> chats
+                serverSearch != null -> serverSearch
+                else -> chats.filter { it.title.contains(q, ignoreCase = true) }
+            },
             folders = if (q.isBlank()) folders else folders.filter { it.name.contains(q, ignoreCase = true) },
             loading = l.loading,
             error = l.error,

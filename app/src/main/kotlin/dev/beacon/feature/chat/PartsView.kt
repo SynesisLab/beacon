@@ -49,6 +49,8 @@ fun PartsView(
     instanceUrl: String? = null,
     iframeCsp: String? = null,
     onPrompt: (String) -> Unit = {},
+    /** v4 FoldAware §2.4: non-null in book ≥840dp — ⤢ docks the card into the companion pane. */
+    onDockCard: ((dev.beacon.core.render.ChatPart.HtmlCard) -> Unit)? = null,
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         val host = PartHost(
@@ -58,6 +60,7 @@ fun PartsView(
             iframeCsp = iframeCsp,
             onFollowUp = onFollowUp,
             onOpenFile = onOpenFile,
+            onDockCard = onDockCard,
         )
         dev.beacon.core.render.detailRuns(parts).forEach { chunk ->
             when (chunk) {
@@ -78,6 +81,8 @@ private data class PartHost(
         { _, _, _, _, _ -> },
     /** Tool-card chip → composer prefill (input:prompt:submit). */
     val onPrompt: (String) -> Unit = {},
+    /** v4 §2.4: ⤢ on a card → companion pane (null on phone / narrow book). */
+    val onDockCard: ((dev.beacon.core.render.ChatPart.HtmlCard) -> Unit)? = null,
 )
 
 /** One part, as before the grouping (the group's expanded view reuses this). */
@@ -102,7 +107,14 @@ private fun RenderPart(
         is dev.beacon.core.render.ChatPart.HtmlCard ->
             when {
                 host.httpClient != null && (part.html != null || part.srcUrl != null) ->
-                    HtmlCardPane(part, host.httpClient!!, host.instanceUrl, host.iframeCsp, onPrompt = host.onPrompt)
+                    HtmlCardPane(
+                        part,
+                        host.httpClient!!,
+                        host.instanceUrl,
+                        host.iframeCsp,
+                        onPrompt = host.onPrompt,
+                        onDock = host.onDockCard?.let { cb -> ({ cb(part) }) },
+                    )
                 else -> HtmlCardPlaceholder(part)
             }
         is dev.beacon.core.render.ChatPart.File -> FileChip(part, host.onOpenFile)
@@ -252,6 +264,7 @@ private fun FileChip(
                     dev.beacon.core.render.FileViewer.Image -> "🖼️"
                     dev.beacon.core.render.FileViewer.Pdf -> "📄"
                     dev.beacon.core.render.FileViewer.Text -> "📝"
+                    dev.beacon.core.render.FileViewer.Html -> "🌐"
                     dev.beacon.core.render.FileViewer.AudioVideo -> "▶️"
                     dev.beacon.core.render.FileViewer.Download -> "📦"
                 },

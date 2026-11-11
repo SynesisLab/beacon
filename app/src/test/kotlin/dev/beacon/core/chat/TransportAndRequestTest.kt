@@ -91,4 +91,24 @@ class CompletionRequestEncodeTest {
         assertTrue(encoded.contains("\"parent_id\":\"assistant-1\""))
         assertTrue(encoded.contains("\"messages\":[{\"role\":\"user\",\"content\":\"hi\"},{\"role\":\"assistant\",\"content\":\"hello\"}]"))
     }
+
+    @Test
+    fun reasoningEffortRidesParams() {
+        // params.reasoning_effort — wire-verified (Chat.svelte:4420-4495;
+        // docs/interface-mapping.md "reasoning effort = request params.reasoning_effort").
+        val withEffort = CompletionRequests.encode(
+            CompletionRequest(
+                model = "m1",
+                messages = listOf(ProjectionMessage.user("hi")),
+                id = "a1",
+                params = Params(reasoning_effort = "high"),
+            ),
+        )
+        assertTrue(withEffort.contains("\"params\":{\"reasoning_effort\":\"high\"}"))
+        // default (null) → params omitted entirely
+        val without = CompletionRequests.encode(
+            CompletionRequest(model = "m1", messages = listOf(ProjectionMessage.user("hi")), id = "a1"),
+        )
+        assertFalse(without.contains("\"params\""))
+    }
 }

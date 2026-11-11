@@ -12,6 +12,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -75,6 +76,13 @@ fun HtmlCardPane(
     iframeCsp: String? = null,
     /** Card chip → composer prefill (input:prompt:submit; prefill only). */
     onPrompt: (String) -> Unit = {},
+    /**
+     * v4 FoldAware §2.4: when set (book ≥840dp), the ⤢ affordance DOCKS the
+     * card into the companion pane instead of the fullscreen bottom sheet.
+     */
+    onDock: (() -> Unit)? = null,
+    /** v4 §2.3b: docked in the companion pane → fill the pane height, not the 60% cap. */
+    fillHeight: Boolean = false,
 ) {
     val dark = LocalBeaconDark.current
     var heightDp by remember(card.id) { mutableStateOf(card.minHeightDp.dp) }
@@ -94,7 +102,7 @@ fun HtmlCardPane(
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .height(heightDp.coerceAtLeast(card.minHeightDp.dp))
+                    .then(if (fillHeight) Modifier.fillMaxHeight() else Modifier.height(heightDp.coerceAtLeast(card.minHeightDp.dp)))
                     // Web parity: the card sits as a rounded block in the flow
                     // (FullHeightIframe's rounded-2xl) — the clip shows the app
                     // background at the corners, no hard rectangle seam.
@@ -154,13 +162,17 @@ fun HtmlCardPane(
                     )
                 }
                 Spacer(Modifier.weight(1f))
-                if (heightDp >= ExpandedCap) {
+                // §2.4 triggers: ⤢ on a tool card / inline synthetic docks into the
+                // companion pane (book ≥840dp) instead of the fullscreen sheet.
+                if (onDock != null) {
+                    TextButton(onClick = { onDock() }) { Text("⤢ Dock") }
+                } else if (heightDp >= ExpandedCap) {
                     TextButton(onClick = { expanded = true }) { Text("Expand ⤢") }
                 }
             }
         }
 
-        if (expanded) {
+        if (expanded && onDock == null) {
             ModalBottomSheet(onDismissRequest = { expanded = false }) {
                 Box(Modifier.fillMaxWidth().height(640.dp)) {
                     CardWebView(

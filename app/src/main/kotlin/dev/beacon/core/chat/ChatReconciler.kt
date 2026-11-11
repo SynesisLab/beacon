@@ -36,7 +36,20 @@ object ChatReconciler {
 
         server.forEach { stored ->
             val localRow = localById[stored.id]
-            val incoming = stored.toEntity(chatId)
+            val incoming = stored.toEntity(chatId).let { entity ->
+                // §4 fork truth: the server's streaming upsert can null a node's
+                // parentId (the {existing,**incoming} spread; models/chats.py:1134).
+                // A locally-known parent OUTRANKS a server null — same guard as
+                // ChatRepository.upsertPayload. Without it a regenerated fork
+                // orphans on sync and activePathFrom collapses to the leaf,
+                // wiping every earlier message from the visible thread
+                // (user report: regenerate wiped all previous messages).
+                if (entity.parentId == null) {
+                    localRow?.parentId?.let { known -> entity.copy(parentId = known) } ?: entity
+                } else {
+                    entity
+                }
+            }
             when {
                 localRow == null -> upserts.add(incoming)
 

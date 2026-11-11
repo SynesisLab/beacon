@@ -1,5 +1,13 @@
 # Beacon UI Design Spec — v3.0 "sidebar" (2026-11-06)
 
+> **v4.0 "FoldAware" amendment (2026-11-10)** lives at the repo root:
+> `beacon-foldable-design.md` (spec) + `beacon-foldable-mockup.html`
+> (frames F1–F5). It is ADDITIVE to v3: a posture system
+> (`phone | book | tabletop` from WindowLayoutInfo + width class) where
+> unfolded/book demotes the sidebar to a resident 72dp icon rail, artifacts
+> dock into a right companion pane, and tabletop splits at the hinge.
+> v3 is unchanged on phones (<600dp); goldens `V4/*` cover the new modes.
+
 Native Android Open WebUI client. Claude-Android visual language (cream
 canvas, floating chrome, black pills, coral accent) + Open WebUI anatomy.
 **v3 change: the bottom tab bar is gone. Primary navigation is a left

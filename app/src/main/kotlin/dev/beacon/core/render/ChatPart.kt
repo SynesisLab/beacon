@@ -98,7 +98,7 @@ internal fun detailRuns(parts: List<ChatPart>): List<Any> {
 enum class ToolStatus { Pending, Running, Done, Failed, Cancelled }
 
 /** display_file routing . */
-enum class FileViewer { Image, Pdf, Text, AudioVideo, Download }
+enum class FileViewer { Image, Pdf, Text, Html, AudioVideo, Download }
 
 /** Source payload for citations (source/citation envelopes + meta sources). */
 data class Source(val title: String?, val url: String?)

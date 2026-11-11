@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Beacon · FoldAware mockup v4 (foldable expand mode)</title>
+<style>
+:root{
+  --bg:#F9F9F7; --surface:#FFFFFF; --drawer:#F3F3F0;
+  --ink:#131313; --ink2:#56544E; --muted:#817F7A; --faint:#B5B2A9;
+  --coral:#D97757; --coral-press:#C96545; --coral-tint:#F6EBE4;
+  --blue:#3565F2; --hair:#E8E5DF; --hair2:#DEDBD3; --danger:#B3313B; --live:#3AA76D;
+  --serif:Georgia,'Times New Roman',serif;
+  --sans:-apple-system,'Segoe UI',Roboto,'Helvetica Neue',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#191817;color:#EAE8E3;font-family:var(--sans);padding:28px 18px 60px}
+.pagehead{max-width:1100px;margin:0 auto 26px}
+.pagehead h1{font-family:var(--serif);font-size:28px;font-weight:600;letter-spacing:.2px}
+.pagehead .sub{color:var(--muted);font-size:13.5px;margin-top:6px}
+.tokens{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.tok{display:flex;align-items:center;gap:7px;background:#232220;border:1px solid #35332F;border-radius:999px;padding:5px 12px 5px 6px;font-size:11.5px;color:#C9C6BF}
+.sw{width:18px;height:18px;border-radius:50%;border:1px solid rgba(255,255,255,.15)}
+
+.strip{display:flex;gap:38px;overflow-x:auto;scroll-snap-type:x proximity;padding:10px 4px 26px;max-width:1400px;margin:0 auto}
+.frame{scroll-snap-align:center;flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:10px}
+.flabel{font-size:13px;color:#8F8C86}
+.fnote{font-size:11px;color:#5F5C57;max-width:760px;text-align:center;line-height:1.45}
+
+/* ------- icon rail (book) ------- */
+.rail{width:72px;flex:0 0 72px;min-width:72px;background:var(--drawer);border-right:1px solid var(--hair);display:flex;flex-direction:column;align-items:center;padding:14px 6px 14px}
+.rail .rglyph{font-family:var(--serif);font-size:19px;color:var(--ink);font-weight:600}
+.ritem{width:100%;display:flex;flex-direction:column;align-items:center;gap:3px;padding:11px 0;font-size:10px;color:var(--muted);border-radius:12px}
+.ritem .ri{font-size:17px;color:var(--ink2)}
+.ritem.on{background:var(--surface);color:var(--ink);font-weight:650}
+.ritem.on .ri{color:var(--ink)}
+.rail .rsearch{width:38px;height:38px;border-radius:50%;background:var(--surface);border:1px solid var(--hair);display:flex;align-items:center;justify-content:center;color:var(--muted);margin:10px 0 4px}
+.railbot{margin-top:auto;display:flex;flex-direction:column;align-items:center;gap:10px;border-top:1px solid var(--hair);padding-top:10px;width:100%}
+.railbot .ab{width:34px;height:34px;border-radius:50%;background:var(--coral);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;position:relative}
+.railbot .ab i{position:absolute;right:-1px;bottom:-1px;width:10px;height:10px;border-radius:50%;background:var(--live);border:2px solid var(--drawer)}
+.railbot .newchat{width:38px;height:38px;border-radius:50%;background:var(--ink);color:#FFF9F5;display:flex;align-items:center;justify-content:center;box-shadow:0 5px 14px rgba(20,19,18,.3)}
+
+/* foldable frames — Pixel Fold / Galaxy Z Fold inner screen ≈ 6.4:5.6 → 8:7 */
+.tablet{width:640px;height:560px;background:var(--bg);border:1px solid #4A4741;border-radius:22px;overflow:hidden;position:relative;display:flex;box-shadow:0 22px 50px rgba(0,0,0,.5)}
+.tablet.hinge{background:transparent;box-shadow:none;border:0;border-radius:0;display:flex;gap:0;height:560px;width:700px}
+.half{width:50%;height:100%;background:var(--bg);border:1px solid #4A4741;overflow:hidden;position:relative;display:flex;flex-direction:column}
+.half.top{border-radius:18px 18px 0 0;border-bottom:0}
+.half.bot{border-radius:0 0 18px 18px;border-top:0}
+.hingeband{width:20px;height:560px;flex:0 0 20px;background:linear-gradient(90deg,#0E0D0C,#232220 30%,#0E0D0C);border-radius:6px;position:relative}
+.hingeband::after{content:'';position:absolute;left:50%;top:0;bottom:0;width:8px;transform:translateX(-50%);background:linear-gradient(90deg,#3A3835,#151413 60%)}
+.pill{width:120px;height:5px;border-radius:3px;background:#3A3835;margin:7px auto 0}
+
+.sbar{display:flex;justify-content:space-between;align-items:center;padding:8px 20px 2px;font-size:11px;color:var(--ink2);font-weight:600}
+.sbar .dots{letter-spacing:2px;color:var(--muted);font-size:9px}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;min-height:52px}
+.ib{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--ink);flex:0 0 40px}
+.ib.white{background:var(--surface);border:1px solid var(--hair);box-shadow:0 1px 3px rgba(40,38,33,.07)}
+.ib.dashb{border:1.4px dashed var(--coral);background:var(--coral-tint)}
+.ib.dashb svg{stroke:var(--coral)}
+.chipmid{max-width:230px;overflow:hidden;background:var(--surface);border:1px solid var(--hair);border-radius:999px;padding:9px 14px;font-size:14px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:5px;box-shadow:0 1px 3px rgba(40,38,33,.07)}
+.chipmid .n{overflow:hidden;text-ellipsis;white-space:nowrap}
+
+.sidebarpane{width:340px;flex:0 0 340px;min-width:340px;background:var(--drawer);border-right:1px solid var(--hair);display:flex;flex-direction:column;padding:16px 16px 16px}
+.wordmark{display:flex;align-items:baseline;gap:8px}
+.wordmark b{font-family:var(--serif);font-size:22px;color:var(--ink);font-weight:600}
+.wordmark span{font-size:10.5px;color:var(--faint)}
+.dsearch{margin:12px 0 4px;background:var(--surface);border:1px solid var(--hair);border-radius:12px;padding:9px 12px;font-size:13px;color:var(--faint);display:flex;gap:8px;align-items:center}
+.dh{font-size:10.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--muted);font-weight:700;margin:13px 0 3px;display:flex;align-items:center}
+.dh .a{margin-left:auto;color:var(--coral);font-size:13px;font-weight:700}
+.drow{display:flex;align-items:center;gap:12px;padding:9px 2px;font-size:14.5px;color:var(--ink2);font-weight:550}
+.drow .q{color:var(--muted);width:18px;text-align:center}
+.drow.on{color:var(--ink);font-weight:650}
+.drow .km{margin-left:auto;color:var(--muted);letter-spacing:2px;font-size:12px}
+.drow .cnt{margin-left:auto;font-size:10px;color:var(--muted)}
+.drow.sel{background:var(--surface);border:1px solid var(--hair);border-radius:12px;padding:9px 10px;color:var(--ink);font-weight:650}
+.sbbot{margin-top:auto;display:flex;align-items:center;gap:10px;border-top:1px solid var(--hair);padding-top:10px}
+.sbbot .ab{width:34px;height:34px;border-radius:50%;background:var(--coral);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;position:relative}
+.sbbot .ab i{position:absolute;right:-1px;bottom:-1px;width:10px;height:10px;border-radius:50%;background:var(--live);border:2px solid var(--drawer)}
+.sbbot b{font-size:13.5px;color:var(--ink)}
+.role{font-size:9px;letter-spacing:.5px;text-transform:uppercase;font-weight:800;color:var(--muted);border:1px solid var(--hair2);border-radius:6px;padding:2px 6px}
+.newchatr{margin-left:auto;background:var(--ink);color:#FFF9F5;border-radius:999px;padding:10px 14px;font-size:13px;font-weight:650;display:flex;gap:7px;align-items:center;box-shadow:0 5px 14px rgba(20,19,18,.3)}
+
+.contentpane{flex:1;display:flex;flex-direction:column;min-width:0;position:relative}
+.master{width:240px;flex:0 0 240px;border-right:1px solid var(--hair);display:flex;flex-direction:column;background:var(--bg);min-width:0}
+.detail{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--bg)}
+.sect{font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--muted);font-weight:700;margin:12px 16px 4px}
+.lrow{display:flex;align-items:center;gap:12px;padding:11px 16px;font-size:14px}
+.lrow .li{color:var(--muted);width:20px;text-align:center;flex:0 0 20px}
+.linfo{flex:1;min-width:0}
+.linfo b{display:block;font-weight:600;color:var(--ink);font-size:13.8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.linfo span{font-size:11px;color:var(--muted)}
+.lrow.on{background:var(--surface);box-shadow:inset 3px 0 0 var(--coral)}
+.kebab{color:var(--muted);letter-spacing:2px;font-size:13px}
+.pin{color:var(--coral)}
+
+.conv{flex:1;overflow:hidden;padding:10px 26px 4px;display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+.bcol{max-width:720px;width:100%;margin:0 auto;display:flex;flex-direction:column;gap:10px;align-items:stretch}
+.msg.user{align-self:flex-end;max-width:70%;margin-left:auto;background:var(--surface);border:1px solid var(--hair);border-radius:18px 18px 6px 18px;padding:10px 13px;font-size:13.5px;line-height:1.45;color:var(--ink);box-shadow:0 1px 2px rgba(40,38,33,.04)}
+.drun{align-self:flex-start;display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink2);background:var(--drawer);border:1px solid var(--hair);border-radius:999px;padding:5px 11px}
+.drun .ok{color:var(--coral)}
+.acolor{font-size:13.5px;line-height:1.55;color:var(--ink)}
+.cit{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;font-size:9.5px;border-radius:5px;background:var(--coral-tint);color:var(--coral-press);font-weight:700;margin:0 1px}
+.tfoot{display:flex;align-items:center;gap:12px;color:var(--muted)}
+.pg{border:1px solid var(--hair);border-radius:999px;padding:2px 9px;font-size:11px;color:var(--ink2);background:var(--surface);font-weight:600}
+.fu{display:flex;gap:8px;flex-wrap:wrap}
+.fuchip{border:1px solid var(--hair);background:var(--surface);border-radius:14px;padding:7px 11px;font-size:11.5px;color:var(--ink2)}
+.measure{font-size:10px;color:var(--faint);text-align:center;border:1px dashed var(--hair2);border-radius:8px;padding:3px 0;margin-top:2px}
+
+.composer{margin:0 18px 12px;background:var(--surface);border:1px solid var(--hair);border-radius:26px;padding:8px 10px;box-shadow:0 2px 8px rgba(40,38,33,.05);display:flex;align-items:center;gap:8px}
+.composer input{flex:1;border:0;background:transparent;font-size:14px;color:var(--ink);min-width:0}
+.composer input::placeholder{color:var(--faint)}
+.plus{flex:0 0 auto;width:32px;height:32px;border-radius:50%;background:var(--drawer);border:1px solid var(--hair);display:flex;align-items:center;justify-content:center;color:var(--ink2)}
+.send{flex:0 0 auto;width:36px;height:36px;border-radius:50%;background:var(--ink);display:flex;align-items:center;justify-content:center}
+.meter{margin:0 18px 6px}
+.meter .rail{height:2px;background:var(--hair);border-radius:2px;position:relative}
+.meter .fill{position:absolute;inset:0;width:9%;background:var(--coral);border-radius:2px}
+.meter .cap{font-size:10.5px;color:var(--faint);margin:4px 2px 0}
+
+/* book-narrow: single content slot */
+.booknarrow .master{display:none}
+
+/* tabletop bottom pane */
+.composer.toplane{margin:10px 14px 8px}
+.readrail{margin:10px 14px 0;background:var(--drawer);border:1px solid var(--hair);border-radius:12px;padding:9px 12px;font-size:12px;color:var(--ink2);display:flex;gap:8px;align-items:center}
+.readrail .rb{color:var(--faint);font-size:10px;letter-spacing:.6px;text-transform:uppercase;font-weight:700}
+.fabcorner{position:absolute;right:16px;bottom:14px;background:var(--ink);color:#FFF9F5;border-radius:999px;padding:11px 16px;font-size:13px;font-weight:600;display:flex;gap:7px;align-items:center;box-shadow:0 6px 18px rgba(20,19,18,.3)}
+
+/* popover (anchored sheet in book mode) */
+.popover{position:absolute;top:54px;left:50%;transform:translateX(-50%);width:280px;background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:6px 14px 12px;box-shadow:0 18px 50px rgba(30,28,25,.22);z-index:5}
+.popover::before{content:'';position:absolute;top:-6px;left:50%;transform:translateX(-50%) rotate(45deg);width:12px;height:12px;background:var(--surface);border-left:1px solid var(--hair);border-top:1px solid var(--hair)}
+.shead{display:flex;align-items:center;justify-content:space-between;margin:6px 0 6px}
+.shead b{font-size:16px;font-weight:700;color:var(--ink)}
+.x{color:var(--muted);font-size:15px}
+.mrow{display:flex;align-items:center;gap:11px;padding:10px 2px;border-bottom:1px solid var(--hair)}
+.mrow:last-child{border-bottom:0}
+.av{width:34px;height:34px;border-radius:10px;background:#EFF3FE;border:1px solid var(--hair);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:var(--blue)}
+.minfo{flex:1}
+.minfo b{display:block;font-size:14px;font-weight:600;color:var(--ink)}
+.minfo span{font-size:11px;color:var(--muted)}
+.mk{color:var(--coral);font-weight:700}
+.capt{font-size:10.5px;color:var(--faint);padding:6px 4px 0}
+
+/* hinge-occluded demo */
+.hingegap{background:var(--bg);flex:1;display:flex;align-items:center;justify-content:center;color:var(--faint);font-size:11px;letter-spacing:.6px;text-transform:uppercase;border-left:1px solid var(--hair)}
+@media (max-width:820px){.strip{flex-direction:column;align-items:center;gap:40px;overflow:visible}.tablet{max-width:100%;transform-origin:top center}.tablet.hinge{transform:scale(.9)}}
+</style>
+</head>
+<body>
+
+<div class="pagehead">
+  <h1>Beacon — FoldAware mockup v4 · foldable expand mode</h1>
+  <div class="sub">Additive to v3 "sidebar": posture-aware layout (WindowLayoutInfo + FoldingFeature). Unfolded = fixed 72dp icon rail + thread pane; artifacts dock right and auto-hide the rail. Frames use foldable aspect ratios — Pixel Fold / Z Fold inner screen (6.4:5.6 ≈ 8.4:10), not phone. Spec: beacon-foldable-design.md (v4.0) · wires: feature-map §10.15 + §11.4.</div>
+  <div class="tokens">
+    <span class="tok"><span class="sw" style="background:#F9F9F7"></span>bg #F9F9F7</span>
+    <span class="tok"><span class="sw" style="background:#F3F3F0"></span>sidebar #F3F3F0</span>
+    <span class="tok"><span class="sw" style="background:#131313"></span>ink #131313</span>
+    <span class="tok"><span class="sw" style="background:#D97757"></span>coral = interactive only</span>
+    <span class="tok"><span class="sw" style="background:#E8E5DF"></span>hinge divider = hairline</span>
+  </div>
+</div>
+
+<div class="strip">
+
+<!-- ============ F1 BOOK — rail 30% + thread 70% ============ -->
+<div class="frame">
+  <div class="tablet">
+    <div class="rail">
+      <div class="rglyph">B</div>
+      <div class="rsearch"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#817F7A" stroke-width="1.6"><circle cx="6.2" cy="6.2" r="4.2"/><path d="M9.5 9.5l2.4 2.4"/></svg></div>
+      <div class="ritem on"><span class="ri">◌</span></div>
+      <div class="ritem"><span class="ri">▤</span></div>
+      <div class="ritem"><span class="ri">▥</span></div>
+      <div class="ritem"><span class="ri">▦</span></div>
+      <div class="ritem"><span class="ri">⚙</span></div>
+      <div class="railbot">
+        <div class="ab">AC<i></i></div>
+        <div class="newchat"><svg width="14" height="14" viewBox="0 0 15 15" stroke="#FFF9F5" stroke-width="1.8" fill="none" stroke-linecap="round"><path d="M7.5 2.5v10M2.5 7.5h10"/></svg></div>
+      </div>
+    </div>
+    <div class="contentpane">
+      <div class="detail">
+        <div class="topbar">
+          <div style="flex:1"></div>
+          <div class="chipmid"><span class="n">Beacon UI audit</span><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#817F7A" stroke-width="1.8"><path d="M3 4.5l3 3 3-3"/></svg></div>
+          <div class="ib dashb"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke-width="1.6"><circle cx="9" cy="8.4" r="5.6" stroke-dasharray="2.4 2.2"/><path d="M4.6 12.4l-1.4 2.4"/></svg></div>
+        </div>
+        <div class="conv">
+          <div class="bcol">
+            <div class="msg user">unfold it — rail, not a full pane</div>
+            <div class="drun"><span class="ok">✓</span> Explored 3 sources <span style="color:var(--faint)">⌄</span></div>
+            <div class="acolor">Book mode: icon rail 72dp / thread gets the rest, fixed at every width<span class="cit">1</span>. Chats list lives in the rail's ⌕/◌ popovers — thread owns the rest.</div>
+            <div class="measure">← max-width 720dp measure, centered in pane →</div>
+            <div class="tfoot"><span class="pg">‹ 1/2 ›</span><span>↻</span><span>⋯</span></div>
+            <div class="fu"><span class="fuchip">→ tabletop next?</span><span class="fuchip">hinge-occluded variant?</span></div>
+          </div>
+        </div>
+        <div class="meter"><div class="rail" style="height:2px;background:var(--hair);border-radius:2px;position:relative"><div class="fill"></div></div><div class="cap">18.2k / 200k context</div></div>
+        <div class="composer">
+          <div class="plus"><svg width="15" height="15" viewBox="0 0 15 15" stroke="#56544E" stroke-width="1.7" fill="none" stroke-linecap="round"><path d="M7.5 2.5v10M2.5 7.5h10"/></svg></div>
+          <input placeholder="Message Scarlet…">
+          <span class="send"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="#FFF9F5" stroke-width="1.8" stroke-linecap="round"><path d="M7.5 12V3.4M3.8 6.6L7.5 3l3.7 3.6"/></svg></span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="flabel">F1 · BOOK — 72dp icon rail + thread</div>
+  <div class="fnote">Rail = fixed 72dp (Material rail), icons only (long-press = label tooltip). Chats list moved into rail popovers; full v3 drawer still expandable on demand from the rail glyph. Thread owns everything else.</div>
+</div>
+
+<!-- ============ F2 BOOK — artifact docked, rail resident (v4.1 split) ============ -->
+<div class="frame">
+  <div class="tablet">
+    <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+      <div style="display:flex;flex:1;min-height:0">
+        <div style="flex:1.1;min-width:0;display:flex;flex-direction:column">
+          <div class="topbar">
+            <button class="chipmini" style="margin-left:8px;background:var(--drawer);border:1px solid var(--hair);border-radius:10px;padding:6px 10px;font-size:11px;color:var(--ink2);display:flex;gap:6px;align-items:center;cursor:pointer">☰ rail</button>
+            <div class="chipmid" style="margin-left:auto;margin-right:10px"><span class="n">Beacon UI audit</span></div>
+          </div>
+          <div class="conv">
+            <div class="bcol" style="max-width:none">
+              <div class="msg user">chart the SCHD drip plan</div>
+              <div class="drun"><span class="ok">✓</span> Explored 2 sources</div>
+              <div class="acolor">Docked — rail auto-hid, thread got the room back.</div>
+            </div>
+          </div>
+          <div class="composer"><div class="plus">＋</div><input placeholder="Message Scarlet…"><span class="send">↑</span></div>
+        </div>
+        <div style="flex:1;border-left:1px solid var(--hair);display:flex;flex-direction:column">
+          <div class="shead" style="padding:0 12px"><b>chart.svg</b><span class="x">✕</span></div>
+          <div style="flex:1;background:var(--drawer);margin:0 12px;border-radius:10px"></div>
+          <div class="capt" style="padding:6px 12px">⧉ Copy · ⬓ Export</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="flabel">F2 · BOOK — artifact docked (rail stays, v4.1 snap-split)</div>
+  <div class="fnote">v4.1: rail stays resident — dock open = rail | thread | draggable snap-handle | pane. Drag the handle (snaps ⅓/½/⅔), double-tap = 50/50, drag past the min or ✕ closes.</div>
+</div>
+<!-- (F2 duplicate removed — new docked frame above) -->
+<!-- (old narrow-split popover frame removed) -->
+
+<!-- ============ F3 TABLETOP — hinge horizontal ============ -->
+<div class="frame">
+  <div class="tablet hinge">
+    <div class="half top">
+      <div class="sbar"><span>1:07</span><span class="dots">▮▮ ⌁ ▐▊</span></div>
+      <div class="topbar">
+        <div style="flex:1"></div>
+        <div class="chipmid"><span class="n">Beacon UI audit</span><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#817F7A" stroke-width="1.8"><path d="M3 4.5l3 3 3-3"/></svg></div>
+        <div class="ib dashb"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke-width="1.6"><circle cx="9" cy="8.4" r="5.6" stroke-dasharray="2.4 2.2"/></svg></div>
+      </div>
+      <div class="conv" style="padding:8px 18px">
+        <div class="bcol">
+          <div class="msg user">type against the reclined half</div>
+          <div class="acolor">Tabletop: transcript lives in the far (top) pane — natural reading distance. Composer drops to the near pane.</div>
+          <div class="drun"><span class="ok">✓</span> Explored 2 sources</div>
+        </div>
+      </div>
+    </div>
+    <div class="hingeband"></div>
+    <div class="half bot">
+      <div class="readrail"><span class="rb">reading rail</span><span style="overflow:hidden;text-ellipsis;white-space:nowrap">…Book mode: sidebar pane 340dp, master-detail split…</span></div>
+      <div class="meter" style="margin:8px 14px 0"><div class="rail"><div class="fill"></div></div><div class="cap">18.2k / 200k context</div></div>
+      <div class="composer toplane">
+        <div class="plus"><svg width="15" height="15" viewBox="0 0 15 15" stroke="#56544E" stroke-width="1.7" fill="none" stroke-linecap="round"><path d="M7.5 2.5v10M2.5 7.5h10"/></svg></div>
+        <input value="now the tabletop variant" readonly>
+        <span class="send"><svg width="15" height="15" viewBox="0 0 18 18" fill="#FFF9F5"><rect x="4.5" y="4.5" width="9" height="9" rx="1.5"/></svg></span>
+      </div>
+    </div>
+  </div>
+  <div class="flabel">F3 · TABLETOP — half-opened, horizontal hinge</div>
+  <div class="fnote">Transcript on the far pane, composer on the near pane, hinge-occluded band excluded from both. Hairline reading rail keeps the last assistant turn visible when the top is scrolled away. Sheets anchor to the bottom pane, never straddle the hinge.</div>
+</div>
+
+<!-- ============ F4 TABLETOP — home list ============ -->
+<div class="frame">
+  <div class="tablet hinge">
+    <div class="half top">
+      <div class="sbar"><span>1:07</span><span class="dots">▮▮ ⌁ ▐▊</span></div>
+      <div class="pagehead2" style="display:flex;align-items:center;padding:6px 12px 2px">
+        <div class="ib" style="margin-left:-8px"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#131313" stroke-width="1.8" stroke-linecap="round"><path d="M3 5h12M3 9h9M3 13h11"/></svg></div>
+        <div style="font-family:var(--serif);font-size:19px;color:var(--ink);flex:1;text-align:center;font-weight:600">Chats</div>
+        <span style="color:var(--muted)">＋</span>
+      </div>
+      <div class="sect">Pinned</div>
+      <div class="lrow"><span class="li pin">✦</span><div class="linfo"><b>Beacon UI audit</b><span>edited 1:07</span></div><span class="kebab">⋯</span></div>
+      <div class="sect">Today</div>
+      <div class="lrow"><span class="li">◌</span><div class="linfo"><b>FoldAware expansion</b><span>1:15</span></div><span class="kebab">⋯</span></div>
+      <div class="lrow"><span class="li">◌</span><div class="linfo"><b>AMZN Q3 notes</b><span>12:40</span></div><span class="kebab">⋯</span></div>
+    </div>
+    <div class="hingeband"></div>
+    <div class="half bot" style="position:relative">
+      <div class="sect" style="margin-top:18px">Yesterday</div>
+      <div class="lrow"><span class="li">◌</span><div class="linfo"><b>SCHD drip plan</b><span>yesterday</span></div><span class="kebab">⋯</span></div>
+      <div class="lrow"><span class="li">◌</span><div class="linfo"><b>FRIO org chart</b><span>yesterday</span></div><span class="kebab">⋯</span></div>
+      <div style="font-size:10.5px;color:var(--faint);text-align:center;margin-top:14px">hinge-occluded band excluded from scroll viewport</div>
+      <div class="fabcorner"><svg width="14" height="14" viewBox="0 0 15 15" stroke="#FFF9F5" stroke-width="1.8" fill="none" stroke-linecap="round"><path d="M7.5 2.5v10M2.5 7.5h10"/></svg>New chat</div>
+    </div>
+  </div>
+  <div class="flabel">F4 · TABLETOP — Chats home</div>
+  <div class="fnote">List on the top pane; the ＋ New chat FAB relocates to the bottom pane's trailing edge (thumb zone). Same list rows as v3 §4.2 — only placement changes.</div>
+</div>
+
+<!-- ============ F5 HINGE-OCCLUDED (FULL) ============ -->
+<div class="frame">
+  <div class="tablet">
+    <div class="rail">
+      <div class="rglyph">B</div>
+      <div class="rsearch"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#817F7A" stroke-width="1.6"><circle cx="6.2" cy="6.2" r="4.2"/><path d="M9.5 9.5l2.4 2.4"/></svg></div>
+      <div class="ritem on"><span class="ri">◌</span></div>
+      <div class="ritem"><span class="ri">▤</span></div>
+      <div class="railbot">
+        <div class="ab">AC<i></i></div>
+        <div class="newchat"><svg width="14" height="14" viewBox="0 0 15 15" stroke="#FFF9F5" stroke-width="1.8" fill="none" stroke-linecap="round"><path d="M7.5 2.5v10M2.5 7.5h10"/></svg></div>
+      </div>
+    </div>
+    <div class="hingegap" style="width:20px;flex:0 0 20px">occluded</div>
+    <div class="contentpane">
+      <div class="detail">
+        <div class="conv" style="align-items:center">
+          <div class="bcol">
+            <div class="acolor" style="color:var(--ink2)">occlusionType = FULL → the hinge becomes a hard gap. Panes read as two screens; zero content under the fold.</div>
+          </div>
+        </div>
+        <div class="composer"><div class="plus">＋</div><input placeholder="Message Scarlet…"><span class="send">↑</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="flabel">F5 · BOOK — hinge-occluded variant (FULL)</div>
+  <div class="fnote">FoldingFeature.bounds consumed as insets — no 1dp divider, an actual gap. With NONE occlusion the same layout gets a hairline #E8E5DF divider instead (dark: #35332F).</div>
+</div>
+
+</div>
+
+<div class="pagehead" style="max-width:1100px">
+  <div class="sub">Posture contract: phone &lt;600dp = v3 unchanged · ≥600dp = book · half-open horizontal = tabletop · half-open vertical = book (hinge as divider). Unfold never recreates the Activity — back stack, scroll, and composer drafts survive. Goldens added: book full / book narrow / tabletop chat / tabletop home / hinge-occluded / dark book.</div>
+</div>
+
+</body>
+</html>

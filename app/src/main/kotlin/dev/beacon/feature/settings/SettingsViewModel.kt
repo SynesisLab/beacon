@@ -31,6 +31,8 @@ class SettingsViewModel @Inject constructor(
         val hiddenNavRows: Set<String> = emptySet(),
         /** Role badge on the account row (sessionUser().role, cached). */
         val userRole: String? = null,
+        /** App lock (biometric/device-credential gate at app open). */
+        val appLock: Boolean = false,
     )
 
     // Headers live in SecureStore (Keystore), not the settings DataStore — the
@@ -46,6 +48,7 @@ class SettingsViewModel @Inject constructor(
             themeMode = settings.themeMode,
             hiddenNavRows = settings.hiddenNavRowsSet,
             userRole = settings.userRole,
+            appLock = settings.appLock,
         )
     }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())
@@ -54,6 +57,13 @@ class SettingsViewModel @Inject constructor(
     fun setThemeMode(mode: dev.beacon.core.data.ThemeMode) {
         viewModelScope.launch {
             session.update { it.copy(themeMode = mode) }
+        }
+    }
+
+    /** Settings → App lock: the credential gate applies on the next app open. */
+    fun setAppLock(enabled: Boolean) {
+        viewModelScope.launch {
+            session.update { it.copy(appLock = enabled) }
         }
     }
 

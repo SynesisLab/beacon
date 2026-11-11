@@ -18,7 +18,7 @@ data flow behind it. Read alongside `CLAUDE.md` (OWUI feature audit) and
 | `folder/{id}/{name}/chats` | chats inside a folder | `feature/surfaces/FolderChatsScreen.kt` |
 | `note/{id}`, `note/new` | note editor (read/merge update) | `feature/surfaces/SurfaceWriteScreens.kt` |
 | `channel/{id}/{name}` | channel chat stream | `feature/surfaces/ChannelChatScreen.kt` |
-| `file/{fileId}/{name}/{mime}?server&path` | native file viewer (+ terminal files) | `feature/chat/FileViewerScreen.kt` + `FileViewerViewModel.kt` |
+| `file/{fileId}/{name}/{mime}?server&path` | native file viewer (+ terminal files); `text/html` renders in a sandboxed pinch-zoom WebView | `feature/chat/FileViewerScreen.kt` + `HtmlFileView.kt` + `FileViewerViewModel.kt` |
 | `terminal` | terminal surface (files tab, listing/CWD/read/upload) | `feature/terminal/TerminalScreen.kt` + `TerminalUi.kt` |
 
 Entry chrome: `feature/chat/BeaconTabBar.kt` (bottom tabs Chat / Folders /
@@ -218,6 +218,7 @@ listed here:
 
 | Control | Acts on | Feature § / wire | Milestone |
 | --- | --- | --- | --- |
+| model sheet **Effort** row (Default/Low/Medium/High) | request `params.reasoning_effort` (Chat.svelte:4420-4495; persisted in ServerSettings) | model sheet UI | live |
 | text field + **send pill ↑** | send message | POST /api/chat/completions (SSE) §3 | live |
 | send pill ⇄ **waveform** (text empty) | hold-to-talk / voice overlay | VoiceInput: POST /api/v1/audio/transcriptions §3 | live |
 | 🎤 mic glyph | keyboard voice input | VoiceInput §3 | live |
@@ -277,7 +278,7 @@ listed here:
 | Channels row (gated) | channels surface | GET /api/v1/channels/ §4; gate | live |
 | **Workspace** row | workspace surface (read-only) | prompts/tools/knowledge §4 | live (read) |
 | **Terminal** row | terminal surface | terminals §4 | live |
-| **Settings** row | settings route | §6 | live |
+| **Settings** row | REMOVED — Settings opens from the bottom identity row | §6 | removed (identity row) |
 | avatar row / role badge | account → settings | GET /api/v1/auths/ §2 | live |
 | **+ New chat** pill | chat/new | §1 | live |
 
@@ -356,6 +357,7 @@ listed here:
 | language row | UI locale | client | live |
 | Chat defaults → default model row | model sheet reuse | models chain §3 | live |
 | Advanced → **Custom HTTP headers** | headers editor route | ADR-0012 §6 | live |
+| **App lock toggle** | biometric / device-credential gate at app open (AppLock, FragmentActivity host) | client; default off | live |
 | header rule toggle / add / delete | edit rules (RFC-token, CR/LF/NUL strip, Authorization reserved, same-origin) | CustomHeaders.kt §6 | live |
 | Save (editor) | persist blob | SecureStore `custom_headers` §6 | live |
 | **Sign out** (confirm sheet) | client-side wipe only | SessionStore.signOut §2/§6 | live |
@@ -388,7 +390,7 @@ listed here:
 | Control | Acts on | Feature § / wire | Status |
 | --- | --- | --- | --- |
 | wordmark + version caption | informative; tap → re-probe instance | GET /api/version §2 | live |
-| **search chats field** | live filter of cached chats; server search later | Room cache; GET /api/v1/chats/search §3 = M5 (§8) | partial |
+| **search chats field** | server-side title search (debounced 300ms), Room filter as offline fallback | GET /api/v1/chats/search?q= (chats.py:900, protocol-notes) | live |
 | **Chats row** | chats home (start destination) | surface §4 folders + §3 chat lists | live |
 | **Notes row** | notes surface | §4 notes | live |
 | **Files row** | files surface (Uploads + terminal sources) | §4 files/terminal | live |
@@ -404,6 +406,35 @@ listed here:
 | **avatar row** (initials · name · role badge) | account → settings | GET /api/v1/auths/ §2 | live |
 | **＋ New chat pill** (bottom-right, black) | chat/new | §1 | live |
 | hamburger bubble / edge-swipe / scrim tap / back | open-close sidebars | §1 chrome; predictive-back scale | live |
+
+### 10.15 FoldAware controls (v4.0, 2026-11-10 — beacon-foldable-design.md)
+
+> Posture is client layout only — **no new server endpoints**. The single
+> `BeaconPosture` flow is collected at the route root
+> (`feature/home/PostureTracker.kt` ← `WindowInfoTracker.windowLayoutInfo` +
+> the width class); the pure mapping lives in `feature/home/Posture.kt`
+> (plain-JUnit `PostureTest`). Layout switches are recompositions, never
+> re-navigation; the activity opts out of config-driven recreation
+> (`AndroidManifest` configChanges) so back stack / scroll / composer drafts
+> survive unfold. Wire authority stays with §10/§11 — FoldAware changes
+> **where** panels live, never **what** they contain.
+
+| Control | Acts on | Feature § / wire | Status |
+| --- | --- | --- | --- |
+| posture flow `phone \| book \| tabletop` | every route root | WindowLayoutInfo + width class (§11.9 contract) | live |
+| **icon rail** (book, fixed 72dp) | replaces the modal drawer as resident nav | same rows/actions as §10.14 — one container swap | live |
+| rail glyph / ⌕-popover header | expands the full v3 drawer over the content | §10.14 drawer, on demand | live |
+| rail ◌ popover / ⌕ popover | chat selection / search over the rail | reuses `homeVm` chats list (§3) | live |
+| rail ＋ | new chat in the thread pane in place | `chat/new` | live |
+| thread 720dp measure (book) | bubble/synthetic measure cap, centered | §4.3 anatomy unchanged | live |
+| **companion pane** (book ≥840dp) | ⤢ on cards, file rows, display_file dock right | `chat/{id}` route resolution unchanged (§10.2); FileViewer reused | live |
+| pane divider drag (snaps ⅓/½/⅔) / double-tap 50% / ✕ / drag-past-min | resize (pane min 280dp, thread floor 320dp, animated ~200ms, fraction persisted) / close / collapse inline | client view-state — back never closes it first | live |
+| rail resident while docked (v4.1) | no auto-hide / no glyph chip — docked = stable rail \| thread \| pane | §1 chrome | live |
+| fold to phone with dock open | docked file → full-screen `file/…` route (state preserved) | §10.10 file route | live |
+| model sheet (book) | anchored popover under the context chip | §10.2 model sheet | live |
+| tabletop composer swap + reading rail | composer/reading rail on the near pane | §3 hinge split | live |
+| tabletop home FAB | ＋ New chat on the bottom pane's trailing edge | §4.2 | live |
+| hinge gap (FULL vs NONE) | hard gap vs 1dp hairline between panes | FoldingFeature bounds/occlusion as insets | live |
 
 ## 11. Complete Open WebUI feature inventory → Beacon (v2, 2026-11-06)
 
@@ -441,8 +472,8 @@ keeps it, the phone doesn't pretend. All endpoint shapes still obey
 | Tree get/save | GET/POST /api/v1/chats/{id} | engine core §3 | live |
 | List pages | GET /api/v1/chats/?page=N | Chats home date groups | live |
 | Pin / Archive / Delete | /pin, /archive, DELETE | row-actions sheet (one shared sheet) | live |
-| Server-side search | GET /api/v1/chats/search | home search field | M5 (Room filter today) |
-| Tags |room chat:tags, chats/{id}/tags | chips under title + filters | M5 (title live) |
+| Server-side search | GET /api/v1/chats/search | home + sidebar search field (debounced; Room fallback offline) | live |
+| Tags | socket `chat:tags` events → Room row → chip row under the chat title (read-only; manual tagging needs `chats/{id}/tags` write verification) | chips under title live; tag filters + manual tagging open | live (chips) |
 | Auto title | room chat:title | top context-chip text | live |
 | Folders CRUD + folder chats | /api/v1/folders/*, /chats/folder/{id} | Chats home Folders section (+ header ＋) | live |
 | Move to folder | folderId via full-tree save | row-actions "Move" | live |
@@ -475,7 +506,7 @@ keeps it, the phone doesn't pretend. All endpoint shapes still obey
 | **Tool inline cards — Frontier UI (§11.3b)** | tool returns `(HTMLResponse, summary)`; OWUI renders it in a sandboxed iframe (`allow-scripts`, no escape-sandbox → COOP link refusals → the card's copy-link sheet fallback) | HtmlCardPane + beacon-bridge: `​iframe:height` postMessage → pane height; `input:prompt:submit` → composer prefill; links → Custom Tabs (native, no COOP problem); theme = existing bake/probe | live (pane) · M3 (bridge verbs) |
 | **Oversize rendering — ↔ rule** | card's own CSS: `.gal.scroll` / `.cards` / `.tbl` = `overflow-x:auto` + `scroll-snap-type:x mandatory` | **blocks wider than the column never shrink to unreadable — they scroll left↔right in-pane** (snap rows for galleries/place-cards, free-pan for wide tables/SVG), edge-fade mask, ⤢ fullscreen for real estate | live (in-card CSS) · M5 (native-table fallback) |
 | Generated images | embeds/output images | image part → viewer/save | live |
-| Attached files in stream | /files content + display_file | file part → FileViewer | live |
+| Attached files in stream | /files content + display_file | file part → FileViewer (text/html → `HtmlFileView` WebView pane, ADR-0016) | live |
 | Call mode (hands-free voice) | audio transcriptions+speech loop | waveform pill long-press → Voice overlay call UI | M5 |
 
 ### 11.3b Tool inline cards — the Frontier UI contract (source-read 2026-11-06)
@@ -548,4 +579,26 @@ documents/RAG, web-search engines, code interpreter, pipelines,
 database, general UI), function editor, imports, API keys. The phone
 consumes, the desktop administers. When `/api/config` reports an admin
 role, Settings shows a caption row: "Server admin lives on web."
+
+### 11.9 Foldable posture contract (v4.0, 2026-11-10)
+
+> The v4 amendment labeled this "§11.4"; that slot is Voice & audio, so the
+> contract lands here. Source of truth: `beacon-foldable-design.md` §1/§5.
+
+| Posture | Source | Beacon mode |
+| --- | --- | --- |
+| Flat, width < 600dp | width class (Compact) | `phone` — v3 spec unchanged |
+| Flat, width ≥ 600dp | width class | `book` (expanded mode: 72dp rail) |
+| Half-opened, hinge HORIZONTAL | FoldingFeature | `tabletop` (top/bottom panes) |
+| Half-opened, hinge VERTICAL | FoldingFeature | `book` (hinge = pane divider) |
+| FLIPPED / fully open flat | FoldingFeature | width class decides |
+
+- `occlusionType == FULL` → the hinge is a hard gap; `NONE` → 1dp hairline
+  (`hairline` token; dark `#35332F`). `separations`/`bounds` are consumed as
+  insets — content never renders under an occluded hinge.
+- Every screen declares which modes it supports: **all support all three,
+  except Onboarding = single-pane-forced** (full-window regardless of posture).
+- Device-agnostic: no OEM lists, no hardcoded Fold dimensions. Goldens:
+  `V4/*` (book rail/thread light+dark, docked companion, vertical-FULL hinge,
+  tabletop chat, tabletop home).
 

@@ -26,7 +26,11 @@
             android:exported="true"
             android:windowSoftInputMode="adjustResize"
             android:launchMode="singleTask"
-            android:theme="@style/Theme.Beacon">
+            android:theme="@style/Theme.Beacon"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density">
+            <!-- v4 FoldAware §4.1: never recreate the Activity for posture
+                 changes (fold/unfold/rotation) — the back stack, scroll
+                 positions and composer drafts survive as recompositions. -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

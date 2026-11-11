@@ -27,6 +27,12 @@ data class ServerSettings(
     val userRole: String? = null,
     /** Forced light/dark or follow-the-system (user request 2026-11-03). */
     val themeMode: ThemeMode = ThemeMode.System,
+    /** Per-session reasoning effort sent as request `params.reasoning_effort`
+     *  (wire-verified: docs/interface-mapping.md; null/blank = server default). */
+    val reasoningEffort: String? = null,
+    /** App lock (Settings → Security): require device credentials when the
+     *  app opens. Pure client-side; default off. */
+    val appLock: Boolean = false,
     /** Boot-flash cache (user request 2026-11-06): last-known model display
      *  names {"id":"name",…} + the chip default/gate csv — the Web/Image/Code
      *  chips and the resolved NAME paint at boot instead of popping in

@@ -171,4 +171,24 @@ class ProtocolDecodeTest {
         assertEquals(listOf("Summarize this", "Translate to Chinese"), msg.followUps)
         assertEquals("Earlier: UI audit", msg.contextSummary)
     }
+
+    // GET /api/v1/chats/search?q= — chats.py:900; rows are ChatTitleIdResponse,
+    // the same shape as GET /api/v1/chats/ list rows (chats.py:351-359).
+    @Test
+    fun chatsSearchRows_decodeLikeListRows() {
+        val rows = json.decodeFromString(
+            kotlinx.serialization.builtins.ListSerializer(dev.beacon.core.api.dto.ChatsListRow.serializer()),
+            """
+            [
+              {"id": "f18050dd", "title": "Foldable UI audit", "updated_at": 1762531200, "created_at": 1762500000, "unknown_future_key": {"nested": true}},
+              {"id": "aabbccdd", "title": "SSE torture", "updated_at": 1762400000}
+            ]
+            """.trimIndent(),
+        )
+        assertEquals(2, rows.size)
+        assertEquals("Foldable UI audit", rows[0].title)
+        assertEquals(1762531200L, rows[0].updated_at)
+        assertEquals("aabbccdd", rows[1].id)
+        assertEquals(null, rows[1].snippet)
+    }
 }

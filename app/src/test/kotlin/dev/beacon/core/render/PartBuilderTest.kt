@@ -139,6 +139,9 @@ class PartBuilderTest {
         assertEquals(FileViewer.Pdf, DisplayFile.viewerForMime("application/pdf"))
         assertEquals(FileViewer.Text, DisplayFile.viewerForMime("text/plain"))
         assertEquals(FileViewer.Text, DisplayFile.viewerForMime("application/json"))
+        assertEquals(FileViewer.Html, DisplayFile.viewerForMime("text/html"))
+        assertEquals(FileViewer.Html, DisplayFile.viewerForMime("text/html; charset=utf-8"))
+        assertEquals(FileViewer.Html, DisplayFile.viewerForMime("application/xhtml+xml"))
         assertEquals(FileViewer.AudioVideo, DisplayFile.viewerForMime("audio/mpeg"))
         assertEquals(FileViewer.Download, DisplayFile.viewerForMime("application/vnd.openxmlformats-officedocument.wordprocessingml.document"))
     }

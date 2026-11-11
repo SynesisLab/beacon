@@ -3,6 +3,7 @@ package dev.beacon.feature.home
 import android.content.Intent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.PaddingValues
@@ -42,6 +43,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import kotlin.math.roundToInt
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.font.FontFamily
@@ -87,6 +90,12 @@ data class ChatsHomeActions(
 fun ChatsHomeScreen(
     state: ChatsHomeViewModel.UiState,
     actions: ChatsHomeActions,
+    /**
+     * v4 FoldAware posture (beacon-foldable-design.md §3). Default PHONE = v3
+     * unchanged. TABLETOP: the list occupies the FAR (top) pane and the ＋ New
+     * chat FAB relocates to the NEAR (bottom) pane's trailing edge.
+     */
+    posture: PostureState = PostureState.PHONE,
 ) {
     var menuFolder by remember { mutableStateOf<Pair<String, String>?>(null) } // id to name
     var menuChat by remember { mutableStateOf<ChatEntity?>(null) }
@@ -98,6 +107,10 @@ fun ChatsHomeScreen(
 
     val pinned = state.chats.filter { it.pinned && !it.archived }
     val buckets = remember(state.chats) { bucketChats(state.chats) }
+
+    val hinge = posture.hinge
+    val tabletop = posture.isTabletop && hinge != null && hinge.isHorizontal &&
+        hinge.topPanePx > 0 && hinge.bottomPanePx > 0
 
     Scaffold(
         topBar = {
@@ -112,7 +125,8 @@ fun ChatsHomeScreen(
             })
         },
         floatingActionButton = {
-            FloatingActionButton(
+            // v4 §3 tabletop: the FAB lives in the NEAR pane instead (below).
+            if (!tabletop) FloatingActionButton(
                 // v2: black pill `+ New chat` (ink container, cream icon).
                 onClick = actions.newChat,
                 containerColor = MaterialTheme.colorScheme.onBackground,
@@ -138,6 +152,19 @@ fun ChatsHomeScreen(
         ) {
             LaunchedEffect(state.loading) { } // refresh() is the host's job
 
+            // v4 §3 tabletop: the list segment occupies the FAR pane only (exactly
+            // the hinge's top height minus the chrome above); the hinge band is
+            // excluded, then the NEAR pane carries the FAB. Phone/book: weighted.
+            val listSegmentModifier = if (tabletop) {
+                val density = LocalDensity.current
+                val topDp = with(density) {
+                    (hinge!!.topPanePx - padding.calculateTopPadding().roundToPx()).coerceAtLeast(1).toDp()
+                }
+                Modifier.height(topDp).fillMaxWidth()
+            } else {
+                Modifier.weight(1f).fillMaxWidth()
+            }
+            Column(listSegmentModifier) {
             SearchField(state.search, actions.search)
 
             if (state.chats.isEmpty() && state.folders.isEmpty() && !state.loading) {
@@ -183,6 +210,30 @@ fun ChatsHomeScreen(
                                 style = MaterialTheme.typography.labelMedium,
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                             )
+                        }
+                    }
+                }
+            }
+            } // close the list segment Column
+            if (tabletop) {
+                HingeGap(hinge!!)
+                // §3: the ＋ New chat FAB relocates to the NEAR pane's trailing edge.
+                Box(Modifier.weight(1f).fillMaxWidth()) {
+                    FloatingActionButton(
+                        onClick = actions.newChat,
+                        containerColor = MaterialTheme.colorScheme.onBackground,
+                        contentColor = MaterialTheme.colorScheme.background,
+                        shape = RoundedCornerShape(50),
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(16.dp),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 4.dp),
+                        ) {
+                            Icon(Icons.Filled.Add, contentDescription = null)
+                            Text("New chat", style = MaterialTheme.typography.titleMedium)
                         }
                     }
                 }

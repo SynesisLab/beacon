@@ -62,6 +62,7 @@ object DisplayFile {
 
     /** mime → viewer table (office family falls through to Download). */
     fun viewerForMime(mime: String): FileViewer = when {
+        mime.startsWith("text/html") || mime == "application/xhtml+xml" -> FileViewer.Html
         mime.startsWith("image/") -> FileViewer.Image
         mime == "application/pdf" -> FileViewer.Pdf
         mime.startsWith("text/") ||

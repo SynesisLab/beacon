@@ -38,6 +38,9 @@ fun SidebarBubble(modifier: Modifier = Modifier) {
     // Composable-context read: Local.current inside the click lambda is NOT
     // composable scope (the same hoisting rule as LocalDensity).
     val open: (() -> Unit)? = LocalSidebarOpener.current
+    // v4 FoldAware §2.1: in book the hamburger bubble stays gone — the resident
+    // rail icons are the nav (the glyph chip covers the docked case).
+    if (LocalPosture.current.isBook) return
     Surface(
         onClick = { open?.invoke() },
         color = MaterialTheme.colorScheme.surface,

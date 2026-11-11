@@ -100,6 +100,10 @@ class ChatRepository @Inject constructor(
         db.chats().byId(chatId)?.title?.takeIf { it.isNotBlank() }
     }
 
+    override suspend fun chatTags(chatId: String): List<String> = withContext(Dispatchers.IO) {
+        db.chats().byId(chatId)?.tags ?: emptyList()
+    }
+
     override suspend fun chatCurrentMessageId(chatId: String): String? = withContext(Dispatchers.IO) {
         db.chats().byId(chatId)?.currentMessageId
     }
@@ -211,6 +215,22 @@ class ChatRepository @Inject constructor(
                 )
             },
         )
+    }
+
+    /**
+     * Server-side title search: GET /api/v1/chats/search?q= (chats.py:900).
+     * Rows merge with locally-known state exactly like [refreshChats] (tags,
+     * branch pointer, folder survive — list rows don't carry them).
+     */
+    suspend fun searchServer(q: String): List<ChatEntity> = withContext(Dispatchers.IO) {
+        chatsApi.search(q).map { row ->
+            val existing = db.chats().byId(row.id)
+            row.toEntity(existing?.pinned ?: false).copy(
+                tags = existing?.tags ?: emptyList(),
+                currentMessageId = existing?.currentMessageId,
+                folderId = existing?.folderId,
+            )
+        }
     }
 
     /** Fetch the full tree (§6.4) and adopt it. */

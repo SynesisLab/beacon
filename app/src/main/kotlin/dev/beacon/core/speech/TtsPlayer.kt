@@ -51,13 +51,18 @@ class TtsPlayer(private val api: AudioApi) {
 }
 
 /** Biometric app-lock gate : resumes behind a credential check. */
-class AppLock(private val activity: androidx.fragment.app.FragmentActivity) {
+class AppLock(
+    private val activity: androidx.fragment.app.FragmentActivity,
+    /** Compose bridge: the gate re-renders when authentication resolves. */
+    private val onUnlocked: () -> Unit = {},
+) {
     private val prompt = androidx.biometric.BiometricPrompt(
         activity,
         androidx.core.content.ContextCompat.getMainExecutor(activity),
         object : androidx.biometric.BiometricPrompt.AuthenticationCallback() {
             override fun onAuthenticationSucceeded(result: androidx.biometric.BiometricPrompt.AuthenticationResult) {
                 unlocked = true
+                onUnlocked()
             }
 
             override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
@@ -75,7 +80,13 @@ class AppLock(private val activity: androidx.fragment.app.FragmentActivity) {
         prompt.authenticate(
             androidx.biometric.BiometricPrompt.PromptInfo.Builder()
                 .setTitle("Unlock Beacon")
-                .setDeviceCredentialAllowed(true)
+                // Modern flags: biometric OR device PIN/pattern/password
+                // (setDeviceCredentialAllowed(true) is deprecated and throws
+                // when combined with authenticator flags).
+                .setAllowedAuthenticators(
+                    androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK or
+                        androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL,
+                )
                 .build(),
         )
     }

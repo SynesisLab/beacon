@@ -159,6 +159,14 @@ The M4 "memories" item lands gated by `enable_memories`
 | Public link | `${origin}/s/${share_id}` (a web route; the client shows/sends the URL) | src/lib ShareChatModal.svelte:35 |
 | Export md/json | CLIENT-built from the chat tree — no server export endpoint (the stats/export routes are admin analytics only) | web ExportMenu; chats.py:622-720 |
 
+## Chat search (2026-11-10, chats.py)
+
+| Call | Behavior | Proof |
+| --- | --- | --- |
+| `GET /api/v1/chats/search?q=…` | → JSON array of `ChatTitleIdResponse` rows — the SAME shape as `GET /api/v1/chats/` list rows (id/title/updated_at/created_at/snippet/active/archived/last_read_at; no `pinned`), so the client reuses `ChatsListRow` | chats.py:900 (verified per docs/interface-mapping.md); row shape chats.py:351-359 |
+
+Note: the share endpoint carries NO `allow_replies` field on this server version — the feature-map "allow replies M5" gap stays open until a server version exposes it (rule: never invent a field).
+
 ## Version-tree forks (2026-11-03, device DB proof)
 
 | Topic | Finding | Evidence |

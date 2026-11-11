@@ -93,6 +93,33 @@ class ChatReconcilerTest {
     }
 
     @Test
+    fun serverNullParentDoesNotOrphanLocalFork() {
+        // §4 fork truth: after a regenerate the server's streaming upsert can
+        // null the fork's parentId (models/chats.py:1134 spread). A locally-known
+        // parent outranks the server null — otherwise the fork orphans, the
+        // active path collapses to the leaf, and every earlier message vanishes
+        // from the visible thread (user report: regenerate wiped all previous).
+        val result = ChatReconciler.reconcile(
+            local = listOf(
+                local("u1", role = "user"),
+                local("a1", parent = "u1"),
+                local("fork", parent = "u1", done = false, content = "partial"),
+            ),
+            server = listOf(
+                server("u1", role = "user"),
+                server("a1", parent = "u1"),
+                server("fork", parent = null, content = "regen final"),
+            ),
+            chatId = "chat",
+            serverCurrentId = "fork",
+            localCurrentId = null,
+        )
+        val fork = result.upserts.single { it.messageId == "fork" }
+        assertEquals("u1", fork.parentId)
+        assertEquals("fork", result.pointer)
+    }
+
+    @Test
     fun locallyMissingServerMessageUpserts() {
         val result = ChatReconciler.reconcile(
             local = emptyList(),

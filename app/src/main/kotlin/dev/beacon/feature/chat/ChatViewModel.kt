@@ -76,6 +76,8 @@ class ChatViewModel @Inject constructor(
         val cachedSettings: dev.beacon.core.data.ServerSettings? = null,
         /** /api/config default_prompt_suggestions → the hero's ≤3 ✦ chips (mockup 01). */
         val promptSuggestions: List<dev.beacon.core.api.dto.PromptSuggestion> = emptyList(),
+        /** Selected reasoning effort (request `params.reasoning_effort`); null = server default. */
+        val reasoningEffort: String? = null,
     ) {
         /** Display label: name when known → boot-cache name → the id. */
         val modelLabel: String?
@@ -93,6 +95,10 @@ class ChatViewModel @Inject constructor(
     private val uploading = MutableStateFlow(false)
     private val attachmentError = MutableStateFlow<String?>(null)
     private val toggles = MutableStateFlow(Toggles())
+    /** Persisted reasoning effort; applied to the engine at boot and on change. */
+    private val reasoningEffortFlow = MutableStateFlow<String?>(
+        session.settingsSnapshot().reasoningEffort,
+    )
     private val tempMode = MutableStateFlow(false)
     private val micState = MutableStateFlow<MicState>(MicState.Idle)
     private val micError = MutableStateFlow<String?>(null)
@@ -132,6 +138,7 @@ class ChatViewModel @Inject constructor(
             iframeCspFlow,
             cachedSettings,
             promptSuggestionsFlow,
+            reasoningEffortFlow,
         ) { values ->
             @Suppress("UNCHECKED_CAST")
             UiState(
@@ -156,6 +163,7 @@ class ChatViewModel @Inject constructor(
                 iframeCsp = values[13] as String?,
                 cachedSettings = values[14] as dev.beacon.core.data.ServerSettings?,
                 promptSuggestions = values[15] as List<dev.beacon.core.api.dto.PromptSuggestion>,
+                reasoningEffort = values[16] as String?,
                 // §8.5: the mic STAYS visible; the tap requests the permission
                 // (a hidden mic would never produce the prompt).
                 micAvailable = true,
@@ -163,6 +171,7 @@ class ChatViewModel @Inject constructor(
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState(engine = engine.state.value))
 
     init {
+        engine.reasoningEffort = session.settingsSnapshot().reasoningEffort
         val cache = session.settingsSnapshot()
         // Boot cache seed (2026-11-06): the chips paint with the LAST session's
         // server-determined defaults instead of blank-then-pop; the fresh chain
@@ -312,6 +321,14 @@ class ChatViewModel @Inject constructor(
 
     fun toggleTempMode() {
         tempMode.value = !tempMode.value
+    }
+
+    /** Model sheet's Effort row: null/blank = server default ("Recommended"). */
+    fun setReasoningEffort(effort: String?) {
+        val e = effort?.takeIf { it.isNotBlank() }
+        reasoningEffortFlow.value = e
+        engine.reasoningEffort = e
+        viewModelScope.launch { session.update { it.copy(reasoningEffort = e) } }
     }
 
     private fun currentFeatures(): dev.beacon.core.chat.Features = dev.beacon.core.chat.Features(

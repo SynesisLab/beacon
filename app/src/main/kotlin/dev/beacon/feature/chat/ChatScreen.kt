@@ -166,6 +166,10 @@ fun ChatScreen(
     // the edited turn through the engine (editAndRetry semantics).
     var editingMessage by remember { mutableStateOf<ChatEngine.RenderMessage?>(null) }
     fun closeEditor() { editingMessage = null }
+    // Quiet footers (0.4 de-clutter): the action row persists only under the
+    // newest assistant turn; older turns reveal it on tap — one at a time
+    // (web hover parity, no hovering on touch).
+    var revealedFooterId by remember { mutableStateOf<String?>(null) }
 
     // §9.1 flick-to-refetch (VISIBLE, user request 2026-11-03): the flick
     // bounces the surface up and pops a sync circle; the silent sync runs
@@ -658,6 +662,7 @@ fun ChatScreen(
                     }
                 }
                 val messages = state.engine.messages.asReversed()
+                val lastAssistantId = messages.lastOrNull { it.role == "assistant" }?.id
                 items(messages.size, key = { messages[it].id }) { index ->
                     MessageBubble(
                         message = messages[index],
@@ -672,6 +677,12 @@ fun ChatScreen(
                         onRate = actions.onRate,
                         onShare = actions.onShare,
                         onEdit = { editingMessage = messages[index] },
+                        footerForced = messages[index].id == lastAssistantId,
+                        onToggleFooter = {
+                            revealedFooterId =
+                                if (revealedFooterId == messages[index].id) null
+                                else messages[index].id
+                        },
                         onPrompt = actions.onPrompt,
                         onSetBranch = actions.onSetBranch,
                         onDockCard = onDockCard,
@@ -1229,6 +1240,9 @@ private fun MessageBubble(
     onShare: (messageId: String, text: String) -> Unit = { _, _ -> },
     /** 0.3: tap on a user turn = edit-and-resend sheet. */
     onEdit: () -> Unit = {},
+    /** 0.4 quiet footers: true = the action row paints (last turn / tapped). */
+    footerForced: Boolean = false,
+    onToggleFooter: () -> Unit = {},
     onPrompt: (String) -> Unit = {},
     /** Branch stepper / the version-tree fork (§4). */
     onSetBranch: (holderId: String, index: Int) -> Unit = { _, _ -> },
@@ -1263,27 +1277,29 @@ private fun MessageBubble(
                 onPrompt = onPrompt,
                 onSetBranch = onSetBranch,
                 onDockCard = onDockCard,
+                footerForced = footerForced,
+                onToggleFooter = onToggleFooter,
             )
         }
     } else {
-        MessageBody(
-            message = message,
-            streaming = streaming,
-            parts = restParts,
-            onFollowUp = onFollowUp,
-            onOpenFile = onOpenFile,
-            httpClient = httpClient,
-            instanceUrl = instanceUrl,
-            iframeCsp = iframeCsp,
-            onRegenerate = onRegenerate,
-            onReadAloud = onReadAloud,
-            onRate = onRate,
-            onShare = onShare,
-            onEdit = onEdit,
-            onPrompt = onPrompt,
-            onSetBranch = onSetBranch,
-            onDockCard = onDockCard,
-        )
+            MessageBody(
+                message = message,
+                streaming = streaming,
+                parts = restParts,
+                onFollowUp = onFollowUp,
+                onOpenFile = onOpenFile,
+                httpClient = httpClient,
+                instanceUrl = instanceUrl,
+                iframeCsp = iframeCsp,
+                onRegenerate = onRegenerate,
+                onReadAloud = onReadAloud,
+                onRate = onRate,
+                onShare = onShare,
+                onEdit = onEdit,
+                onPrompt = onPrompt,
+                onSetBranch = onSetBranch,
+                onDockCard = onDockCard,
+            )
     }
 }
 
@@ -1303,6 +1319,9 @@ private fun MessageBody(
     onRate: (messageId: String, rating: Int) -> Unit,
     onShare: (messageId: String, text: String) -> Unit,
     onEdit: () -> Unit = {},
+    /** 0.4 quiet footers: true = the action row paints (last turn / tapped). */
+    footerForced: Boolean = false,
+    onToggleFooter: () -> Unit = {},
     onPrompt: (String) -> Unit = {},
     onSetBranch: (holderId: String, index: Int) -> Unit,
     onDockCard: ((dev.beacon.core.render.ChatPart.HtmlCard) -> Unit)? = null,

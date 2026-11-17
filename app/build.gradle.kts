@@ -24,8 +24,8 @@ android {
         applicationId = "dev.beacon"
         minSdk = 29
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.3.0"
+        versionCode = 6
+        versionName = "0.3.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -37,6 +37,10 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Sideload-grade release: signed with the auto-generated debug key
+            // so the APK installs locally. A production keystore would set
+            // its own signingConfig here (release lane untouched otherwise).
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 

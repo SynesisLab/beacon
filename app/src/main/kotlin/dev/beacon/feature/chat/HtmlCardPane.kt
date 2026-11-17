@@ -22,9 +22,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
@@ -341,8 +343,36 @@ private fun CardWebView(
     onWide: (Int) -> Unit = {},
     onPrompt: ((String) -> Unit)? = null,
 ) {
-    val context = LocalContext.current
+    // Display-density key: a WebView bakes the density of the display it was
+    // created on (its scale never hot-swaps) — an unfold from cover to the
+    // inner display would keep the baked, WRONG scale and blow the card up.
+    // Keying the whole pane body on the density rebuilds the WebView (and its
+    // bridge + rendered key) whenever the metrics change.
+    key(LocalDensity.current.density) {
+        CardWebViewImpl(
+            document = document,
+            client = client,
+            instanceUrl = instanceUrl,
+            sandboxLevel = sandboxLevel,
+            onHeight = onHeight,
+            onWide = onWide,
+            onPrompt = onPrompt,
+        )
+    }
+}
 
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+private fun CardWebViewImpl(
+    document: CardDocument.Document,
+    client: OkHttpClient,
+    instanceUrl: String?,
+    sandboxLevel: SandboxLevel,
+    onHeight: (Float) -> Unit,
+    onWide: (Int) -> Unit,
+    onPrompt: ((String) -> Unit)?,
+) {
+    val context = LocalContext.current
     val webView = remember {
         BeaconCardWebView(context).apply {
             settings.javaScriptEnabled = true

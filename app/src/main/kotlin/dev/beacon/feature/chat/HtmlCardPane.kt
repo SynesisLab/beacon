@@ -86,6 +86,11 @@ fun HtmlCardPane(
     onDock: (() -> Unit)? = null,
     /** v4 §2.3b: docked in the companion pane → fill the pane height, not the 60% cap. */
     fillHeight: Boolean = false,
+    /** Dock-only phone cap (decoupled 2026-11-17): docked cards render at a
+     *  phone layout viewport (412dp, centered) — an unfolded pane's full width
+     *  reads out of scale. INLINE cards keep the chat pane's full width: the
+     *  cap is opt-in so the two surfaces' scales stay INDEPENDENT. */
+    phoneWidthCap: Boolean = false,
 ) {
     val dark = LocalBeaconDark.current
     var heightDp by remember(card.id) { mutableStateOf(card.minHeightDp.dp) }
@@ -116,14 +121,15 @@ fun HtmlCardPane(
     }
 
     if (document != null) {
-        // Phone-width cap (user request 2026-11-17): on the unfolded display a
-        // full-width card lays out like a tablet page — way out of scale. The
-        // 412dp cap gives every render a PHONE layout viewport (centered when
-        // the flow is wider); on a phone itself the cap is inert.
+        // The centering wrapper is inert when uncapped (fillMaxWidth + top).
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
         // Hoisted OUT of the draw lambda (MaterialTheme is @Composable).
         val fadeColor = MaterialTheme.colorScheme.surface
-        Column(Modifier.widthIn(max = 412.dp)) {
+        Column(
+            Modifier.then(
+                if (phoneWidthCap) Modifier.widthIn(max = 412.dp) else Modifier,
+            ),
+        ) {
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -217,13 +223,12 @@ fun HtmlCardPane(
                 // (0.3.2 report).
                 androidx.compose.foundation.layout.BoxWithConstraints(
                     Modifier.fillMaxWidth(),
-                    contentAlignment = Alignment.TopCenter,
                 ) {
                     val sheetCap = maxHeight * 0.85f
                     var sheetHeight by remember(card.id) {
                         mutableStateOf(minOf(640.dp, sheetCap))
                     }
-                    Box(Modifier.widthIn(max = 412.dp).height(sheetHeight)) {
+                    Box(Modifier.fillMaxWidth().height(sheetHeight)) {
                         CardWebView(
                             document = document,
                             client = client,

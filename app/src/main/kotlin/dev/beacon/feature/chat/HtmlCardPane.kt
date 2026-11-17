@@ -148,26 +148,33 @@ fun HtmlCardPane(
                         } else Modifier,
                     ),
             ) {
-                CardWebView(
-                    document = document,
-                    client = client,
-                    instanceUrl = instanceUrl,
-                    sandboxLevel = card.sandboxLevel,
-                    onHeight = { px ->
-                        // The measure/bridge report CSS pixels; the WebView's
-                        // CSS scale (devicePixelRatio) equals the app density,
-                        // so a CSS px height IS the dp height — Float.toDp()
-                        // would divide a second time (the 2026-11-05 clip:
-                        // 1111css content → 456dp box, one viewport tall).
-                        heightDp = px.dp.coerceIn(card.minHeightDp.dp, ExpandedCap)
-                    },
-                    onWide = { w -> wide = w == 1 },
-                    // The prompt channel is for server-provenanced tool cards
-                    // only (Embed) — never raw model HTML (ADR-0013).
-                    onPrompt = if (card.kind == dev.beacon.core.render.CardKind.Embed ||
-                        card.kind == dev.beacon.core.render.CardKind.Visualization
-                    ) onPrompt else null,
-                )
+                // While the Expand sheet is open the inline pane sleeps: two
+                // live WebViews rendering the same document doubled the work
+                // and made card interactions feel dead (0.3.2 report).
+                if (expanded) {
+                    Box(Modifier.fillMaxWidth())
+                } else {
+                    CardWebView(
+                        document = document,
+                        client = client,
+                        instanceUrl = instanceUrl,
+                        sandboxLevel = card.sandboxLevel,
+                        onHeight = { px ->
+                            // The measure/bridge report CSS pixels; the WebView's
+                            // CSS scale (devicePixelRatio) equals the app density,
+                            // so a CSS px height IS the dp height — Float.toDp()
+                            // would divide a second time (the 2026-11-05 clip:
+                            // 1111css content → 456dp box, one viewport tall).
+                            heightDp = px.dp.coerceIn(card.minHeightDp.dp, ExpandedCap)
+                        },
+                        onWide = { w -> wide = w == 1 },
+                        // The prompt channel is for server-provenanced tool cards
+                        // only (Embed) — never raw model HTML (ADR-0013).
+                        onPrompt = if (card.kind == dev.beacon.core.render.CardKind.Embed ||
+                            card.kind == dev.beacon.core.render.CardKind.Visualization
+                        ) onPrompt else null,
+                    )
+                }
             }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -193,16 +200,30 @@ fun HtmlCardPane(
 
         if (expanded && onDock == null) {
             ModalBottomSheet(onDismissRequest = { expanded = false }) {
-                Box(Modifier.fillMaxWidth().height(640.dp)) {
-                    CardWebView(
-                        document = document,
-                        client = client,
-                        instanceUrl = instanceUrl,
-                        sandboxLevel = card.sandboxLevel,
-                        onHeight = { },
-                        onWide = { },
-                        onPrompt = null,
-                    )
+                // The sheet WebView reports its content height; the box grows
+                // to it (up to 85% of the pane) and the document scrolls
+                // INSIDE the box when taller (the touch policy in
+                // [BeaconCardWebView]) — a fixed 640dp box + the old
+                // always-pass gesture rule made the card's tail unreachable
+                // (0.3.2 report).
+                androidx.compose.foundation.layout.BoxWithConstraints(
+                    Modifier.fillMaxWidth(),
+                ) {
+                    val sheetCap = maxHeight * 0.85f
+                    var sheetHeight by remember(card.id) {
+                        mutableStateOf(minOf(640.dp, sheetCap))
+                    }
+                    Box(Modifier.fillMaxWidth().height(sheetHeight)) {
+                        CardWebView(
+                            document = document,
+                            client = client,
+                            instanceUrl = instanceUrl,
+                            sandboxLevel = card.sandboxLevel,
+                            onHeight = { px -> sheetHeight = px.dp.coerceAtMost(sheetCap) },
+                            onWide = { },
+                            onPrompt = null,
+                        )
+                    }
                 }
             }
         }
@@ -214,20 +235,18 @@ fun HtmlCardPane(
 private val ExpandedCap = 4000.dp
 
 /**
- * The seamlessness rule (the web's iframe in the page): vertical scrolls over
- * a card belong to the CHAT list — the WebView hands them to the Compose
- * scroll instead of eating them. Taps, links and horizontal gestures
- * (maps/galleries/wide tables) stay native.
+ * The seamlessness rule (the web's iframe in the page), with the 0.3.2 fix:
+ * a locked axis is claimed ONCE per gesture and the claim is only taken when
+ * THIS pane actually consumes the gesture.
  *
- * The gesture axis is LOCKED at the first slop crossing (user report
- * 2026-11-06: sideways card scrolling was "not smooth" and "extending the
- * menu" — the old per-move |dy| > |dx| test flip-flopped mid-drag, stuttering
- * the scroll and leaking the gesture to the sidebar's edge-swipe). A locked
- * HORIZONTAL drag claims the whole parent chain
- * ([android.view.ViewParent.requestDisallowInterceptTouchEvent] crosses the
- * Compose interop and cancels in-progress Compose gestures — the drawer
- * cannot open off a card's sideways scroll); a locked VERTICAL drag hands
- * off to the chat list as before.
+ * - HORIZONTAL (oversize tables/maps/galleries): the pane consumes and takes
+ *   the touch-disallow claim — the drawer can never open off a sideways card
+ *   scroll, and no per-move axis flip-flop stutters the drag.
+ * - VERTICAL: if the DOCUMENT can scroll (clamped box: the 4000dp cap or the
+ *   Expand sheet — the "can't see the whole card" report), the pane consumes
+ *   and the document scrolls natively (fling included) until its EDGE, then
+ *   the next drag hands off to the chat list; a document that fits its box
+ *   hands the drag straight to the chat list (the page-scroll seam).
  */
 class BeaconCardWebView(context: Context) : WebView(context) {
     init {
@@ -240,6 +259,7 @@ class BeaconCardWebView(context: Context) : WebView(context) {
         private const val AXIS_NONE = 0
         private const val AXIS_VERTICAL = 1
         private const val AXIS_HORIZONTAL = 2
+        private const val AXIS_PASS_VERTICAL = 3
     }
 
     private var downX = 0f
@@ -267,18 +287,34 @@ class BeaconCardWebView(context: Context) : WebView(context) {
                     // The first crossing LOCKS the axis for the whole gesture —
                     // no per-move flip-flop (the stutter) and no mid-drag handoff.
                     axis = if (dy > dx) AXIS_VERTICAL else AXIS_HORIZONTAL
-                    if (axis == AXIS_HORIZONTAL) {
-                        // §11.3b: the wide card OWNS sideways drags. Block every
-                        // parent interception for the rest of the stream — the
-                        // request crosses the Compose interop and cancels
-                        // in-progress Compose gestures, so the sidebar's
-                        // left-edge swipe can never open off a horizontal
-                        // card scroll.
+                    if (axis == AXIS_VERTICAL && !canScrollVertically(1) && !canScrollVertically(-1)) {
+                        // The document fits its box — vertical belongs to the page.
+                        axis = AXIS_PASS_VERTICAL
+                    }
+                    if (axis == AXIS_HORIZONTAL || axis == AXIS_VERTICAL) {
+                        // Only CONSUMED gestures take the claim (a claimed-but-
+                        // declined gesture freezes the whole page). The request
+                        // crosses the Compose interop and cancels in-progress
+                        // Compose gestures — the sidebar's left-edge swipe can
+                        // never open off a card drag.
                         parent?.requestDisallowInterceptTouchEvent(true)
                     }
                 }
                 return when (axis) {
-                    AXIS_VERTICAL -> false // locked dominant-vertical → the chat list
+                    AXIS_PASS_VERTICAL -> false // locked page-vertical → the chat list
+                    AXIS_VERTICAL -> {
+                        if (!canScrollVertically(1) && !canScrollVertically(-1)) {
+                            // The document hit its scroll edge mid-drag: hand the
+                            // REST of the gesture to the chat list (release the
+                            // claim first — a claimed-and-declined drag freezes
+                            // the page).
+                            parent?.requestDisallowInterceptTouchEvent(false)
+                            axis = AXIS_PASS_VERTICAL
+                            false
+                        } else {
+                            super.onTouchEvent(event)
+                        }
+                    }
                     else -> super.onTouchEvent(event)
                 }
             }
@@ -368,8 +404,18 @@ private fun CardWebView(
         }
         webView.webViewClient = EmbedWebViewClient(client, instanceUrl, onHeight, onWide)
         onDispose {
-            webView.stopLoading()
-            webView.destroy()
+            // The close-crash fix (0.3.2 report): destroy() on a WebView still
+            // attached to a window (mid sheet-exit animation / interop declaim)
+            // crashes in WebViewChromium on the next frame. Detach FIRST, then
+            // tear down; every call guarded — a destroyed-WebView callback race
+            // must never take the app down.
+            runCatching {
+                (webView.parent as? android.view.ViewGroup)?.removeView(webView)
+                webView.webChromeClient = android.webkit.WebChromeClient() // drop pending popups
+                webView.webViewClient = android.webkit.WebViewClient()
+                webView.stopLoading()
+                webView.destroy()
+            }
         }
     }
 
@@ -543,11 +589,15 @@ private class EmbedWebViewClient(
         super.onPageFinished(view, url)
         // Debug probe: the card's live theme state (storage + forced palette)
         // — one line per card page, enough to diagnose theme-bake mismatches.
-        runCatching {
-            view.evaluateJavascript(
-                "(function(){try{return localStorage.getItem('theme')+' | '+document.documentElement.className" +
-                    "+' | '+document.documentElement.getAttribute('data-theme');}catch(e){return 'ERR '+String(e);}})()",
-            ) { v -> Timber.i("card theme state: %s", v) }
+        // Release builds skip it: an extra full-page evaluation round trip on
+        // every load (input-latency report, 0.3.2).
+        if (dev.beacon.BuildConfig.DEBUG) {
+            runCatching {
+                view.evaluateJavascript(
+                    "(function(){try{return localStorage.getItem('theme')+' | '+document.documentElement.className" +
+                        "+' | '+document.documentElement.getAttribute('data-theme');}catch(e){return 'ERR '+String(e);}})()",
+                ) { v -> Timber.i("card theme state: %s", v) }
+            }
         }
         if (onMeasuredHeight == null) return
         round = 0

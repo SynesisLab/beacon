@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -115,9 +116,14 @@ fun HtmlCardPane(
     }
 
     if (document != null) {
+        // Phone-width cap (user request 2026-11-17): on the unfolded display a
+        // full-width card lays out like a tablet page — way out of scale. The
+        // 412dp cap gives every render a PHONE layout viewport (centered when
+        // the flow is wider); on a phone itself the cap is inert.
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
         // Hoisted OUT of the draw lambda (MaterialTheme is @Composable).
         val fadeColor = MaterialTheme.colorScheme.surface
-        Column {
+        Column(Modifier.widthIn(max = 412.dp)) {
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -199,6 +205,7 @@ fun HtmlCardPane(
                 }
             }
         }
+        } // 412dp cap column
 
         if (expanded && onDock == null) {
             ModalBottomSheet(onDismissRequest = { expanded = false }) {
@@ -210,12 +217,13 @@ fun HtmlCardPane(
                 // (0.3.2 report).
                 androidx.compose.foundation.layout.BoxWithConstraints(
                     Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.TopCenter,
                 ) {
                     val sheetCap = maxHeight * 0.85f
                     var sheetHeight by remember(card.id) {
                         mutableStateOf(minOf(640.dp, sheetCap))
                     }
-                    Box(Modifier.fillMaxWidth().height(sheetHeight)) {
+                    Box(Modifier.widthIn(max = 412.dp).height(sheetHeight)) {
                         CardWebView(
                             document = document,
                             client = client,

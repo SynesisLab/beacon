@@ -86,10 +86,10 @@ fun HtmlCardPane(
     onDock: (() -> Unit)? = null,
     /** v4 §2.3b: docked in the companion pane → fill the pane height, not the 60% cap. */
     fillHeight: Boolean = false,
-    /** Dock-only phone cap (decoupled 2026-11-17): docked cards render at a
-     *  phone layout viewport (412dp, centered) — an unfolded pane's full width
-     *  reads out of scale. INLINE cards keep the chat pane's full width: the
-     *  cap is opt-in so the two surfaces' scales stay INDEPENDENT. */
+    /** Phone-scale cap (decoupled per surface, 2026-11-17): opt-in surfaces
+     *  render cards at a phone layout viewport (412dp, centered) — a full-width
+     *  unfolded card reads out of scale. INLINE (chat flow) and DOCKED (companion
+     *  pane) both opt in; the Expand sheet stays full width: it is the big view. */
     phoneWidthCap: Boolean = false,
 ) {
     val dark = LocalBeaconDark.current

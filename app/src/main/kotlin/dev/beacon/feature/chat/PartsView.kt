@@ -114,6 +114,7 @@ private fun RenderPart(
                         host.iframeCsp,
                         onPrompt = host.onPrompt,
                         onDock = host.onDockCard?.let { cb -> ({ cb(part) }) },
+                        phoneWidthCap = true,
                     )
                 else -> HtmlCardPlaceholder(part)
             }

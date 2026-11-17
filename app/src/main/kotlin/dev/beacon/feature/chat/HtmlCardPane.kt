@@ -273,6 +273,25 @@ class BeaconCardWebView(context: Context) : WebView(context) {
     /** True after a pinch while one finger is still down: swallow its tail. */
     private var pinchTail = false
 
+    /** Belt-and-braces: a card removed from the tree (or its WebView
+     *  destroyed) mid-claim must not leave the disallow-intercept flag set on
+     *  the ancestors — that is the app-wide dead-drawer symptom. */
+    private fun releaseAllClaims() {
+        var p = parent
+        while (p != null) {
+            p.requestDisallowInterceptTouchEvent(false)
+            p = p.parent
+        }
+        pinchStartSpan = 0f
+        pinchTail = false
+        axis = AXIS_NONE
+    }
+
+    override fun onDetachedFromWindow() {
+        releaseAllClaims()
+        super.onDetachedFromWindow()
+    }
+
     private fun spanOf(event: android.view.MotionEvent): Float {
         if (event.pointerCount < 2) return 0f
         val dx = event.getX(0) - event.getX(1)
@@ -302,12 +321,28 @@ class BeaconCardWebView(context: Context) : WebView(context) {
                 }
                 else -> Unit
             }
-            if (event.actionMasked == android.view.MotionEvent.ACTION_POINTER_UP &&
-                event.pointerCount <= 2
-            ) {
-                // One finger remains after the pinch: swallow the rest of this
-                // gesture so the leftover finger can't pan the chat.
-                pinchTail = true
+            when (event.actionMasked) {
+                // A finger lifted: if fewer than two remain the pinch is over —
+                // swallow the leftover finger's tail (a stray swipe after the
+                // pinch must not pan the chat) and RESTORE interception.
+                android.view.MotionEvent.ACTION_POINTER_UP -> {
+                    pinchStartSpan = 0f
+                    pinchTail = true
+                    parent?.requestDisallowInterceptTouchEvent(false)
+                }
+                // THE dead-drawer bug (0.3.1 report: the sidebar never opened
+                // again after closing an artifact): a gesture that ends in
+                // CANCEL with two pointers down NEVER released the disallow-
+                // intercept claim — the flag sits on every ancestor ViewGroup
+                // up the chain, killing interception app-wide. Terminals
+                // ALWAYS release, unconditionally.
+                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                    pinchStartSpan = 0f
+                    pinchTail = false
+                    axis = AXIS_NONE
+                    parent?.requestDisallowInterceptTouchEvent(false)
+                }
+                else -> Unit
             }
             return true
         }
@@ -494,6 +529,11 @@ private fun CardWebViewImpl(
             // tear down; every call guarded — a destroyed-WebView callback race
             // must never take the app down.
             runCatching {
+                var claimParent: android.view.ViewParent? = webView.parent
+                while (claimParent != null) {
+                    claimParent.requestDisallowInterceptTouchEvent(false)
+                    claimParent = claimParent.parent
+                }
                 (webView.parent as? android.view.ViewGroup)?.removeView(webView)
                 webView.webChromeClient = android.webkit.WebChromeClient() // drop pending popups
                 webView.webViewClient = android.webkit.WebViewClient()

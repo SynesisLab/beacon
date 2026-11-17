@@ -5,16 +5,20 @@ import androidx.lifecycle.viewModelScope
 import dev.beacon.core.api.OwuiApi
 import dev.beacon.core.api.FolderRow
 import dev.beacon.core.api.WorkspaceApis
+import dev.beacon.core.api.dto.BannerRow
 import dev.beacon.core.data.ChatRepository
+import dev.beacon.core.data.SessionStore
 import dev.beacon.core.data.local.ChatEntity
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -30,6 +34,7 @@ class ChatsHomeViewModel @Inject constructor(
     private val repository: ChatRepository,
     private val apis: WorkspaceApis,
     private val owui: OwuiApi,
+    private val session: SessionStore,
 ) : ViewModel() {
 
     data class UiState(
@@ -49,11 +54,18 @@ class ChatsHomeViewModel @Inject constructor(
     private val searchFlow = MutableStateFlow("")
     /** Server search hits for the active query; null = blank query or request failed (→ local filter). */
     private val serverSearchFlow = MutableStateFlow<List<ChatEntity>?>(null)
+    /** GET /api/v1/configs/banners rows minus the ids dismissed on-device. */
+    private val bannersFlow = MutableStateFlow<List<BannerRow>>(emptyList())
+    private var dismissedBanners: Set<String> = emptySet()
     private var page = 1
     private var exhausted = false
 
     init {
         refresh()
+        viewModelScope.launch {
+            dismissedBanners = session.settings.first().dismissedBannerIds.orEmpty().toSet()
+            refreshBanners()
+        }
         // Debounced server search (chats.py:900); on failure fall back to the
         // local Room filter so the field never goes dead offline.
         viewModelScope.launch {
@@ -91,6 +103,29 @@ class ChatsHomeViewModel @Inject constructor(
             search = search,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())
+
+    /** Home banner strip (GET /api/v1/configs/banners, routers/configs.py:505). */
+    val banners: StateFlow<List<BannerRow>> = bannersFlow.asStateFlow()
+
+    /** Permanently (device-side) hide a dismissible banner by id. */
+    fun dismissBanner(id: String) {
+        dismissedBanners += id
+        bannersFlow.value = bannersFlow.value.filterNot { it.id == id }
+        viewModelScope.launch {
+            session.update { it.copy(dismissedBannerIds = dismissedBanners.toList()) }
+        }
+    }
+
+    /** Independent of the chat fetch (defaults-chain rule): a banner failure
+     *  never blanks the list. Re-fetched after open / pull-refresh. */
+    private suspend fun refreshBanners() {
+        bannersFlow.value = runCatching { apis.banners() }
+            .getOrElse { e ->
+                timber.log.Timber.w(e, "banners fetch failed")
+                bannersFlow.value
+            }
+            .filterNot { it.id in dismissedBanners }
+    }
 
     fun setSearch(q: String) {
         searchFlow.value = q

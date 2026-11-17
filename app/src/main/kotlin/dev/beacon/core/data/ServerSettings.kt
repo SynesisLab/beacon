@@ -47,6 +47,11 @@ data class ServerSettings(
      * never hides; gated rows still need their /api/config flags.
      */
     val hiddenNavRows: List<String>? = null,
+    /** Banner ids dismissed on-device (GET /api/v1/configs/banners rows with
+     *  dismissible=true). Null = none. Server banners have no per-user
+     *  dismissed store on the wire — client-side memory by id, OWUI-web
+     *  banner behavior (dismissed until the banner id changes). */
+    val dismissedBannerIds: List<String>? = null,
 ) {
     val isOnboarded: Boolean get() = serverUrl.isNotBlank() && authMethod != AuthMethod.None
 

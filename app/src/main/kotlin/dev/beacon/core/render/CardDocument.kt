@@ -68,6 +68,10 @@ object CardDocument {
         instanceUrl: String?,
         iframeCsp: String?,
         dark: Boolean,
+        /** Visualization kind only: the vendored chart.umd.min.js TEXT inlined
+         *  (the web fetches /visualizations/chart.umd.min.js and appendsScript's
+         *  the source; a `file:` subresource would need a CSP exception there). */
+        chartJsSource: String? = null,
     ): Document? {
         val html = card.html
         if (html != null) {
@@ -83,6 +87,13 @@ object CardDocument {
                     body = html,
                     dark = dark,
                     interactive = card.interactive,
+                )
+                CardKind.Visualization -> visualizationDoc(
+                    html = html,
+                    libraries = card.libraries,
+                    dark = dark,
+                    interactive = card.interactive,
+                    chartJsSource = chartJsSource,
                 )
                 CardKind.Artifact, CardKind.Embed -> foreignDoc(
                     html = html,
@@ -218,6 +229,90 @@ object CardDocument {
 
     internal val headOpen = Regex("<head\\b[^>]*>", RegexOption.IGNORE_CASE)
     internal val bodyClose = Regex("</\\s*body\\s*>", RegexOption.IGNORE_CASE)
+
+    /**
+     * The visualization built-in tool's document (web parity:
+     * utils/visualizations/frame.ts `visualizationDocument` + its `styles`):
+     * the tool's HTML FRAGMENT (styles → content → inline scripts) wrapped in
+     * a document carrying the `--owui-*` CSS variables the prompt template
+     * tells the model to use, the optional Chart.js runtime (libraries
+     * argument — inlined TEXT, never a file: script tag), and the
+     * `window.openwebui` shim ({context, sendMessage}) the fragment may call.
+     * Height policy = the standard beacon bootstrap (appended last).
+     */
+    private fun visualizationDoc(
+        html: String,
+        libraries: List<String>,
+        dark: Boolean,
+        interactive: Boolean,
+        chartJsSource: String?,
+    ): Document {
+        val head = buildString {
+            append("<meta charset=\"utf-8\">")
+            append("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">")
+            append("<style>").append(VISUALIZATION_CSS(dark)).append("</style>")
+            if ("chartjs" in libraries && chartJsSource != null) {
+                // Inline (the web appends the fetched source as a text script:
+                // runtime.ts appendScript) — a fragment script may run before
+                // a src= tag's load event, so ORDER = vendored lib first.
+                append("<script>").append(chartJsSource.replace("</script", "<\\/script")).append("</script>")
+            }
+            append("<script>window.openwebui={context:").append(VISUALIZATION_CONTEXT(dark))
+                .append(",sendMessage:function(text){")
+                .append("if(window.Beacon&&Beacon.prompt){Beacon.prompt(String(text));}")
+                .append("return Promise.resolve({sent:false});}};</script>")
+            if (!interactive) {
+                append("<style>html, body { pointer-events: none; }</style>")
+            }
+        }
+        return Document(
+            baseUrl = VENDOR_BASE,
+            html = "<!doctype html><html><head>$head</head><body>$html" +
+                "<script>$BOOTSTRAP</script></body></html>",
+            fullBridge = true,
+        )
+    }
+
+    /** frame.ts `styles` — recolored to Beacon's scheme; the `--owui-*` NAMES
+     *  stay (the model's generated CSS references exactly these). */
+    internal fun VISUALIZATION_CSS(dark: Boolean): String {
+        val bg = if (dark) "#30302E" else "#FAF9F5"
+        val surface = if (dark) "#3B3936" else "#F0EEE9"
+        val text = if (dark) "#F5F4EE" else "#3D3929"
+        val muted = if (dark) "#B8B4A8" else "#817F7A"
+        val border = if (dark) "#4A4741" else "#E2E0D8"
+        val accent = if (dark) "#E8825F" else "#D97757"
+        return adaptedVisualizationCss(bg, surface, text, muted, border, accent)
+    }
+
+    internal fun adaptedVisualizationCss(
+        bg: String,
+        surface: String,
+        text: String,
+        muted: String,
+        border: String,
+        accent: String,
+    ): String = ":root{color-scheme:light dark;--owui-background:$bg;--owui-surface:$surface;" +
+        "--owui-text:$text;--owui-muted:$muted;--owui-border:$border;--owui-accent:$accent;" +
+        "font:1rem/1.4 system-ui,sans-serif;color:var(--owui-text);background:var(--owui-background)}" +
+        "*{box-sizing:border-box}h1,h2,h3,h4,h5,h6,strong,b,th{font-weight:500}" +
+        "h1,h2,h3,h4,h5,h6,p,ul,ol,figure{margin:0.25rem 0}ul,ol{padding-inline-start:1.25rem}" +
+        "body{margin:0;padding:0;font-size:0.90625rem}#visualization-root{display:flow-root;min-width:0}" +
+        "svg{max-width:100%;height:auto}button,input,select,textarea{font:inherit;color:inherit}" +
+        "button,input,select,textarea,summary{accent-color:var(--owui-accent)}" +
+        "button,input,select,textarea{border:0.0625rem solid var(--owui-border);border-radius:0.375rem;" +
+        "padding:0.1875rem 0.375rem;background:var(--owui-surface)}button,summary{cursor:pointer}" +
+        "button:hover{filter:brightness(.95)}label{display:block;margin:0.25rem 0}" +
+        "input[type=range]{width:100%;padding:0}table{border-collapse:collapse;width:100%}" +
+        "th,td{text-align:start;border-bottom:0.0625rem solid var(--owui-border);padding:0.25rem 0.375rem}" +
+        "details{padding:0.25rem 0}:focus-visible{outline:0.125rem solid var(--owui-accent);" +
+        "outline-offset:0.1875rem}.chart-container{position:relative;width:100%;min-width:0;height:15rem}"
+
+    /** runtime.ts context shape, baked at build time (the pane rebuilds the
+     *  document when the scheme changes — no live context channel needed). */
+    internal fun VISUALIZATION_CONTEXT(dark: Boolean): String =
+        "{theme:'" + (if (dark) "dark" else "light") + "',textScale:'1',language:navigator.language||'en'," +
+            "direction:'ltr',reducedMotion:window.matchMedia('(prefers-reduced-motion: reduce)').matches}"
 
     /** Right after the opening `<head>` tag (first-wins for CSP metas). */
     internal fun injectAfterHead(html: String, payload: String): String {

@@ -196,4 +196,54 @@ class CardDocumentTest {
         // iframe:height contract on the mobile side).
         assertTrue(CardDocument.BOOTSTRAP.contains("Beacon.height"))
     }
+
+    // ── Visualization docs (the built-in render_visualization tool) ──────────
+
+    private fun vizCard(libraries: List<String> = emptyList()) = ChatPart.HtmlCard(
+        id = "viz-c1",
+        html = "<style>p{color:var(--owui-muted)}</style><p>hello</p><script>x()</script>",
+        title = "Fee calculator",
+        kind = CardKind.Visualization,
+        libraries = libraries,
+    )
+
+    @Test
+    fun visualizationFragmentGetsTheOwuiCssVariablesAndBridge() {
+        val doc = CardDocument.build(vizCard(), null, null, dark = false)!! as CardDocument.Document
+        assertEquals(CardDocument.VENDOR_BASE, doc.baseUrl)
+        assertTrue(doc.fullBridge)
+        // The --owui-* variable NAMES survive (the model's CSS references them);
+        // the values are Beacon's scheme.
+        assertTrue(doc.html.contains("--owui-muted:#817F7A"))
+        assertTrue(doc.html.contains("--owui-accent:#D97757"))
+        // The openwebui shim: sendMessage prefills via Beacon.prompt.
+        assertTrue(doc.html.contains("window.openwebui={context:"))
+        assertTrue(doc.html.contains("Beacon.prompt"))
+        // The fragment rides the body verbatim + one bootstrap.
+        assertTrue(doc.html.contains("<p>hello</p><script>x()</script>"))
+        assertEquals(2, doc.html.split(CardDocument.BOOTSTRAP).size)
+    }
+
+    @Test
+    fun visualizationDarkRecolorsWithoutRenamingVars() {
+        val doc = CardDocument.build(vizCard(), null, null, dark = true)!!
+        assertTrue(doc.html.contains("--owui-text:#F5F4EE"))
+        assertFalse(doc.html.contains("--owui-accent:#D97757"))
+        assertTrue(doc.html.contains("theme:'dark'"))
+    }
+
+    @Test
+    fun chartjsLibraryInlinesBeforeFragmentScripts() {
+        val chartJs = "var Chart=function(){};<" + "/script-needs-escaping>"
+        val without = CardDocument.build(vizCard(libraries = emptyList()), null, null, dark = false, chartJsSource = chartJs)!!
+        assertFalse(without.html.contains(chartJs))
+        val with = CardDocument.build(vizCard(libraries = listOf("chartjs")), null, null, dark = false, chartJsSource = chartJs)!!
+        // The source is inlined (escaped, so the raw `</script…` tail can't
+        // appear verbatim — asserted below); the unescapable prefix does.
+        assertTrue(with.html.contains("var Chart=function(){};"))
+        // The vendored lib must appear BEFORE the fragment's own scripts.
+        assertTrue(with.html.indexOf(chartJs) < with.html.indexOf("x()"))
+        // A "</script" inside the vendored text can't close its own tag early.
+        assertTrue(with.html.contains("<\\/script-needs-escaping>"))
+    }
 }

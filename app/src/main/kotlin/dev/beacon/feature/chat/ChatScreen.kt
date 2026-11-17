@@ -23,6 +23,7 @@ import androidx.compose.foundation.background
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -63,7 +64,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -111,6 +111,8 @@ data class ChatActions(
     val onSetBranch: (holderId: String, index: Int) -> Unit = { _, _ -> },
     val onRate: (messageId: String, rating: Int) -> Unit = { _, _ -> },
     val onShare: (messageId: String, text: String) -> Unit = { _, _ -> },
+    /** 0.3 edit-and-resend: the edited turn forks a fresh completion. */
+    val onEditResend: (messageId: String, newContent: String) -> Unit = { _, _ -> },
     /** Chat-level ⋮→ sheet actions. */
     val onShareChat: () -> Unit = {},
     val onCopyMarkdown: () -> Unit = {},
@@ -160,6 +162,10 @@ fun ChatScreen(
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
+    // 0.3 edit-and-resend: the sheet opens on a user-bubble tap; Send forks
+    // the edited turn through the engine (editAndRetry semantics).
+    var editingMessage by remember { mutableStateOf<ChatEngine.RenderMessage?>(null) }
+    fun closeEditor() { editingMessage = null }
 
     // §9.1 flick-to-refetch (VISIBLE, user request 2026-11-03): the flick
     // bounces the surface up and pops a sync circle; the silent sync runs
@@ -435,16 +441,16 @@ fun ChatScreen(
             }
             Column(topSegmentModifier) {
             // Tag chips under the title (server-generated; chat:tags events →
-            // Room row → engine state; middleware.py:3694-3715).
+            // Room row → engine state; middleware.py:3694-3715). One line, at
+            // most three — the full set lives in the data, not the chrome.
             if (state.engine.tags.isNotEmpty()) {
-                androidx.compose.foundation.layout.FlowRow(
+                Row(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                        .padding(horizontal = 16.dp, vertical = 2.dp),
                 ) {
-                    state.engine.tags.forEach { tag ->
+                    state.engine.tags.take(3).forEach { tag ->
                         Surface(
                             shape = androidx.compose.foundation.shape.RoundedCornerShape(999.dp),
                             color = MaterialTheme.colorScheme.surfaceVariant,
@@ -453,7 +459,8 @@ fun ChatScreen(
                                 tag,
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                maxLines = 1,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                             )
                         }
                     }
@@ -664,6 +671,7 @@ fun ChatScreen(
                         onReadAloud = actions.onReadAloud,
                         onRate = actions.onRate,
                         onShare = actions.onShare,
+                        onEdit = { editingMessage = messages[index] },
                         onPrompt = actions.onPrompt,
                         onSetBranch = actions.onSetBranch,
                         onDockCard = onDockCard,
@@ -709,19 +717,31 @@ fun ChatScreen(
             // 2026-11-06): the flick-up gesture + the Updated ✓ pill cover
             // the sync affordance; a permanent bottom button cluttered the
             // composer row.
-            // Context meter (context_usage from GET /{id}; verified shape in
-            // the clone): tokenized estimate vs the compaction threshold.
+            // De-clutter (0.3): the honesty line and the context meter share ONE
+            // muted row — meter percent (when known) rides its trailing end.
             val context = state.engine.contextUsage
-            if (context != null && (context.percent ?: 0) > 0) {
-                val pct = context.percent ?: 0
+            val contextPct = context?.percent?.takeIf { it > 0 }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+            ) {
                 Text(
-                    "Context $pct%" + (context.tokens?.let { " · ${it / 1000}k tokens" } ?: ""),
+                    "AI can make mistakes. Your server does the thinking.",
                     style = MaterialTheme.typography.labelMedium,
-                    color = if (pct >= 70) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 2.dp),
+                        .weight(1f)
+                        .padding(vertical = 2.dp),
                 )
+                if (contextPct != null) {
+                    Text(
+                        contextPct.toString() + "%" + (context?.tokens?.let { " · ${it / 1000}k" } ?: ""),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (contextPct >= 70) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             // §9.3 composer toggles REMOVED from above the composer (user
             // request 2026-11-06; mockup 01 fnote: "single-row composer, ⊕
@@ -755,15 +775,7 @@ fun ChatScreen(
                     modifier = Modifier.padding(horizontal = 14.dp),
                 )
             }
-            // Muted honesty line above the composer (interface copy).
-            Text(
-                "AI can make mistakes. Your server does the thinking.",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 2.dp),
-            )
+            // (The honesty + context row moved above the attachments block.)
             // The composer bar (interface copy, 2026-11-02): one rounded container,
             // attach left, draft middle, mic + dark send/stop circle right.
             // Temp mode: a DASHED outline (the Incognito copy, 2026-11-02).
@@ -947,6 +959,59 @@ fun ChatScreen(
             }
         }
     }
+
+    // 0.3 edit-and-resend (reference-app parity): tap a sent turn → the edit
+    // sheet; Send forks a fresh completion from the edited turn (the old
+    // branch parks, never deleted). Busy chats don't offer the sheet.
+    editingMessage?.let { editing ->
+        ModalBottomSheet(onDismissRequest = ::closeEditor) {
+            var editedDraft by remember(editing.id) {
+                mutableStateOf(editing.markdown)
+            }
+            Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 20.dp)) {
+                Text(
+                    "Edit message",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(bottom = 10.dp),
+                )
+                OutlinedTextField(
+                    value = editedDraft,
+                    onValueChange = { editedDraft = it },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 96.dp, max = 280.dp),
+                    minLines = 3,
+                )
+                if (state.engine.busy) {
+                    Text(
+                        "Wait for the current response to finish first.",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                ) {
+                    TextButton(onClick = ::closeEditor, modifier = Modifier.weight(1f)) {
+                        Text("Cancel")
+                    }
+                    Button(
+                        onClick = {
+                            val content = editedDraft.trim()
+                            if (content.isNotEmpty()) {
+                                closeEditor()
+                                actions.onEditResend(editing.id, content)
+                            }
+                        },
+                        enabled = editedDraft.isNotBlank() && editedDraft.trim() != editing.markdown.trim() && !state.engine.busy,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Send")
+                    }
+                }
+            }
+        }
+    }
 }
 
 /**
@@ -964,7 +1029,9 @@ private fun ModelMenuBody(
     onSetEffort: (String?) -> Unit = {},
 ) {
     val visible = state.models.filter {
-        query.isBlank() || it.name.contains(query, ignoreCase = true) || it.id.contains(query, ignoreCase = true)
+        // The admin's hide-from-picker flag (web parity: Selector.svelte:308,757 —
+        // `!(item.model?.info?.meta?.hidden ?? false)`; models.py:327-329 owns the flag).
+        !it.hidden && (query.isBlank() || it.name.contains(query, ignoreCase = true) || it.id.contains(query, ignoreCase = true))
     }
     Column {
                 // Effort row (Claude-app parity; wire: params.reasoning_effort,
@@ -1160,6 +1227,8 @@ private fun MessageBubble(
     onReadAloud: (messageId: String, text: String) -> Unit = { _, _ -> },
     onRate: (messageId: String, rating: Int) -> Unit = { _, _ -> },
     onShare: (messageId: String, text: String) -> Unit = { _, _ -> },
+    /** 0.3: tap on a user turn = edit-and-resend sheet. */
+    onEdit: () -> Unit = {},
     onPrompt: (String) -> Unit = {},
     /** Branch stepper / the version-tree fork (§4). */
     onSetBranch: (holderId: String, index: Int) -> Unit = { _, _ -> },
@@ -1190,6 +1259,7 @@ private fun MessageBubble(
                 onReadAloud = onReadAloud,
                 onRate = onRate,
                 onShare = onShare,
+                onEdit = onEdit,
                 onPrompt = onPrompt,
                 onSetBranch = onSetBranch,
                 onDockCard = onDockCard,
@@ -1209,6 +1279,7 @@ private fun MessageBubble(
             onReadAloud = onReadAloud,
             onRate = onRate,
             onShare = onShare,
+            onEdit = onEdit,
             onPrompt = onPrompt,
             onSetBranch = onSetBranch,
             onDockCard = onDockCard,
@@ -1231,20 +1302,26 @@ private fun MessageBody(
     onReadAloud: (messageId: String, text: String) -> Unit,
     onRate: (messageId: String, rating: Int) -> Unit,
     onShare: (messageId: String, text: String) -> Unit,
+    onEdit: () -> Unit = {},
     onPrompt: (String) -> Unit = {},
     onSetBranch: (holderId: String, index: Int) -> Unit,
     onDockCard: ((dev.beacon.core.render.ChatPart.HtmlCard) -> Unit)? = null,
 ) {
     if (message.role == "user") {
         // Right-hugging warm pill (user request 2026-11-03: sent turns belong
-        // on the right, Claude parity). Long-press = select/copy (v1).
+        // on the right, Claude parity). Tap = edit-and-resend (0.3); the text
+        // stays long-press selectable.
         Box(Modifier.fillMaxWidth()) {
             Surface(
                 color = MaterialTheme.colorScheme.surfaceVariant,
                 shape = UserBubbleShape,
                 modifier = Modifier
                     .widthIn(max = 320.dp)
-                    .align(Alignment.CenterEnd),
+                    .align(Alignment.CenterEnd)
+                    .combinedClickable(
+                        onClick = onEdit,
+                        onLongClick = { /* text-selection affordance below */ },
+                    ),
             ) {
                 androidx.compose.foundation.text.selection.SelectionContainer(Modifier) {
                     MiniMarkdown(
@@ -1284,76 +1361,76 @@ private fun MessageBody(
                 }
             }
 
-            // Assistant content footer (Claude parity 2026-11-03): the same six
-            // actions, muted-gray icons, generous pitch (~29dp measured).
+            // Assistant content footer (reference-app parity, 2026-11: ONE quiet
+            // row of compact glyph buttons — copy / read-aloud / share / rating /
+            // regen + the branch pager; 48dp buttons made every turn loom).
             if (!streaming) {
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     val iconTint = MaterialTheme.colorScheme.onSurfaceVariant
+                    @Composable
+                    fun footerIcon(res: Int, description: String, onClick: () -> Unit) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(androidx.compose.foundation.shape.CircleShape)
+                                .clickable(onClick = onClick),
+                        ) {
+                            androidx.compose.material3.Icon(
+                                androidx.compose.ui.res.painterResource(res),
+                                description,
+                                tint = iconTint,
+                                modifier = Modifier.size(17.dp),
+                            )
+                        }
+                    }
                     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
-                    IconButton(onClick = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(message.markdown)) }) {
-                        Icon(
-                            androidx.compose.ui.res.painterResource(dev.beacon.R.drawable.ic_copy),
-                            "Copy",
-                            tint = iconTint,
-                        )
+                    footerIcon(dev.beacon.R.drawable.ic_copy, "Copy") {
+                        clipboard.setText(androidx.compose.ui.text.AnnotatedString(message.markdown))
                     }
-                    IconButton(onClick = { onShare(message.id, message.markdown) }) {
-                        Icon(
-                            androidx.compose.ui.res.painterResource(dev.beacon.R.drawable.ic_share),
-                            "Share",
-                            tint = iconTint,
-                        )
+                    footerIcon(dev.beacon.R.drawable.ic_share, "Share") {
+                        onShare(message.id, message.markdown)
                     }
-                    IconButton(onClick = { onReadAloud(message.id, message.markdown) }) {
-                        Icon(
-                            androidx.compose.ui.res.painterResource(dev.beacon.R.drawable.ic_speaker),
-                            "Read aloud",
-                            tint = iconTint,
-                        )
+                    footerIcon(dev.beacon.R.drawable.ic_speaker, "Read aloud") {
+                        onReadAloud(message.id, message.markdown)
                     }
-                    IconButton(onClick = { onRate(message.id, 1) }) {
-                        Icon(
-                            androidx.compose.ui.res.painterResource(dev.beacon.R.drawable.ic_thumb_up),
-                            "Good response",
-                            tint = iconTint,
-                        )
+                    footerIcon(dev.beacon.R.drawable.ic_thumb_up, "Good response") {
+                        onRate(message.id, 1)
                     }
-                    IconButton(onClick = { onRate(message.id, -1) }) {
-                        Icon(
-                            androidx.compose.ui.res.painterResource(dev.beacon.R.drawable.ic_thumb_down),
-                            "Bad response",
-                            tint = iconTint,
-                        )
+                    footerIcon(dev.beacon.R.drawable.ic_thumb_down, "Bad response") {
+                        onRate(message.id, -1)
                     }
-                    IconButton(onClick = onRegenerate) {
-                        Icon(
-                            androidx.compose.ui.res.painterResource(dev.beacon.R.drawable.ic_regenerate),
-                            "Regenerate",
-                            tint = iconTint,
-                        )
-                    }
+                    footerIcon(dev.beacon.R.drawable.ic_regenerate, "Regenerate") { onRegenerate() }
                     // §4 branch stepper BESIDE the regen button (user request
                     // 2026-11-03): ‹ 2/3 › among this response's versions.
                     if (message.branchCount > 1) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(
-                                onClick = { onSetBranch(message.id, (message.branchIndex - 1 + message.branchCount) % message.branchCount) },
-                                modifier = Modifier.size(30.dp),
-                            ) {
-                                Text("‹", style = MaterialTheme.typography.titleMedium)
-                            }
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(androidx.compose.foundation.shape.CircleShape)
+                                    .clickable {
+                                        onSetBranch(message.id, (message.branchIndex - 1 + message.branchCount) % message.branchCount)
+                                    },
+                            ) { Text("‹", style = MaterialTheme.typography.titleMedium, color = iconTint) }
                             Text(
                                 "${message.branchIndex + 1}/${message.branchCount}",
                                 style = MaterialTheme.typography.labelMedium,
+                                color = iconTint,
                             )
-                            IconButton(
-                                onClick = { onSetBranch(message.id, (message.branchIndex + 1) % message.branchCount) },
-                                modifier = Modifier.size(30.dp),
-                            ) {
-                                Text("›", style = MaterialTheme.typography.titleMedium)
-                            }
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(androidx.compose.foundation.shape.CircleShape)
+                                    .clickable {
+                                        onSetBranch(message.id, (message.branchIndex + 1) % message.branchCount)
+                                    },
+                            ) { Text("›", style = MaterialTheme.typography.titleMedium, color = iconTint) }
                         }
                     }
                 }

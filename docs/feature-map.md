@@ -16,6 +16,7 @@ data flow behind it. Read alongside `CLAUDE.md` (OWUI feature audit) and
 | `settings/headers` | custom HTTP headers editor (ADR-0012) | `feature/settings/HeadersEditorScreen.kt` + `HeadersViewModel.kt` |
 | `surface/{key}` | key = `notes` / `memories` / `channels` / `files` / `workspace` | `feature/surfaces/*` (dispatch in `MainActivity.SurfaceRoute` :344) |
 | `folder/{id}/{name}/chats` | chats inside a folder | `feature/surfaces/FolderChatsScreen.kt` |
+| `archived` | archived chats browser (0.3): paged lite list + unarchive | `feature/surfaces/SurfaceWriteScreens.kt` (`ArchivedChatsScreen`) |
 | `note/{id}`, `note/new` | note editor (read/merge update) | `feature/surfaces/SurfaceWriteScreens.kt` |
 | `channel/{id}/{name}` | channel chat stream | `feature/surfaces/ChannelChatScreen.kt` |
 | `file/{fileId}/{name}/{mime}?server&path` | native file viewer (+ terminal files); `text/html` renders in a sandboxed pinch-zoom WebView | `feature/chat/FileViewerScreen.kt` + `HtmlFileView.kt` + `FileViewerViewModel.kt` |
@@ -55,6 +56,8 @@ key, recovery codes) → model pick.
 - Post-stream cleanup: `POST /api/chat/completed` (inline-filter aware)
 - Stop: `POST /api/tasks/chat/{chatId}/stop`
 - Edit message: `GET/POST /api/v1/chats/{id}/messages/{messageId}` (`updateMessageContent`, OwuiApi.kt:267)
+- Edit-and-resend (0.3): long/tap a user bubble → edit sheet → `ChatViewModel.editAndResend` → engine `editAndRetry` (replaces the turn in-place: duplicate-id-safe optimistic paint, truncated projection, fork block)
+- Visualization tool (0.3): the model's `render_visualization` calls fold to full-bleed HTML cards (`CardKind.Visualization`) — direct form and the `builtin:call_tool` dispatcher (`{"calls":[…]}`) both parse; chart.js inline from `assets/vendor/chartjs/4.6.1/` when requested (`PartBuilder.kt`, `CardDocument.visualizationDoc`, `HtmlCardPane.needsChartJs`)
 - Rating: `POST /api/v1/evaluations/feedback` (`rate`, OwuiApi.kt:281)
 - ask_user / tool approval resolve: `POST /api/v1/chats/{id}/messages/{messageId}/resolve` (`resolveToolCall`, OwuiApi.kt:336; tool_approval.py:16-20) — dialogs: `InputPromptDialog.kt`, `ToolApprovalDialog.kt`
 - New chat create-first: `POST /api/v1/chats/new` (`ChatsApi.create`, Chat.svelte:4829-4847 parity); else chat:list discovery
@@ -287,7 +290,7 @@ listed here:
 | Control | Acts on | Feature § / wire | Milestone |
 | --- | --- | --- | --- |
 | **+** header (new folder) | create dialog | POST /api/v1/folders/ §4 | live |
-| folder row | open folder chats | GET /api/v1/chats/folder/{id} §4 | live |
+| folder row | open folder chats | GET /api/v1/chats/folder/{id}/list?page=N (0.3: LITE paged rows — the full-tree /folder/{id} route OOM'd on large folders) §4 | live |
 | folder ⋯ | rename/update/delete | POST /update, DELETE /{id} §4 | live |
 | pinned section rows | open pinned chats | GET /api/v1/chats/pinned §3 | live |
 | chat row ⋯ | row-actions sheet (10.5 set) | §3 chat ops | live |

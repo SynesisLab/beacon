@@ -131,11 +131,35 @@ class WorkspaceApis @Inject constructor(
         ).await().use { it.isSuccessful }
     }
 
-    /** The folder's chats: GET /api/v1/chats/folder/{id} (chats.py:944-959). */
-    suspend fun folderChats(folderId: String): List<ChatPayload> = withContext(Dispatchers.IO) {
-        client.newCall(get("/api/v1/chats/folder/$folderId")).await()
-            .decodeJson(ListSerializer(ChatPayload.serializer()), json)
-    }
+    /**
+     * The folder's chats, LITE rows, paged: GET /api/v1/chats/folder/{id}/list?page=N
+     * (routers/chats.py:1025-1051 — ChatTitleIdResponse rows, limit 60/page on
+     * 0.6.x / 10 on newer servers; main.py response rows carry {title, id,
+     * updated_at, …}). The sibling /folder/{id} route returns FULL ChatResponse
+     * trees — every chat's whole history JSON — which the folder screen never
+     * renders; decoding a large folder OOM'd (0.3 report).
+     */
+    suspend fun folderChats(folderId: String, page: Int = 1): List<dev.beacon.core.api.dto.ChatsListRow> =
+        withContext(Dispatchers.IO) {
+            client.newCall(get("/api/v1/chats/folder/$folderId/list?page=$page")).await()
+                .decodeJson(ListSerializer(dev.beacon.core.api.dto.ChatsListRow.serializer()), json)
+        }
+
+    /** GET /api/v1/chats/archived?page=N → ChatTitleIdResponse rows
+     *  (routers/chats.py:324-358; limit 60, optional query/order_by/direction). */
+    suspend fun archivedChats(page: Int = 1): List<dev.beacon.core.api.dto.ChatsListRow> =
+        withContext(Dispatchers.IO) {
+            client.newCall(get("/api/v1/chats/archived?page=$page")).await()
+                .decodeJson(ListSerializer(dev.beacon.core.api.dto.ChatsListRow.serializer()), json)
+        }
+
+    /** GET /api/v1/configs/banners → [{id, type, title?, content, dismissible,
+     *  timestamp}] (routers/configs.py:505-510; models BannerModel config.py:1544-1551). */
+    suspend fun banners(): List<dev.beacon.core.api.dto.BannerRow> =
+        withContext(Dispatchers.IO) {
+            client.newCall(get("/api/v1/configs/banners")).await()
+                .decodeJson(ListSerializer(dev.beacon.core.api.dto.BannerRow.serializer()), json)
+        }
 
     /** POST /api/v1/notes/create {title, data{content{json,html,md}}} (notes.py:237).
      *  NOTE: NoteForm REJECTS `pages` in data (models/notes.py:474) — create with

@@ -32,8 +32,9 @@ belongs: on your server.
 - **Live streaming** over SSE / Socket.IO, with stop, regenerate, edit-and-resend, continue
 - **Full message tree** — sibling branches per message, real `‹n/N›` version steppers
 - **Markdown, reasoning traces, tool calls, citations, follow-ups, generated images**
+- **Interactive visualizations** — models can draw charts, diagrams, calculators and explainers right in the chat (the Open WebUI visualizations built-in tool; enable it per model under Builtin Tools)
 - **Inline HTML artifacts** — sandboxed WebViews that size themselves, scroll wide content, hand links to the browser
-- **Model control** — per-chat switching + reasoning effort (Default / Low / Medium / High)
+- **Model control** — per-chat switching + reasoning effort (Default / Low / Medium / High); server-hidden models stay hidden in the picker
 - **Composer toggles** — web search, image generation, code interpreter (capability-gated)
 - **Temporary chats** — ephemeral, never persisted
 - **Attachments** — camera / photos / documents, offline upload queue
@@ -45,7 +46,7 @@ belongs: on your server.
 - **Read-aloud** for any assistant turn (server TTS) with voice selection
 
 ### ✉ Everything Open WebUI has
-- **Chats home** — pins, folders, archive, date grouping, **server search** (offline fallback), tag chips
+- **Chats home** — pins, folders, date grouping, **server search** (offline fallback), tag chips; **archive browser** (view + unarchive) and **server banners** (dismissible announcements)
 - **Files** — uploads + terminal browsing; native viewers: images (pinch-zoom), PDFs (paged), text/code, audio/video, HTML
 - **Notes** — editor with merge-save, pins, swipe-delete
 - **Memories · Channels · Workspace** — all capability-gated

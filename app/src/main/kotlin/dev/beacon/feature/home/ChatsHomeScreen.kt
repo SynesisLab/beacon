@@ -1,10 +1,13 @@
 package dev.beacon.feature.home
 
 import android.content.Intent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -17,9 +20,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -42,6 +47,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import kotlin.math.roundToInt
@@ -53,6 +59,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.beacon.core.api.dto.BannerRow
 import dev.beacon.core.data.local.ChatEntity
 import dev.beacon.feature.chat.LandingCritter
 import java.time.Instant
@@ -75,8 +82,11 @@ data class ChatsHomeActions(
     val search: (String) -> Unit = {},
     val openChat: (String) -> Unit = {},
     val openFolderChats: (String, String) -> Unit = { _, _ -> },
+    /** 0.3: the Archived surface (GET /chats/archived + unarchive). */
+    val openArchived: () -> Unit = {},
     val newChat: () -> Unit = {},
     val pinToggle: (String) -> Unit = {},
+    val archive: (String) -> Unit = {},
     val delete: (String) -> Unit = {},
     /** Resolves POST /chats/{id}/share and fires the chooser (host-side). */
     val shareLink: suspend (String) -> Unit = {},
@@ -90,6 +100,8 @@ data class ChatsHomeActions(
 fun ChatsHomeScreen(
     state: ChatsHomeViewModel.UiState,
     actions: ChatsHomeActions,
+    banners: List<BannerRow> = emptyList(),
+    onDismissBanner: (String) -> Unit = {},
     /**
      * v4 FoldAware posture (beacon-foldable-design.md §3). Default PHONE = v3
      * unchanged. TABLETOP: the list occupies the FAR (top) pane and the ＋ New
@@ -167,6 +179,10 @@ fun ChatsHomeScreen(
             Column(listSegmentModifier) {
             SearchField(state.search, actions.search)
 
+            // Server banners (GET /api/v1/configs/banners, routers/configs.py:505):
+            // admin announcements above the list, web AlertBanner parity.
+            BannerStrip(banners, onDismissBanner)
+
             // Fetching latest chats: hairline indeterminate progress under the
             // search field — cached rows keep painting underneath.
             if (state.loading) {
@@ -197,6 +213,14 @@ fun ChatsHomeScreen(
                     contentPadding = PaddingValues(bottom = 96.dp, top = 4.dp),
                     modifier = Modifier.fillMaxSize(),
                 ) {
+                    // 0.3: the Archived surface entry (archive was toggle-only
+                    // before — archived chats were unreachable on the phone).
+                    item(key = "sect_archived_row") {
+                        ArchivedRow(
+                            count = state.chats.count { it.archived },
+                            open = actions.openArchived,
+                        )
+                    }
                     if (pinned.isNotEmpty()) {
                         item(key = "sect_pinned") { SectionLabel("Pinned") }
                         items(pinned, key = { "pin_" + it.chatId }) { chat ->
@@ -271,6 +295,10 @@ fun ChatsHomeScreen(
                 SheetRow(if (chat.pinned) "Unpin" else "Pin") {
                     menuChat = null
                     actions.pinToggle(chat.chatId)
+                }
+                SheetRow(if (chat.archived) "Unarchive" else "Archive") {
+                    menuChat = null
+                    actions.archive(chat.chatId)
                 }
                 SheetRow("Share link") {
                     menuChat = null
@@ -350,6 +378,96 @@ private fun SectionLabel(label: String) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(start = 20.dp, top = 18.dp, bottom = 6.dp),
     )
+}
+
+/**
+ * The home banner strip (GET /api/v1/configs/banners rows; web parity:
+ * AppHtml → the AlertBanner block above app content). Semantic accent dot:
+ * error→error / warning→tertiary / success→primary / else info→secondary.
+ * The ✕ appears only for dismissible=true rows (dismissal is device-side,
+ * ServerSettings.dismissedBannerIds — the wire has no per-user dismissed
+ * store, routers/configs.py:505-510).
+ */
+@Composable
+private fun BannerStrip(banners: List<BannerRow>, onDismiss: (String) -> Unit) {
+    banners.forEach { banner ->
+        val accent = when (banner.type) {
+            "error" -> MaterialTheme.colorScheme.error
+            "warning" -> MaterialTheme.colorScheme.tertiary
+            "success" -> MaterialTheme.colorScheme.primary
+            else -> MaterialTheme.colorScheme.secondary
+        }
+        Row(
+            verticalAlignment = Alignment.Top,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
+                .padding(start = 12.dp, end = 2.dp, top = 10.dp, bottom = 10.dp),
+        ) {
+            Box(
+                Modifier
+                    .padding(end = 10.dp)
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(accent),
+            )
+            Column(Modifier.weight(1f)) {
+                banner.title?.takeIf { it.isNotBlank() }?.let {
+                    Text(it, style = MaterialTheme.typography.labelLarge, color = accent)
+                }
+                if (banner.content.isNotBlank()) {
+                    Text(
+                        banner.content,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = if (banner.title != null) 2.dp else 0.dp),
+                    )
+                }
+            }
+            if (banner.dismissible) {
+                IconButton(onClick = { onDismiss(banner.id) }, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Filled.Close,
+                        contentDescription = "Dismiss banner",
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** The Archived surface entry — an archive-icon row under the search field. */
+@Composable
+private fun ArchivedRow(count: Int, open: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { open() }
+            .padding(start = 16.dp, end = 20.dp, top = 10.dp, bottom = 2.dp),
+    ) {
+        Text(
+            "\uD83D\uDCE6", // package/box glyph — the archive box
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 13.sp,
+            modifier = Modifier.width(24.dp),
+        )
+        Text(
+            "Archived",
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.weight(1f),
+        )
+        if (count > 0) {
+            Text(
+                "$count",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
 }
 
 /** Chat row: star marker (coral ✦ pinned / faint ◌), title · time · ⋯. */

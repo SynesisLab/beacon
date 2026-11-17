@@ -157,6 +157,28 @@ class ProtocolDecodeTest {
         assertEquals(2, page.copy(items = page.items.distinctBy { it.id }).items.size)
     }
 
+    // The admin hide-from-picker flag (models.py:327-329 persists meta.hidden;
+    // web Selector.svelte:308,757 filters `info.meta.hidden ?? false`).
+    @Test
+    fun models_hiddenFlagReadsBothMetaShapes() {
+        val page = json.decodeFromString<ModelsPage>(
+            """
+            {
+              "items": [
+                {"id": "a", "name": "A", "info": {"meta": {"hidden": true}}},
+                {"id": "b", "name": "B", "meta": {"hidden": true}},
+                {"id": "c", "name": "C", "info": {"meta": {"hidden": false}}},
+                {"id": "d", "name": "D"}
+              ],
+              "total": 4
+            }
+            """.trimIndent(),
+        )
+        assertEquals(listOf(true, true, false, false), page.items.map { it.hidden })
+        val visible = page.items.filter { !it.hidden }
+        assertEquals(listOf("c", "d"), visible.map { it.id })
+    }
+
     @Test
     fun storedMessageDecodesFollowUpsAndContextSummary() {
         // middleware.py:3646 writes followUps onto the stored message;

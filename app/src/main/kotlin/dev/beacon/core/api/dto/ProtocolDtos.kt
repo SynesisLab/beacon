@@ -175,6 +175,11 @@ data class OwuiModel(
 
     val default_skill_ids: List<String>
         get() = info?.meta?.skillIds ?: meta?.skillIds ?: emptyList()
+
+    /** Admin-hidden from the chat picker (web parity: Selector.svelte:308 —
+     *  `!(item.model?.info?.meta?.hidden ?? false)`; both shapes tolerated). */
+    val hidden: Boolean
+        get() = info?.meta?.hidden == true || meta?.hidden == true
 }
 
 @Serializable
@@ -191,6 +196,10 @@ data class OwuiModelMeta(
     val toolIds: List<String>? = null,
     val skillIds: List<String>? = null,
     val defaultFilterIds: List<String>? = null,
+    /** Admin model-edit "hidden" flag (models.py:327-329 — the editor writes
+     *  it, non-admin edits preserve it): the web selector drops hidden models
+     *  from the picker (Selector.svelte:308,757 — `info.meta.hidden ?? false`). */
+    val hidden: Boolean? = null,
 )
 
 @Serializable

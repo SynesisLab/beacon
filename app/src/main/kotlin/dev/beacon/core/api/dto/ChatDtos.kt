@@ -107,3 +107,19 @@ data class NewChatBody(
     val variables: Map<String, String> = emptyMap(),
     val folder_id: String? = null,
 )
+
+/**
+ * GET /api/v1/configs/banners rows (routers/configs.py:505-510; the model is
+ * BannerModel in backend config.py:1544-1551 — {id, type, title?, content,
+ * dismissible, timestamp}). type ∈ info|success|warning|error (web AppHtml
+ * banner styling); decoded tolerantly so a new type never breaks the list.
+ */
+@Serializable
+data class BannerRow(
+    val id: String,
+    val type: String = "info",
+    val title: String? = null,
+    val content: String = "",
+    val dismissible: Boolean = false,
+    val timestamp: Long? = null,
+)

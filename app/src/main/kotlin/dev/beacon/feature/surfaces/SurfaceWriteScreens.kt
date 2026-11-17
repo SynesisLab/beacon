@@ -60,13 +60,20 @@ import javax.inject.Inject
 @HiltViewModel
 class SurfaceWriteViewModel @Inject constructor(
     private val apis: WorkspaceApis,
+    private val chatsApi: dev.beacon.core.api.ChatsApi,
     private val socket: dev.beacon.core.network.socket.OwuiSocket,
 ) : ViewModel() {
 
     data class UiState(
         val busy: Boolean = false,
         val error: String? = null,
-        val folderChats: List<dev.beacon.core.api.dto.ChatPayload> = emptyList(),
+        /** Lite rows from the paged folder-list route (/folder/{id}/list) —
+         *  the full-tree route OOM'd on large folders (0.3 report). */
+        val folderChats: List<dev.beacon.core.api.dto.ChatsListRow> = emptyList(),
+        /** true = a page came back empty; the list is complete. */
+        val folderChatsExhausted: Boolean = false,
+        val archived: List<dev.beacon.core.api.dto.ChatsListRow> = emptyList(),
+        val archivedExhausted: Boolean = false,
         val channelMessages: List<ChannelMessageRow> = emptyList(),
         val note: Pair<String, String>? = null, // title to plain content
     )
@@ -92,19 +99,120 @@ class SurfaceWriteViewModel @Inject constructor(
         async { apis.renameFolder(folderId, name) }.invokeOnCompletion { onDone() }
     }
 
+    /**
+     * Folder chats, PAGED lite rows: the first [EAGER_PAGES] pages land with
+     * the initial screen (small folders complete in one round); the screen's
+     * scroll-end calls [loadMoreFolderChats]. The old single-shot full-tree
+     * fetch killed large folders (0.3 report): /folder/{id} returned every
+     * chat's whole history; the lite /list rows decode in microseconds.
+     */
     fun folderChats(folderId: String) {
+        activeFolderId = folderId
+        folderPage = 0
+        folderExhausted = false
         viewModelScope.launch {
-            set { copy(busy = true, error = null) }
+            set { copy(busy = true, error = null, folderChats = emptyList(), folderChatsExhausted = false) }
             try {
-                val chats = withTimeoutSafe { apis.folderChats(folderId) }
-                set { copy(busy = false, folderChats = chats ?: emptyList()) }
+                val rows = ArrayList<dev.beacon.core.api.dto.ChatsListRow>()
+                var exhausted = false
+                repeat(EAGER_PAGES) {
+                    if (exhausted) return@repeat
+                    val page = withTimeoutSafe { apis.folderChats(folderId, ++folderPage) }
+                    if (page == null) {
+                        set { copy(error = "Couldn't reach the folder list — pull to retry.") }
+                        return@launch
+                    }
+                    rows += page
+                    // A short page = no more data (60/page on 0.6.x, 10 on newer).
+                    if (page.size < PAGE_HINT) exhausted = true
+                }
+                set {
+                    copy(busy = false, folderChats = rows, folderChatsExhausted = exhausted)
+                }
             } catch (e: Exception) {
                 set { copy(busy = false, error = e.message) }
             }
         }
     }
 
-    // ── notes ────────────────────────────────────────────────────────────────
+    fun loadMoreFolderChats() {
+        val folderId = activeFolderId ?: return
+        if (folderExhausted || _state.value.busy || loadMoreRunning) return
+        loadMoreRunning = true
+        viewModelScope.launch {
+            try {
+                val page = runCatching { apis.folderChats(folderId, folderPage + 1) }.getOrNull()
+                if (page != null) {
+                    folderPage += 1
+                    if (page.size < PAGE_HINT || page.isEmpty()) folderExhausted = true
+                    set { copy(folderChats = folderChats + page, folderChatsExhausted = folderExhausted) }
+                }
+            } catch (_: Exception) {
+            } finally {
+                loadMoreRunning = false
+            }
+        }
+    }
+
+    /** The chat list may have moved in/out of the archive after unrearchiving. */
+    var activeFolderId: String? = null
+    private var folderPage = 0
+    private var folderExhausted = false
+    private var loadMoreRunning = false
+
+    // ── archived chats (0.3: the parity surface for OWUI's archive) ─────────
+
+    fun archivedChats() {
+        archivedPage = 0
+        archivedExhausted = false
+        viewModelScope.launch {
+            set { copy(busy = true, error = null, archived = emptyList(), archivedExhausted = false) }
+            try {
+                val rows = ArrayList<dev.beacon.core.api.dto.ChatsListRow>()
+                var exhausted = false
+                repeat(EAGER_PAGES) {
+                    if (exhausted) return@repeat
+                    val page = withTimeoutSafe { apis.archivedChats(++archivedPage) }
+                    if (page == null) return@launch
+                    rows += page
+                    if (page.size < PAGE_HINT) exhausted = true
+                }
+                set { copy(busy = false, archived = rows, archivedExhausted = exhausted) }
+            } catch (e: Exception) {
+                set { copy(busy = false, error = e.message) }
+            }
+        }
+    }
+
+    /** Unarchive = the same toggle route that archives (POST /{id}/archive). */
+    fun unarchiveChat(chatId: String, onDone: () -> Unit) {
+        viewModelScope.launch {
+            runCatching { chatsApi.archive(chatId) }
+            set { copy(archived = archived.filterNot { it.id == chatId }) }
+            onDone()
+        }
+    }
+
+    fun loadMoreArchivedChats() {
+        if (archivedExhausted || _state.value.busy || loadMoreRunning) return
+        loadMoreRunning = true
+        viewModelScope.launch {
+            try {
+                val page = runCatching { apis.archivedChats(archivedPage + 1) }.getOrNull()
+                if (page != null) {
+                    archivedPage += 1
+                    if (page.size < PAGE_HINT || page.isEmpty()) archivedExhausted = true
+                    set { copy(archived = archived + page, archivedExhausted = archivedExhausted) }
+                }
+            } catch (_: Exception) {
+            } finally {
+                loadMoreRunning = false
+            }
+        }
+    }
+
+    private var archivedPage = 0
+    private var archivedExhausted = false    // ── notes ────────────────────────────────────────────────────────────────
 
     fun loadNote(noteId: String) {
         viewModelScope.launch {
@@ -235,6 +343,13 @@ class SurfaceWriteViewModel @Inject constructor(
     } catch (_: Exception) {
         null
     }
+
+    companion object {
+        /** Pages requested eagerly for a paged list; the rest rides scroll-end. */
+        const val EAGER_PAGES = 3
+        /** A page at or below this = probably the last (10 = newer-server limit). */
+        const val PAGE_HINT = 10
+    }
 }
 
 // ── Surface screens (compose) ────────────────────────────────────────────────
@@ -335,7 +450,16 @@ fun FolderChatsScreen(
             state.error?.let {
                 Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp))
             }
-            LazyColumn {
+            val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+            // Scroll-end → the next lite page (large folders load > 1 page).
+            androidx.compose.runtime.LaunchedEffect(listState, state.folderChats.size) {
+                val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: return@LaunchedEffect
+                val total = state.folderChats.size
+                if (!state.folderChatsExhausted && total > 0 && last >= total - 4) {
+                    writeModel.loadMoreFolderChats()
+                }
+            }
+            LazyColumn(state = listState) {
                 items(
                     state.folderChats,
                     key = { it.id },
@@ -347,8 +471,22 @@ fun FolderChatsScreen(
                             .clickable { onOpenChat(chat.id) }
                             .padding(horizontal = 20.dp, vertical = 12.dp),
                     ) {
-                        Column {
-                            Text(chat.title.ifBlank { "Untitled" }, style = MaterialTheme.typography.titleMedium)
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                chat.title.ifBlank { "Untitled" },
+                                style = MaterialTheme.typography.titleMedium,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            )
+                            chat.updated_at?.let { ts ->
+                                epochToMillis(ts)?.let { ms ->
+                                    Text(
+                                        java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(ms)),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
                         }
                     }
                     HorizontalDivider()
@@ -356,6 +494,86 @@ fun FolderChatsScreen(
             }
             if (state.folderChats.isEmpty() && !state.busy) {
                 HintRow("No chats in this folder.")
+            }
+        }
+    }
+}
+
+/**
+ * Archived chats (0.3, OWUI parity): a paged lite list from
+ * GET /api/v1/chats/archived (chats.py:324-358); unarchive = the same
+ * toggle the row-actions sheet uses (POST /{id}/archive). Lives as its own
+ * destination so archived chats are findable without leaving the phone UI.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ArchivedChatsScreen(
+    writeModel: SurfaceWriteViewModel,
+    onBack: () -> Unit,
+    onOpenChat: (String) -> Unit,
+) {
+    val state by writeModel.state.collectAsStateWithLifecycle()
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        writeModel.archivedChats()
+    }
+    Scaffold(
+        topBar = { SurfaceTopBar("Archived", onBack) },
+    ) { padding ->
+        Column(Modifier.padding(padding).fillMaxSize()) {
+            if (state.busy) {
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            }
+            state.error?.let {
+                Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp))
+            }
+            val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+            androidx.compose.runtime.LaunchedEffect(listState, state.archived.size) {
+                val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: return@LaunchedEffect
+                val total = state.archived.size
+                if (!state.archivedExhausted && total > 0 && last >= total - 4) {
+                    writeModel.loadMoreArchivedChats()
+                }
+            }
+            LazyColumn(state = listState) {
+                items(
+                    state.archived,
+                    key = { it.id },
+                ) { chat ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onOpenChat(chat.id) }
+                            .padding(horizontal = 20.dp, vertical = 12.dp),
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                chat.title.ifBlank { "Untitled" },
+                                style = MaterialTheme.typography.titleMedium,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            )
+                            chat.updated_at?.let { ts ->
+                                epochToMillis(ts)?.let { ms ->
+                                    Text(
+                                        java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(ms)),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                        TextButton(onClick = { writeModel.unarchiveChat(chat.id) {} }) {
+                            Text("Unarchive")
+                        }
+                    }
+                    HorizontalDivider()
+                }
+            }
+            if (state.archived.isEmpty() && !state.busy) {
+                HintRow("Nothing archived. Chats you archive from a row's ⋯ menu land here.")
             }
         }
     }

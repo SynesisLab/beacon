@@ -184,6 +184,16 @@ class ChatEngine(
     /** Last fold arrival (any StreamEvent) — the hang-rescue clock (§9.1). */
     private var lastStreamActivityAt = 0L
     private var lastRoomWrite = 0L
+
+    // ── stream-fold emit throttle (0.3 perf) ────────────────────────────────
+    // Every Content token re-ran foldPartsFor → PartBuilder.build over the
+    // WHOLE accumulated message (Segmenter regexes included): O(n²) work
+    // across a stream — the "feels slow while long answers stream" report.
+    // The deltas append to the accumulators unconditionally; the PARTS fold
+    // (and its state emission) runs at most every FOLD_EMIT_INTERVAL_MS, and
+    // every structural event + finalize forces the flush, so nothing is lost.
+    private var lastFoldEmitAt = 0L
+    private var foldEmitPending = false
     private var lastSyncAt = 0L
     private var activeModelId: String? = null
     /** Request `params.reasoning_effort` (Chat.svelte:4420-4495); null = server
@@ -395,6 +405,36 @@ class ChatEngine(
             }
         }) }
 
+    /** The gated parts fold: tokens append fast; the render fold runs at most
+     *  every [FOLD_EMIT_INTERVAL_MS] (dirty-flag → the NEXT eligible event
+     *  flushes; finalize + structural events flush directly). */
+    private suspend fun foldPartsThrottled(id: String, transform: (RenderMessage) -> RenderMessage) {
+        val now = System.currentTimeMillis()
+        if (now - lastFoldEmitAt >= FOLD_EMIT_INTERVAL_MS) {
+            lastFoldEmitAt = now
+            foldEmitPending = false
+            foldPartsFor(id, transform)
+        } else {
+            foldEmitPending = true
+        }
+    }
+
+    /** Force a parts fold from the current accumulators (finalize / structural events).
+     *  Identity is NOT enough: the throttled transforms were DROPPED, so the
+     *  message-level markdown/reasoning fields are stale — rebuild them from the
+     *  accumulators (the parts fold already reads the same accumulators). */
+    private suspend fun flushFoldParts(id: String) {
+        if (!foldEmitPending) return
+        foldEmitPending = false
+        lastFoldEmitAt = System.currentTimeMillis()
+        foldPartsFor(id) {
+            it.copy(
+                markdown = assistantContent.toString(),
+                reasoning = assistantReasoning.toString(),
+            )
+        }
+    }
+
     /** Intent: send [text] with [modelId]; creates the chat server-side when fresh. */
     fun send(
         text: String,
@@ -509,6 +549,8 @@ class ChatEngine(
         streamJob?.cancel()
         val chatId = _state.value.chatId
         val id = _state.value.streamingMessageId
+        // The stop must paint the partial text the throttle hadn't folded yet.
+        if (id != null) scope.launch { flushFoldParts(id) }
         _state.value = _state.value.copy(
             streamingMessageId = null,
             busy = false,
@@ -699,7 +741,12 @@ class ChatEngine(
         val assistantMessageId = plan.continueAssistantId ?: UUID.randomUUID().toString()
 
         // Optimistic UI state; Room rows follow (fresh chats persist post chat:list).
+        // Edit-and-resend keeps the edited turn's id but REPLACES it in place
+        // (appending would collide the LazyColumn key with the old item).
         val userMessageId = plan.replaceUserMessageId ?: UUID.randomUUID().toString()
+        val editReplaceIndex = plan.replaceUserMessageId
+            ?.let { at -> visiblePath.indexOfFirst { it.id == at } }
+            ?.takeIf { it >= 0 }
         _state.value = _state.value.copy(
             busy = true,
             error = null,
@@ -720,14 +767,24 @@ class ChatEngine(
                         add(RenderMessage(assistantMessageId, MessageEntity.ROLE_ASSISTANT, pending = true))
                     }
                     else -> {
-                        addAll(visible)
-                        add(
-                            RenderMessage(
-                                userMessageId,
-                                MessageEntity.ROLE_USER,
-                                markdown = plan.text,
-                            ),
-                        )
+                        if (editReplaceIndex != null) {
+                            // History up to the edited turn, its content swapped;
+                            // everything after parks under the old branch.
+                            addAll(
+                                visiblePath.take(editReplaceIndex + 1).mapIndexed { i, m ->
+                                    if (i == editReplaceIndex) m.copy(markdown = plan.text) else m
+                                },
+                            )
+                        } else {
+                            addAll(visible)
+                            add(
+                                RenderMessage(
+                                    userMessageId,
+                                    MessageEntity.ROLE_USER,
+                                    markdown = plan.text,
+                                ),
+                            )
+                        }
                         add(RenderMessage(assistantMessageId, MessageEntity.ROLE_ASSISTANT, pending = true))
                     }
                 }
@@ -735,12 +792,23 @@ class ChatEngine(
         )
 
         if (!isNewChat && plan.continueAssistantId == null) {
-            if (plan.regenerate) {
+            // The fork parent: regen hangs the sibling from its user turn; an
+            // edited turn keeps its id and the fresh assistant forks UNDER it.
+            val editFork = plan.replaceUserMessageId != null && editReplaceIndex != null
+            val forkParentId: String? = when {
+                plan.regenerate -> userTurnId
+                editFork -> plan.replaceUserMessageId
+                else -> null
+            }
+            // The assistant NODE must exist in Room BEFORE the stream writes
+            // through (updateAssistantContent no-ops on a missing row — the
+            // streamed edit would never persist locally).
+            if ((plan.regenerate || editFork) && existingChatId != null && forkParentId != null) {
                 store.insertNode(
                     MessageEntity(
                         messageId = assistantMessageId,
-                        chatId = existingChatId!!,
-                        parentId = userTurnId,
+                        chatId = existingChatId,
+                        parentId = forkParentId,
                         role = MessageEntity.ROLE_ASSISTANT,
                         content = "",
                         done = false,
@@ -754,7 +822,7 @@ class ChatEngine(
             // streamed content into the EXISTING node) — device log
             // 2026-11-03: without this the fork orphaned itself
             // (parentId=null) and the user turn fell off the active path.
-            if (plan.regenerate && existingChatId != null) {
+            if ((plan.regenerate || editFork) && existingChatId != null) {
                 store.saveServerTree(existingChatId, assistantMessageId, plan.modelId)
                 pendingTreeSave = true
             }
@@ -1166,6 +1234,13 @@ class ChatEngine(
                 if (stopIndex >= 0) all.take(stopIndex + 1) else emptyList()
             }
             plan.continueAssistantId != null -> all // full branch including the assistant
+            plan.replaceUserMessageId != null -> {
+                // Edit-and-resend: the new completion sees the history UP TO the
+                // edited turn (new content), never the superseded answers after
+                // it (they park under the old branch with the regenerate fork).
+                val idx = all.indexOfFirst { it.id == plan.replaceUserMessageId }
+                if (idx >= 0) all.take(idx + 1) else all
+            }
             else -> all
         }
         return bounded
@@ -1233,13 +1308,13 @@ class ChatEngine(
             is StreamEvent.Content -> {
                 assistantContent.append(event.text)
                 reasoningActive = false // reasoning ended the moment content showed
-                foldPartsFor(assistantMessageId) { it.copy(markdown = assistantContent.toString(), reasoningActive = false) }
+                foldPartsThrottled(assistantMessageId) { it.copy(markdown = assistantContent.toString(), reasoningActive = false) }
                 maybeWriteThrough(chatId, assistantMessageId)
             }
             is StreamEvent.Reasoning -> {
                 assistantReasoning.append(event.text)
                 reasoningActive = true
-                foldPartsFor(assistantMessageId) { it.copy(reasoning = assistantReasoning.toString(), reasoningActive = true) }
+                foldPartsThrottled(assistantMessageId) { it.copy(reasoning = assistantReasoning.toString(), reasoningActive = true) }
             }
             is StreamEvent.Status -> patch { copy(statusText = if (event.done == true) null else event.text) }
             is StreamEvent.CompactionStatus ->
@@ -1300,6 +1375,7 @@ class ChatEngine(
             }
             is StreamEvent.ErrorSurface -> {
                 taskTerminated = true
+                flushFoldParts(assistantMessageId)
                 patch { copy(error = event.message) }
             }
             is StreamEvent.TerminalFileDisplay -> {
@@ -1312,6 +1388,7 @@ class ChatEngine(
             is StreamEvent.FinishReason, is StreamEvent.StreamDone -> {
                 taskTerminated = true
                 pendingDisplayPath = null
+                flushFoldParts(assistantMessageId)
             }
         }
     }
@@ -1365,6 +1442,9 @@ class ChatEngine(
 
     private suspend fun finalizeAssistant(assistantMessageId: String) {
         val now = System.currentTimeMillis()
+        // The throttle's tail: any un-flushed ≤48ms of tokens folds now — the
+        // final state never misses the stream's last words.
+        flushFoldParts(assistantMessageId)
         val chatId = _state.value.chatId
         if (chatId != null) {
             store.updateAssistantContent(
@@ -1525,6 +1605,9 @@ class ChatEngine(
     companion object {
         private const val CHUNK_BUFFER = 8192
         private const val ROOM_WRITE_INTERVAL_MS = 750L
+        /** Min spacing between parts-folds during token streams (perf: the O(n²)
+         *  re-segment per token is bounded; structural events flush directly). */
+        private const val FOLD_EMIT_INTERVAL_MS = 48L
         private const val SYNC_DEBOUNCE_MS = 1_000L
 
         /**

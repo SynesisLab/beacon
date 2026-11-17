@@ -96,6 +96,12 @@ object PartBuilder {
         json: Json,
     ): List<ChatPart> = buildList {
         val pendingCalls = HashMap<String, ChatPart.ToolCall>()
+        /** call_ids already emitted as Visualization cards (their outputs must
+         *  not fall through into junk tool rows). */
+        val vizDone = HashSet<String>()
+        /** Visualization calls still pending (a ToolCall row stands in until
+         *  the accepted output replaces it). */
+        val vizPending = HashSet<String>()
 
         items.forEach { raw ->
             val item = raw as? JsonObject ?: return@forEach
@@ -155,6 +161,21 @@ object PartBuilder {
                     if (name == "ask_user" && pending) {
                         return@forEach
                     }
+                    // The visualization built-in tool (tools/visualizations.py):
+                    // render_visualization {title, html, libraries?}[= or via the
+                    // builtin:call_tool dispatcher, below] → a full-bleed card,
+                    // never a JSON-dump tool row (web VisualizationToolCall.svelte).
+                    if (item.isVisualizationCall()) {
+                        val card = visualizationCard(callId, pending) {
+                            visualizationArgsFromCall(item)
+                        }
+                        if (card != null) {
+                            callId?.let { vizDone.add(it) }
+                            add(card)
+                            return@forEach
+                        }
+                        callId?.let { vizPending.add(it) }
+                    }
                     add(
                         ChatPart.ToolCall(
                             callId = callId,
@@ -197,6 +218,25 @@ object PartBuilder {
                     if (asFile != null) {
                         add(asFile)
                         return@forEach
+                    }
+                    // A completed visualization call's card replaced its pending
+                    // ToolCall row the moment the args fully arrived; the
+                    // {'status':'accepted'} output never becomes a junk row.
+                    if (callId != null && (callId in vizDone || callId in vizPending)) {
+                        val index = indexOfFirst { (it as? ChatPart.ToolCall)?.callId == callId }
+                        if (index >= 0) {
+                            val call = get(index) as ChatPart.ToolCall
+                            visualizationCard(callId, pending = false) {
+                                visualizationArgsFromRawCall(call.args)
+                            }?.let { card ->
+                                set(index, card)
+                                vizPending.remove(callId)
+                                vizDone.add(callId)
+                                return@forEach
+                            }
+                        } else {
+                            return@forEach
+                        }
                     }
                     // Attach the result onto the matching call part already collected.
                     val index = indexOfFirst { (it as? ChatPart.ToolCall)?.callId == callId }
@@ -252,3 +292,90 @@ internal fun unwrapInputTextParts(raw: JsonElement?): JsonElement {
 
 private fun JsonObject.statusInProgress(): Boolean =
     (this["status"] as? JsonPrimitive)?.content == "in_progress"
+
+// ── Visualization built-in tool (render_visualization) ──────────────────────
+
+/** Parsed {title, html, libraries?} arguments (parseVisualizationArguments parity,
+ *  src/lib/utils/visualizations/arguments.ts:11-31). */
+internal data class VisualizationArgs(val title: String, val html: String, val libraries: List<String>)
+
+/**
+ * Decodes a visualization call's arguments (string OR object form). Tolerant:
+ * partial/streaming JSON returns null — the tool-call row stands in until the
+ * full arguments snapshot arrives (the web's createStringFieldDecoder does the
+ * progressive decode for its live preview; Beacon renders once complete).
+ */
+internal fun visualizationArgsFromCall(item: JsonObject): VisualizationArgs? {
+    val raw = when (val args = item["arguments"]) {
+        is JsonPrimitive -> args.content
+        is JsonObject, is JsonArray -> args.toString()
+        else -> null
+    } ?: return null
+    return visualizationArgsFromRawCall(raw)
+}
+
+/** Same parse from an already-extracted raw arguments string (used when only
+ *  a stored ToolCall row survives, e.g. in the function_call_output branch). */
+internal fun visualizationArgsFromRawCall(raw: String): VisualizationArgs? {
+    visualizationArgsFromRaw(raw)?.let { return it }
+    // The batched builtin dispatcher (dispatch.ts): arguments =
+    // {"calls":[{tool_name:'render_visualization', params:{…}|"<json>"}]} —
+    // use the first visualization entry's params.
+    val root = runCatching { Json.parseToJsonElement(raw) }.getOrNull() as? JsonObject ?: return null
+    val calls = root["calls"] as? JsonArray ?: return null
+    for (entry in calls) {
+        val call = entry as? JsonObject ?: continue
+        if ((call["tool_name"] as? JsonPrimitive)?.content != "render_visualization") continue
+        val params = call["params"] ?: continue
+        val paramsRaw = (params as? JsonPrimitive)?.content ?: params.toString()
+        return visualizationArgsFromRaw(paramsRaw)
+    }
+    return null
+}
+
+internal fun visualizationArgsFromRaw(raw: String): VisualizationArgs? {
+    if (raw.isBlank()) return null
+    val obj = runCatching { Json.parseToJsonElement(raw) }.getOrNull() as? JsonObject ?: return null
+    val title = (obj["title"] as? JsonPrimitive)?.content?.trim()?.takeIf { it.isNotEmpty() }
+        ?: return null
+    val html = (obj["html"] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() } ?: return null
+    if (html.length > 256 * 1024) return null
+    val libraries = (obj["libraries"] as? JsonArray)
+        ?.mapNotNull { (it as? JsonPrimitive)?.content }
+        .orEmpty()
+    if (libraries.any { it != "chartjs" }) return null
+    return VisualizationArgs(title, html, libraries)
+}
+
+/** The tool's identity, both wire forms (dispatch.ts): a direct
+ *  `render_visualization` call, or the `builtin:call_tool` batch dispatcher. */
+internal fun JsonObject.isVisualizationCall(): Boolean {
+    if ((this["name"] as? JsonPrimitive)?.content == "render_visualization") return true
+    val toolId = (this["tool_id"] as? JsonPrimitive)?.content
+    if (toolId == "builtin:render_visualization") return true
+    if (toolId == "builtin:call_tool") {
+        val args = (this["arguments"] as? JsonPrimitive)?.content ?: return false
+        return args.contains("render_visualization")
+    }
+    return false
+}
+
+/**
+ * The call → its card: only for COMPLETED accepted calls with fully-arrived
+ * args (pending/partial → null, the tool-call row stands in meanwhile).
+ */
+internal fun visualizationCard(
+    callId: String?,
+    pending: Boolean,
+    args: () -> VisualizationArgs?,
+): ChatPart.HtmlCard? {
+    if (pending || callId.isNullOrBlank()) return null
+    val parsed = args() ?: return null
+    return ChatPart.HtmlCard(
+        id = "viz-" + callId,
+        html = parsed.html,
+        title = parsed.title,
+        kind = CardKind.Visualization,
+        libraries = parsed.libraries,
+    )
+}

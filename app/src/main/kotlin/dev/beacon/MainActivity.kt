@@ -356,8 +356,11 @@ private fun BeaconNavHost(
                     // The hoisted (activity-scoped) home VM = the SAME instance
                     // the sidebar reads — one source for recents/search.
                     val homeState = homeVm.ui.collectAsStateWithLifecycle().value
+                    val homeBanners = homeVm.banners.collectAsStateWithLifecycle().value
                     dev.beacon.feature.home.ChatsHomeScreen(
                         state = homeState,
+                        banners = homeBanners,
+                        onDismissBanner = homeVm::dismissBanner,
                         actions = dev.beacon.feature.home.ChatsHomeActions(
                             search = homeVm::setSearch,
                             openChat = { chat ->
@@ -368,8 +371,10 @@ private fun BeaconNavHost(
                             openFolderChats = { folderId, folderName ->
                                 nav.navigate("folder/$folderId/${android.net.Uri.encode(folderName)}/chats")
                             },
+                            openArchived = { nav.navigate("archived") },
                             newChat = { nav.navigate(ROUTE_CHAT_NEW) },
                             pinToggle = homeVm::togglePin,
+                            archive = homeVm::toggleArchive,
                             delete = homeVm::delete,
                             shareLink = { chatId ->
                                 homeVm.shareLink(chatId)?.let { link ->
@@ -516,6 +521,15 @@ private fun BeaconNavHost(
                     dev.beacon.feature.surfaces.FolderChatsScreen(
                         writeModel = writeVm,
                         folderName = android.net.Uri.decode(entry.arguments?.getString("name").orEmpty()),
+                        onBack = { nav.popBackStack() },
+                        onOpenChat = { chatId -> nav.navigate("chat/$chatId") },
+                    )
+                }
+                // Archived chats (0.3): GET /chats/archived lite rows + unarchive.
+                composable("archived") {
+                    val writeVm: dev.beacon.feature.surfaces.SurfaceWriteViewModel = hiltViewModel()
+                    dev.beacon.feature.surfaces.ArchivedChatsScreen(
+                        writeModel = writeVm,
                         onBack = { nav.popBackStack() },
                         onOpenChat = { chatId -> nav.navigate("chat/$chatId") },
                     )
@@ -881,6 +895,41 @@ private fun BeaconChatSurface(
         dockIndex = next.lastIndex
     }
     fun closeDock() { dockIndex = -1 }
+    /** v4 §2.4: book ≥840dp docks a tapped file into the companion pane;
+     *  phone navigates to the fullscreen viewer (the "-" placeholder trick). */
+    fun dockOrNavFile(
+        fileId: String,
+        name: String,
+        mime: String,
+        terminalServer: String?,
+        terminalPath: String?,
+    ) {
+        if (canDock) {
+            dock(dev.beacon.feature.chat.DockedArtifact(
+                id = "file:${fileId.ifBlank { "-" }}:$name",
+                kind = dev.beacon.feature.chat.DockedArtifact.Kind.File,
+                title = name,
+                fileId = fileId,
+                name = name,
+                mime = mime,
+                terminalServerId = terminalServer,
+                terminalPath = terminalPath,
+            ))
+            return
+        }
+        // Terminal files carry NO fileId — an empty path segment can't match
+        // the {fileId} nav pattern (NavController needs ≥1 char/segment; the
+        // old "file//…" tap silently died). "-" stands in and decodes back.
+        val id = fileId.ifBlank { "-" }
+        val base = "file/${android.net.Uri.encode(id)}/${android.net.Uri.encode(name)}/${android.net.Uri.encode(mime)}"
+        val suffix = buildString {
+            if (terminalServer != null) append("?server=${android.net.Uri.encode(terminalServer)}")
+            if (terminalPath != null) append(
+                (if (terminalServer == null) "?" else "&") + "path=${android.net.Uri.encode(terminalPath)}",
+            )
+        }
+        nav.navigate(base + suffix)
+    }
     // §2.4 lifecycle: fold back to phone → an open docked FILE becomes the
     // full-screen artifact route (state preserved, same content); a card just
     // collapses back inline (phone behavior).
@@ -940,72 +989,48 @@ private fun BeaconChatSurface(
                 }
             } else null,
             syncing = syncing,
-            actions = ChatActions(
-                onDraft = vm::setDraft,
-                onSend = vm::send,
-                onStop = vm::stop,
-                onOpenModelPicker = { pickerOpen = true },
-                onAttach = { addToChatOpen = true },
-                onRemoveAttachment = vm::removeAttachment,
-                onToggleWebSearch = vm::toggleWebSearch,
-                onToggleImageGeneration = vm::toggleImageGeneration,
-                onToggleCodeInterpreter = vm::toggleCodeInterpreter,
-                onToggleTemp = vm::toggleTempMode,
-                onSetReasoningEffort = vm::setReasoningEffort,
-                onMicTap = {
-                    if (vm.micPermissionGranted()) {
-                        vm.startDictation()
-                    } else {
-                        micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
-                    }
-                },
-                onMicStop = { vm.stopDictation() },
-                onSendPrompt = vm::sendPrompt,
-                onPrompt = vm::setDraft,
-                onReadAloud = { id, text -> vm.readAloud(id, text) },
-                onRegenerate = { id -> vm.regenerate(id) },
-                onSetBranch = { holderId, index -> vm.setBranch(holderId, index) },
-                onRate = { id, rating -> vm.rate(id, rating) },
-                onShare = { _, text -> vm.share(text) },
-                onShareChat = vm::shareChatLink,
-                onCopyMarkdown = vm::copyChatAsMarkdown,
-                onCopyJson = vm::copyChatAsJson,
-                onFlickRefetch = vm::flickRefetch,
-                onAppResume = vm::onAppResume,
-                onClearUpdatedPill = vm::clearUpdatedPill,
-                onOpenFile = { fileId, name, mime, terminalServer, terminalPath ->
-                    if (canDock) {
-                        // v4 §2.4: a file row tap DOCKS into the companion pane
-                        // (book ≥840dp) instead of navigating fullscreen.
-                        dock(dev.beacon.feature.chat.DockedArtifact(
-                            id = "file:${fileId.ifBlank { "-" }}:$name",
-                            kind = dev.beacon.feature.chat.DockedArtifact.Kind.File,
-                            title = name,
-                            fileId = fileId,
-                            name = name,
-                            mime = mime,
-                            terminalServerId = terminalServer,
-                            terminalPath = terminalPath,
-                        ))
-                        return@ChatActions
-                    }
-                    // Terminal files carry NO fileId — an empty path segment
-                    // can't match the {fileId} nav pattern (NavController needs
-                    // ≥1 char/segment; the old "file//…" tap silently died).
-                    // "-" stands in and decodes back to empty at the destination.
-                    val id = fileId.ifBlank { "-" }
-                    val base = "file/${android.net.Uri.encode(id)}/${android.net.Uri.encode(name)}/${android.net.Uri.encode(mime)}"
-                    val suffix = buildString {
-                        if (terminalServer != null) append("?server=${android.net.Uri.encode(terminalServer)}")
-                        if (terminalPath != null) append(
-                            (if (terminalServer == null) "?" else "&") + "path=${android.net.Uri.encode(terminalPath)}",
-                        )
-                    }
-                    nav.navigate(base + suffix)
-                },
-                onAnswerInput = vm::answerInput,
-                onCancelInput = vm::cancelInput,
-            ),
+            actions = androidx.compose.runtime.remember(canDock) {
+                ChatActions(
+                    onDraft = vm::setDraft,
+                    onSend = vm::send,
+                    onStop = vm::stop,
+                    onOpenModelPicker = { pickerOpen = true },
+                    onAttach = { addToChatOpen = true },
+                    onRemoveAttachment = vm::removeAttachment,
+                    onToggleWebSearch = vm::toggleWebSearch,
+                    onToggleImageGeneration = vm::toggleImageGeneration,
+                    onToggleCodeInterpreter = vm::toggleCodeInterpreter,
+                    onToggleTemp = vm::toggleTempMode,
+                    onSetReasoningEffort = vm::setReasoningEffort,
+                    onMicTap = {
+                        if (vm.micPermissionGranted()) {
+                            vm.startDictation()
+                        } else {
+                            micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+                        }
+                    },
+                    onMicStop = { vm.stopDictation() },
+                    onSendPrompt = vm::sendPrompt,
+                    onPrompt = vm::setDraft,
+                    onReadAloud = { id, text -> vm.readAloud(id, text) },
+                    onRegenerate = { id -> vm.regenerate(id) },
+                    onSetBranch = { holderId, index -> vm.setBranch(holderId, index) },
+                    onRate = { id, rating -> vm.rate(id, rating) },
+                    onShare = { _, text -> vm.share(text) },
+                    onEditResend = { id, content -> vm.editAndResend(id, content) },
+                    onShareChat = vm::shareChatLink,
+                    onCopyMarkdown = vm::copyChatAsMarkdown,
+                    onCopyJson = vm::copyChatAsJson,
+                    onFlickRefetch = vm::flickRefetch,
+                    onAppResume = vm::onAppResume,
+                    onClearUpdatedPill = vm::clearUpdatedPill,
+                    onOpenFile = { fileId, name, mime, terminalServer, terminalPath ->
+                        dockOrNavFile(fileId, name, mime, terminalServer, terminalPath)
+                    },
+                    onAnswerInput = vm::answerInput,
+                    onCancelInput = vm::cancelInput,
+                )
+            },
             showModelPicker = pickerOpen,
             onDismissPicker = { pickerOpen = false },
             onPickModel = { id ->

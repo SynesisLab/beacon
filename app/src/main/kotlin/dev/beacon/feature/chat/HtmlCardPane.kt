@@ -91,8 +91,25 @@ fun HtmlCardPane(
     var wide by remember(card.id) { mutableStateOf(false) }
     // Streaming repaints grow the html; rebuilding per delta keeps previews
     // honest (§7.1). The document remembers on the WHOLE card value.
-    val document = remember(card, instanceUrl, iframeCsp, dark) {
-        CardDocument.build(card, instanceUrl, iframeCsp, dark)
+    // Visualization cards inline the vendored Chart.js TEXT (the web fetches
+    // /visualizations/chart.umd.min.js — frame.ts getVisualizationVendor — and
+    // injects the source; a file: subresource script needs no CSP exception
+    // because Beacon's docs carry no meta CSP: the pane IS the policy).
+    val needsChartJs = card.kind == dev.beacon.core.render.CardKind.Visualization &&
+        "chartjs" in card.libraries
+    val paneContext = LocalContext.current
+    val chartJsSource = if (needsChartJs) {
+        remember(card.id) {
+            runCatching {
+                paneContext.assets.open("vendor/chartjs/4.6.1/chart.umd.min.js")
+                    .bufferedReader().use { it.readText() }
+            }.getOrNull()
+        }
+    } else {
+        null
+    }
+    val document = remember(card, instanceUrl, iframeCsp, dark, chartJsSource) {
+        CardDocument.build(card, instanceUrl, iframeCsp, dark, chartJsSource)
     }
 
     if (document != null) {
@@ -147,7 +164,9 @@ fun HtmlCardPane(
                     onWide = { w -> wide = w == 1 },
                     // The prompt channel is for server-provenanced tool cards
                     // only (Embed) — never raw model HTML (ADR-0013).
-                    onPrompt = if (card.kind == dev.beacon.core.render.CardKind.Embed) onPrompt else null,
+                    onPrompt = if (card.kind == dev.beacon.core.render.CardKind.Embed ||
+                        card.kind == dev.beacon.core.render.CardKind.Visualization
+                    ) onPrompt else null,
                 )
             }
             Row(

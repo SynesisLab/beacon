@@ -591,7 +591,9 @@ class ChatViewModel @Inject constructor(
         selected.value
             ?: session.settingsSnapshot().selectedModelId
             ?: serverDefault
-            ?: modelsState.value.firstOrNull()?.id
+            // A hidden model (admin hide-from-picker flag) never auto-resolves —
+            // the picker can't even show it (web Selector.svelte:308 parity).
+            ?: modelsState.value.firstOrNull { !it.hidden }?.id
 
     // ── voice  ───────────────────────────────────
 
@@ -625,6 +627,24 @@ class ChatViewModel @Inject constructor(
         } else {
             engine.regenerateAt(atMessageId, modelId, toolIds = tools, skillIds = skills)
         }
+    }
+
+    /**
+     * §4/§9.3 edit-and-resend (0.3: the screen finally wires it — the engine
+     * intent existed, no UI reached it): a sibling branch seeded by the edited
+     * user turn, then a fresh completion under it. The engine's busy-guard +
+     * optimistic pair cover the double-tap / mid-stream cases.
+     */
+    fun editAndResend(messageId: String, newContent: String) {
+        if (newContent.isBlank()) return
+        val modelId = resolveModel() ?: return
+        engine.editAndRetry(
+            messageId,
+            newContent,
+            modelId,
+            toolIds = toolSelection.value.toList(),
+            skillIds = skillSelection.value.toList(),
+        )
     }
 
     /** §4: the branch stepper's ◀/▶ (engine: leaf walk + server tree save). */

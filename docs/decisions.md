@@ -311,3 +311,34 @@ reusing the card sandbox keeps one origin policy for all untrusted HTML.
 **Consequences.** `FileViewerScreen` takes optional `httpClient` /
 `instanceUrl` (the companion pane passes its own; the fullscreen `file/…`
 route renders without auth-proxied subresources). File rows show a 🌐 icon.
+
+## ADR-0017 — Visualization tool cards reuse the card pane sandbox, not a meta-CSP iframe
+
+*Date:* 2026-11-11 · *Milestone:* 0.3 · *Source:* Open WebUI 0.6.19 visualizations built-in tool (`tools/visualizations.py`, web `VisualizationToolCall.svelte` + `src/lib/utils/visualizations/{frame,runtime,arguments,dispatch}.ts`)
+
+**Decision.** The model-emitted `render_visualization` builtin (charts /
+diagrams / calculators as model-authored HTML) folds in `PartBuilder` to a
+`CardKind.Visualization` HtmlCard and renders through the EXISTING §11 card
+pane: `CardDocument.visualizationDoc()` builds the document, `EmbedPolicy`
+enforces the same sandbox the Artifact cards get. Web parity details kept:
+the `--owui-background/surface/text/muted/border/accent` custom-property NAMES
+(bound to the Beacon palette so the doc renders unmodified OWUI experiments
+correctly), `window.openwebui.context` in, `window.openwebui.sendMessage`
+bridged to the composer prompt, chart.js inlined from
+`assets/vendor/chartjs/4.6.1/` when `libraries` contains `chartjs` (no CDN).
+
+**Why.** Web runs the doc in a `sandbox="allow-scripts"` iframe with
+`--owui-*` vars; Beacon's pane already implements that contract (ADR-0010
+sandbox levels, ADR-0016 file artifacts). A parallel mechanism would fork the
+origin policy; a meta-CSP variant would drop the height-measure + touch
+hand-off the pane provides. The `--owui-*` names (not Beacon's names) are the
+wire: OWUI visualization HTML targets them directly.
+
+**Consequences.** The card is as safe as every other tool-provided HTML card
+(no same-origin, no file access, popups external). `libraries: ["chartjs"]`
+pulls a ~200 KiB vendored bundle once per doc — acceptable for a per-model
+opt-in tool (it is OFF server-side by default). Model follow-ups via
+`sendMessage` are gated by the pane's existing `onPrompt` policy. JIT/preview
+streaming (OWUI aliases `visualization` → `preview` events) is NOT mirrored:
+Beacon renders once the call args are complete (test:
+`PartBuilderVisualizationTest`, `CardDocumentTest`).

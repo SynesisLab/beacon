@@ -38,6 +38,10 @@ sealed interface ChatPart {
         val sandboxLevel: SandboxLevel = SandboxLevel.UI,
         val minHeightDp: Int = 120,
         val interactive: Boolean = true,
+        /** Visualization built-in tool only: "chartjs" → the vendored Chart.js
+         *  text is inlined before the fragment scripts (the tool's `libraries`
+         *  argument; backend/open_webui/tools/visualizations.py — [] or ["chartjs"]). */
+        val libraries: List<String> = emptyList(),
     ) : ChatPart
 
     /** display_file / uploads / generated images (§7.3); terminal-file fields promoted to M2. */
@@ -108,6 +112,9 @@ enum class SandboxLevel { UI, MEDIA, TRUSTED }
 /**
  * Which builder produced an [ChatPart.HtmlCard] — the WebView-document switch:
  * Artifact/Embed = the model's or server's own HTML (isolated doc, height-only
- * bridge); Mermaid/Chart = Beacon-built vendor docs (full bridge), §7.2.
+ * bridge); Mermaid/Chart = Beacon-built vendor docs (full bridge), §7.2;
+ * Visualization = the OWUI built-in `render_visualization` tool output
+ * (tools/visualizations.py; web VisualizationToolCall.svelte) — a Beacon-built
+ * doc around the tool's HTML fragment (styles + optional Chart.js inline).
  */
-enum class CardKind { Artifact, Mermaid, Chart, Embed }
+enum class CardKind { Artifact, Mermaid, Chart, Embed, Visualization }

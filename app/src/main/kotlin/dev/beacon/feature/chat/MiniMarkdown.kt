@@ -404,6 +404,22 @@ object LinkOpener {
     }
 }
 
+/**
+ * One inline-marked text line, with the AnnotatedString CACHED per
+ * (text, caret, linkColor): the streaming bubble's earlier blocks stop
+ * re-scanning marks on every token (only the caret-bearing tail rebuilds).
+ */
+@Composable
+private fun InlineMarkedText(
+    raw: String,
+    caret: Boolean = false,
+    linkColor: androidx.compose.ui.graphics.Color,
+    style: androidx.compose.ui.text.TextStyle,
+) {
+    val annotated = remember(raw, caret, linkColor) { inlineText(raw, caret, linkColor) }
+    Text(text = annotated, style = style)
+}
+
 /** The orange starburst glyph: Claude's thinking marker (interface copy, 2026-11-02). */
 private const val STREAMING_CARET = "✳"
 
@@ -424,7 +440,12 @@ fun MiniMarkdown(
     val context = androidx.compose.ui.platform.LocalContext.current
     androidx.compose.runtime.remember(context) { run { LinkOpener.hold(context); true } }
     val linkColor = MaterialTheme.colorScheme.primary
-    val blocks = segmentMarkdown(markdown)
+    // MUST remember: this composable sits inside every message bubble, and the
+    // screen re-emits state per draft keystroke + per stream token — an
+    // un-remembered parse re-ran the segmenter over EVERY visible message per
+    // frame (the 0.3 "feels sluggish" report). Streaming bubbles re-parse only
+    // when their own markdown changes.
+    val blocks = remember(markdown) { segmentMarkdown(markdown) }
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         blocks.forEach { block ->
             when (block.kind) {
@@ -438,8 +459,10 @@ fun MiniMarkdown(
                             instanceUrl = instanceUrl,
                         )
                     } else {
-                        Text(
-                            text = inlineText(block.text, caret = streaming && block === blocks.last(), linkColor = linkColor),
+                        InlineMarkedText(
+                            raw = block.text,
+                            caret = streaming && block === blocks.last(),
+                            linkColor = linkColor,
                             style = MaterialTheme.typography.bodyLarge,
                         )
                     }
@@ -458,26 +481,24 @@ fun MiniMarkdown(
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                            Text(
-                                text = inlineText(
-                                    item.text,
-                                    caret = streaming && block === blocks.last() && index == block.items.lastIndex,
-                                    linkColor = linkColor,
-                                ),
+                            InlineMarkedText(
+                                raw = item.text,
+                                caret = streaming && block === blocks.last() && index == block.items.lastIndex,
+                                linkColor = linkColor,
                                 style = MaterialTheme.typography.bodyLarge,
                             )
                         }
                     }
                 }
-                BlockKind.Heading -> Text(
-                    text = inlineText(block.text, linkColor = linkColor),
+                BlockKind.Heading -> InlineMarkedText(
+                    raw = block.text,
+                    linkColor = linkColor,
                     style = when {
                         block.headingLevel <= 1 -> MaterialTheme.typography.headlineSmall
                         block.headingLevel == 2 -> MaterialTheme.typography.titleLarge
                         block.headingLevel == 3 -> MaterialTheme.typography.titleMedium
                         else -> MaterialTheme.typography.titleMedium
-                    },
-                    fontWeight = FontWeight.SemiBold,
+                    }.copy(fontWeight = FontWeight.SemiBold),
                 )
                 BlockKind.Code -> CodeBlock(text = block.text, language = block.language)
                 BlockKind.Table -> MarkdownTable(block)
@@ -537,8 +558,10 @@ private fun ParagraphWithImages(
         val lastIndex = segments.lastIndex
         segments.forEachIndexed { i, seg ->
             when (seg) {
-                is String -> Text(
-                    text = inlineText(seg, caret = caret && i == lastIndex, linkColor = linkColor),
+                is String -> InlineMarkedText(
+                    raw = seg,
+                    caret = caret && i == lastIndex,
+                    linkColor = linkColor,
                     style = MaterialTheme.typography.bodyLarge,
                 )
                 is MatchResult -> InlineImage(
@@ -652,7 +675,7 @@ private fun MarkdownTable(block: TextBlock) {
             Row {
                 row.forEachIndexed { c, cell ->
                     Text(
-                        text = inlineText(cell),
+                        text = remember(cell) { inlineText(cell) },
                         style = MaterialTheme.typography.bodyMedium,
                         textAlign = alignText(block.aligns.getOrElse(c) { 0 }),
                         modifier = Modifier.width(widths[c]),

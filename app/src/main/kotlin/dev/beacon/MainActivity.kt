@@ -889,6 +889,8 @@ private fun BeaconChatSurface(
     val canDock = posture.canDockArtifacts
     val fileVm: dev.beacon.feature.chat.FileViewerViewModel = hiltViewModel()
     var dockHistory by remember(chatIdArg) { mutableStateOf(listOf<dev.beacon.feature.chat.DockedArtifact>()) }
+    /** The last non-null dock — covers the pane's exit-animation frames. */
+    var lastDocked by remember { mutableStateOf<dev.beacon.feature.chat.DockedArtifact?>(null) }
     var dockIndex by remember(chatIdArg) { mutableStateOf(-1) }
     var paneFraction by rememberSaveable { mutableStateOf(0.45f) }
     val docked: dev.beacon.feature.chat.DockedArtifact? =
@@ -961,6 +963,7 @@ private fun BeaconChatSurface(
     // The Row is always present (thread takes weight 1 when nothing is docked)
     // so the chat area is never conditionally skipped.
     val dockedNow = canDock && docked != null
+    if (docked != null) lastDocked = docked
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
         val dockDensity = androidx.compose.ui.platform.LocalDensity.current
         // v4.1 split: pane min 280dp, thread floor 320dp; the rest is the pane.
@@ -1114,8 +1117,12 @@ private fun BeaconChatSurface(
                     onDoubleTap = { paneFraction = 0.5f.coerceIn(fMin, fMax) },
                 )
                 androidx.compose.foundation.layout.Box(Modifier.width(paneWidth)) {
+                    // Render-safe during the close animation: docked flips null a
+                    // frame before the pane leaves composition — the remembered
+                    // lastNonNull covers the exiting frames (no !!).
+                    val paneArtifact = docked ?: lastDocked ?: return@BoxWithConstraints
                     dev.beacon.feature.chat.CompanionPane(
-                        artifact = docked!!,
+                        artifact = paneArtifact,
                         historyIndex = dockIndex,
                         historySize = dockHistory.size,
                         onPrev = { if (dockIndex > 0) dockIndex = dockIndex - 1 },

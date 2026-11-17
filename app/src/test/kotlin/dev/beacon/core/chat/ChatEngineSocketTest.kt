@@ -134,7 +134,17 @@ class ChatEngineSocketTest {
             do {
                 delay(20)
             } while (engine.state.value.busy)
-            engine.state.value
+            // Settle window: busy drops on stream end, but the socket-level
+            // adoptions (chat:list → chatId/title) land a beat later on a busy
+            // test runner — read after two identical consecutive polls.
+            var prev: ChatEngine.ChatUiModel? = engine.state.value
+            while (true) {
+                delay(40)
+                val now = engine.state.value
+                if (now == prev) return@withTimeout now
+                prev = now
+            }
+            @Suppress("UNREACHABLE_CODE") engine.state.value
         }
 
         val assistantFinal = final.messages.last { it.role == "assistant" }

@@ -268,8 +268,62 @@ class BeaconCardWebView(context: Context) : WebView(context) {
     private var downY = 0f
     private var axis = AXIS_NONE
     private val slop = android.view.ViewConfiguration.get(context).scaledTouchSlop
+    private var pinchStartSpan = 0f
+    private var pinchStartZoom = settings.textZoom
+    /** True after a pinch while one finger is still down: swallow its tail. */
+    private var pinchTail = false
+
+    private fun spanOf(event: android.view.MotionEvent): Float {
+        if (event.pointerCount < 2) return 0f
+        val dx = event.getX(0) - event.getX(1)
+        val dy = event.getY(0) - event.getY(1)
+        return kotlin.math.sqrt(dx * dx + dy * dy)
+    }
 
     override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
+        // PINCH = the card's zoom: two-plus pointers scale the DOCUMENT TEXT
+        // (settings.textZoom, 50..250%) — reflowing, nothing is ever cropped.
+        // The stream is fully consumed while pinching: no page pan, no chat
+        // scroll, no drawer. Single-finger paths are untouched.
+        if (event.pointerCount >= 2) {
+            when (event.actionMasked) {
+                android.view.MotionEvent.ACTION_POINTER_DOWN,
+                android.view.MotionEvent.ACTION_DOWN,
+                -> {
+                    pinchStartSpan = spanOf(event)
+                    pinchStartZoom = settings.textZoom
+                    parent?.requestDisallowInterceptTouchEvent(true)
+                }
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    if (pinchStartSpan > 0f) {
+                        val zoom = (pinchStartZoom * (spanOf(event) / pinchStartSpan)).toInt().coerceIn(50, 250)
+                        if (zoom != settings.textZoom) settings.textZoom = zoom
+                    }
+                }
+                else -> Unit
+            }
+            if (event.actionMasked == android.view.MotionEvent.ACTION_POINTER_UP &&
+                event.pointerCount <= 2
+            ) {
+                // One finger remains after the pinch: swallow the rest of this
+                // gesture so the leftover finger can't pan the chat.
+                pinchTail = true
+            }
+            return true
+        }
+        if (pinchTail) {
+            when (event.actionMasked) {
+                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                    pinchTail = false
+                    axis = AXIS_NONE
+                    downX = event.x
+                    downY = event.y
+                    parent?.requestDisallowInterceptTouchEvent(false)
+                }
+                else -> Unit
+            }
+            return true
+        }
         when (event.actionMasked) {
             android.view.MotionEvent.ACTION_DOWN -> {
                 downX = event.x
@@ -303,12 +357,12 @@ class BeaconCardWebView(context: Context) : WebView(context) {
                     }
                 }
                 return when (axis) {
-                    AXIS_PASS_VERTICAL -> false // locked page-vertical → the chat list
+                    AXIS_PASS_VERTICAL -> false // locked page-vertical -> the chat list
                     AXIS_VERTICAL -> {
                         if (!canScrollVertically(1) && !canScrollVertically(-1)) {
                             // The document hit its scroll edge mid-drag: hand the
                             // REST of the gesture to the chat list (release the
-                            // claim first — a claimed-and-declined drag freezes
+                            // claim first - a claimed-and-declined drag freezes
                             // the page).
                             parent?.requestDisallowInterceptTouchEvent(false)
                             axis = AXIS_PASS_VERTICAL

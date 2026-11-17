@@ -134,14 +134,32 @@ fun CompanionPane(
                 DockedArtifact.Kind.Card -> {
                     val card = artifact.card
                     if (card != null && httpClient != null) {
-                        HtmlCardPane(
-                            card = card,
-                            client = httpClient,
-                            instanceUrl = instanceUrl,
-                            iframeCsp = iframeCsp,
-                            onPrompt = onPrompt,
-                            fillHeight = true, // docked: the pane owns the full height, not the 60% cap
-                        )
+                        // Phone-width render (user request 2026-11-17): the
+                        // docked card spans the FULL pane on an unfolded phone
+                        // (500-800dp) — the model's HTML lays out like a tablet
+                        // page and reads way out of scale. The cap makes the
+                        // WebView's layout viewport exactly a phone's width;
+                        // the card renders as it does inline on the phone.
+                        Box(
+                            Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.TopCenter,
+                        ) {
+                            androidx.compose.foundation.layout.BoxWithConstraints(
+                                Modifier.fillMaxSize(),
+                            ) {
+                                val phoneWidth = minOf(maxWidth, 412.dp)
+                                Box(Modifier.width(phoneWidth).fillMaxHeight()) {
+                                    HtmlCardPane(
+                                        card = card,
+                                        client = httpClient,
+                                        instanceUrl = instanceUrl,
+                                        iframeCsp = iframeCsp,
+                                        onPrompt = onPrompt,
+                                        fillHeight = true, // docked: the pane owns the full height, not the 60% cap
+                                    )
+                                }
+                            }
+                        }
                     } else {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Text("Card unavailable", color = MaterialTheme.colorScheme.onSurfaceVariant)

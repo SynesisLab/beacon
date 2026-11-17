@@ -734,21 +734,23 @@ private fun SurfaceRoute(
         )
         "channels" -> dev.beacon.feature.surfaces.ListSurfaceScreen(
             title = "Channels",
-            items = state.channels,
+            items = state.channels.filter { it.id.isNotEmpty() },
             loading = state.loading,
             error = state.error,
             rowKey = { it.id },
             onBack = onBack,
             onItem = { channel ->
                 nav.navigate(
-                    "channel/${channel.id}/${android.net.Uri.encode(channel.name)}",
+                    "channel/${channel.id}/${android.net.Uri.encode(channel.name ?: "")}",
                 )
             }
         ) { channel ->
             androidx.compose.foundation.layout.Column(
                 Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
             ) {
-                androidx.compose.material3.Text(channel.name, style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
+                channel.name?.let {
+                    androidx.compose.material3.Text(it, style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
+                }
                 channel.description?.let {
                     androidx.compose.material3.Text(
                         it,
@@ -760,7 +762,7 @@ private fun SurfaceRoute(
         }
         "files" -> dev.beacon.feature.surfaces.ListSurfaceScreen(
             title = "Files",
-            items = state.files,
+            items = state.files.filter { it.id.isNotEmpty() },
             loading = state.loading,
             error = state.error,
             rowKey = { it.id },
@@ -769,7 +771,7 @@ private fun SurfaceRoute(
                 // The file viewer is a real surface since M2-3; mime from the
                 // row's meta.content_type (files.py:54) so images render natively.
                 nav.navigate(
-                    "file/${android.net.Uri.encode(file.id)}/${android.net.Uri.encode(file.filename)}/" +
+                    "file/${android.net.Uri.encode(file.id)}/${android.net.Uri.encode(file.filename ?: "")}/" +
                         android.net.Uri.encode(file.meta?.content_type ?: "application/octet-stream"),
                 )
             },
@@ -777,7 +779,9 @@ private fun SurfaceRoute(
             androidx.compose.foundation.layout.Column(
                 Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
             ) {
-                androidx.compose.material3.Text(file.filename, style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
+                file.filename?.let {
+                    androidx.compose.material3.Text(it, style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
+                }
             }
         }
         "workspace" -> dev.beacon.feature.surfaces.WorkspaceScreen(

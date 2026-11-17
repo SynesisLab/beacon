@@ -587,13 +587,33 @@ class ChatViewModel @Inject constructor(
     private val toolSelection = MutableStateFlow(emptySet<String>())
     private val skillSelection = MutableStateFlow(emptySet<String>())
 
-    private fun resolveModel(): String? =
-        selected.value
-            ?: session.settingsSnapshot().selectedModelId
-            ?: serverDefault
-            // A hidden model (admin hide-from-picker flag) never auto-resolves —
-            // the picker can't even show it (web Selector.svelte:308 parity).
-            ?: modelsState.value.firstOrNull { !it.hidden }?.id
+    /**
+     * Web parity (utils/index.ts resolveDefaultModelIds + Chat.svelte
+     * normalizeSelectedModels): per-chat pick first, then the account's saved
+     * preference list (`$settings.models` — read from the synced user settings,
+     * every id validated against AVAILABLE models), then the first non-hidden
+     * model. Hidden models can never win a default — Selector.svelte:308.
+     */
+    private fun resolveModel(): String? {
+        val models = modelsState.value
+        fun available(id: String?): String? =
+            id?.takeIf { wanted -> models.any { it.id == wanted && !it.hidden } }
+                // The model list may not have arrived yet — accept the stored
+                // pick as-is until the list lands (never block a send on it).
+                ?: id?.takeIf { _ -> models.isEmpty() }
+        val pick = available(selected.value)
+            ?: session.settingsSnapshot().selectedModelId?.let { stored -> available(stored) }
+        if (pick != null) return pick
+        val prefs = userSettingsSnapshot?.get("models") as? kotlinx.serialization.json.JsonArray
+        prefs.orEmpty().forEach { pref ->
+            (pref as? kotlinx.serialization.json.JsonPrimitive)?.content?.let { id ->
+                available(id)?.let { return it }
+            }
+        }
+        // admin default_models (group-resolved server-side) → first available
+        serverDefault?.let { sd -> available(sd)?.let { return it } }
+        return models.firstOrNull { !it.hidden }?.id
+    }
 
     // ── voice  ───────────────────────────────────
 

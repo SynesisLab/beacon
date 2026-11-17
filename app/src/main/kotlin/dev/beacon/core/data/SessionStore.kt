@@ -149,6 +149,19 @@ class SessionStore @Inject constructor(
         secure.deleteAll()
         clearAuthExpired()
         _customHeaders.value = emptyMap()
-        update { ServerSettings() }
+        // Device-side preferences survive sign-out (theme, reasoning effort,
+        // nav rows, banner dismissals, the remembered DOMAIN + caches) — only
+        // auth + identity reset. The remembered serverUrl prefills the next
+        // sign-in (isOnboarded needs authMethod too, so the gate still holds).
+        update {
+            it.copy(
+                authMethod = AuthMethod.None,
+                serverVersion = null,
+                signedInEmail = null,
+                userName = null,
+                userRole = null,
+                selectedModelId = null,
+            )
+        }
     }
 }

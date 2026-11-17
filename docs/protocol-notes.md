@@ -302,3 +302,24 @@ and app-started chats got no LLM title. `firstTurn = !regenerate && !continue &&
 | Visualizations tool | NEW built-in tool `render_visualization(title, html, libraries=["chartjs"]?)`: models emit interactive charts/diagrams/calculators into the chat. Validates title 1-160 chars, html ≤256 KiB, returns `{'status':'accepted'}` on the SAME turn (the card's HTML travels in the call arguments, never as output). OFF by default — enabled per model under Builtin Tools; admins rewrite its instructions via Admin Settings › Interface › Visualization Prompt or `VISUALIZATION_PROMPT_TEMPLATE` | tools/visualizations.py; docs (0.6.19 release notes) |
 | Visualization dispatcher | The direct call (`render_visualization` args) AND a batched dispatcher form exist: a `builtin:call_tool` function_call whose arguments are `{"calls":[{tool_name, params}]}` — Beacon scans `calls[]` for name `render_visualization` and uses its `params` | viz_arguments.ts / dispatch.ts (fetched src/ capture) |
 | Visualization render contract (web) | Web renders in a sandboxed iframe (`sandbox="allow-scripts"`, srcdoc from `visualizationDocument()`): own CSS reset + `--owui-background/-surface/-text/-muted/-border/-accent` custom properties; `window.openwebui.context` (theme/colors) IN; `window.openwebui.sendMessage(text)` asks the parent to submit a follow-up; chart.js loaded when `libraries` includes `chartjs` | VisualizationToolCall.svelte; viz_frame.ts; viz_runtime.ts (src/ capture, .tmp/owui/) |
+
+## Default-model resolution (2026-11-11, the admin + user account default)
+
+| Topic | Finding | Proof |
+| --- | --- | --- |
+| Resolution order (web) | per-chat selection → the account's saved preference list `$settings.models` (string[]) → `$config.default_models` (comma-split) → FIRST AVAILABLE model; every preference id is validated against AVAILABLE before it wins | src/lib/utils/index.ts `resolveDefaultModelIds` (utils CreateChatList); Chat.svelte `normalizeSelectedModels(models, modelIds, $settings?.models, $config?.default_models?.split(','))` |
+| Available = non-hidden | `models.filter(m => !m.info?.meta?.hidden)` gates EVERY preference and the final fallback — hidden models can never win a default | utils/index.ts resolveDefaultModelIds; Selector.svelte:308 |
+| Admin default | `/api/config` `default_models` = group-resolved defaults when the user's groups define one, else `ui.default_models` (admin's Default Models setting) | main.py:2565 (`','.join(group_defaults) if group_defaults else config.get('ui.default_models')`); main.py:2366 resolve_group_default_models |
+| User default sync | the web POSTs its WHOLE settings object to `/api/v1/users/user/settings/update` (top-level spread) and GET /user/settings returns it whole — so the account's `models` preference list is a TOP-LEVEL key of the user-settings payload (backend stores it verbatim: UserSettings `ui: dict` with extra='allow') | src/lib/apis/users/index.ts `updateUserSettings` (body: JSON.stringify({...settings})); models/users.py UserSettings |
+
+Beacon: `ChatViewModel.resolveModel` is now that exact chain (device pick →
+user-settings `models` list → admin default → first non-hidden), each id
+validated against the available (non-hidden) model list when one has loaded.
+
+## Device-side persistence rules (app behavior, no wire change)
+
+- `SessionStore.signOut` clears ONLY auth (SecureStore) + identity/version —
+  remembered `serverUrl`, theme, reasoning effort, hidden nav rows, banner
+  dismissals, and the model-name/chip caches survive sign-out and re-auth
+  (user request 2026-11-11). A different-instance sign-in overwrites the URL.
+- The onboarding URL field prefills from the remembered `serverUrl`.

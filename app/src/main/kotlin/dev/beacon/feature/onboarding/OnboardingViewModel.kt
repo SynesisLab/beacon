@@ -62,7 +62,11 @@ class OnboardingViewModel @Inject constructor(
         val recoveryCodes: List<String> = emptyList(),
     )
 
-    private val _state = MutableStateFlow(UiState())
+    private val _state = MutableStateFlow(
+        // The remembered domain (survives sign-out — SessionStore.signOut keeps
+        // serverUrl): re-auth never re-types it. Blank on a first-ever launch.
+        UiState(urlDraft = session.settingsSnapshot().serverUrl),
+    )
     val state: StateFlow<UiState> = _state
 
     /** Bridge set from the nav host when onboarding completes. */

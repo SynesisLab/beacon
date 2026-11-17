@@ -43,6 +43,7 @@ key, recovery codes) → model pick.
 - `GET /api/v1/auths/` (session user, `sessionUser`), `GET /api/v1/models/list?page=1` (`models`)
 - MFA `/recover` = admin reset token only — deliberately a typed message.
 - Sign-out = **client-side** secure wipe (`SessionStore.signOut`, SessionStore.kt:148) — no server call. Any credentialed 401 (with `/api/config` still 200) sets `session.authExpired` → banner → sign-out (`core/network/Interceptors.kt`).
+- The remembered DOMAIN survives sign-out (`serverUrl` is kept; only auth + identity reset) → the URL field prefills on re-auth. Model resolution follows the WEB chain: device pick → user-settings `models` list → admin `default_models` → first available (every id gated to non-hidden models).
 
 ## 3. Chat surface (the core)
 

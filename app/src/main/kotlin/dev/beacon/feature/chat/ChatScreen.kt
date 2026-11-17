@@ -1364,7 +1364,15 @@ private fun MessageBody(
             // Assistant content footer (reference-app parity, 2026-11: ONE quiet
             // row of compact glyph buttons — copy / read-aloud / share / rating /
             // regen + the branch pager; 48dp buttons made every turn loom).
-            if (!streaming) {
+            // Patient loading (user report: a slow model read as "failed /
+            // returned empty" once the footer bar painted). Footer only when
+            // the turn has something to act on — an empty completion keeps
+            // the thinking burst instead. (The streaming fold parks a blank
+            // Markdown("") part on the message: not content.)
+            val hasFooterContent = message.markdown.isNotBlank() || parts.any { part ->
+                part !is dev.beacon.core.render.ChatPart.Markdown || part.md.isNotBlank()
+            }
+            if (!streaming && hasFooterContent) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(2.dp),

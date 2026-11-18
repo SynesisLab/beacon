@@ -86,11 +86,16 @@ fun HtmlCardPane(
     onDock: (() -> Unit)? = null,
     /** v4 §2.3b: docked in the companion pane → fill the pane height, not the 60% cap. */
     fillHeight: Boolean = false,
-    /** Phone-scale cap (decoupled per surface, 2026-11-17): opt-in surfaces
-     *  render cards at a phone layout viewport (412dp, centered) — a full-width
-     *  unfolded card reads out of scale. INLINE (chat flow) and DOCKED (companion
-     *  pane) both opt in; the Expand sheet stays full width: it is the big view. */
+    /** Phone-scale cap, per-surface opt-in: a surface that opts in renders
+     *  cards at a phone layout viewport (412dp, centered). Only the DOCKED
+     *  (companion pane) surface opts in — inline cards fill the chat width
+     *  (a capped inline card reads too small), and the Expand sheet stays
+     *  full width: it is the big view. */
     phoneWidthCap: Boolean = false,
+    /** Docked-pane shrink-to-fit: content wider than the pane is scaled down
+     *  (CSS zoom on the root, floor 0.4) instead of overflowing horizontally —
+     *  the pane's width becomes the layout width, not a scroll suggestion. */
+    shrinkToFit: Boolean = false,
 ) {
     val dark = LocalBeaconDark.current
     var heightDp by remember(card.id) { mutableStateOf(card.minHeightDp.dp) }
@@ -187,6 +192,7 @@ fun HtmlCardPane(
                         onPrompt = if (card.kind == dev.beacon.core.render.CardKind.Embed ||
                             card.kind == dev.beacon.core.render.CardKind.Visualization
                         ) onPrompt else null,
+                        shrinkToFit = shrinkToFit,
                     )
                 }
             }
@@ -250,6 +256,23 @@ fun HtmlCardPane(
 private val ExpandedCap = 4000.dp
 
 /**
+ * Pure decision for the card's VERTICAL touch branch: can the document still
+ * follow the finger (the pane consumes), or has it hit the drag direction's
+ * scroll edge (the gesture hands off to the chat list)? A finger moving DOWN
+ * reveals EARLIER doc content (needs up-capacity); moving UP reveals LATER
+ * content (needs down-capacity). A sub-pixel wiggle has no direction yet and
+ * keeps consuming. THE 0.3.2 "can't scroll down to see more" report: the old
+ * check demanded BOTH edges dead, so a document at its bottom kept eating
+ * upward drags and the page never advanced past the card.
+ */
+internal fun cardScrollFollows(fingerDy: Float, canScrollUp: Boolean, canScrollDown: Boolean): Boolean =
+    when {
+        fingerDy > 0.5f -> canScrollUp
+        fingerDy < -0.5f -> canScrollDown
+        else -> true
+    }
+
+/**
  * The seamlessness rule (the web's iframe in the page), with the 0.3.2 fix:
  * a locked axis is claimed ONCE per gesture and the claim is only taken when
  * THIS pane actually consumes the gesture.
@@ -279,6 +302,8 @@ class BeaconCardWebView(context: Context) : WebView(context) {
 
     private var downX = 0f
     private var downY = 0f
+    /** Per-move y sample for the direction-aware edge handoff. */
+    private var lastFingerY = 0f
     private var axis = AXIS_NONE
     private val slop = android.view.ViewConfiguration.get(context).scaledTouchSlop
     private var pinchStartSpan = 0f
@@ -376,6 +401,7 @@ class BeaconCardWebView(context: Context) : WebView(context) {
             android.view.MotionEvent.ACTION_DOWN -> {
                 downX = event.x
                 downY = event.y
+                lastFingerY = event.y
                 axis = AXIS_NONE
                 // let inner content (buttons, links) claim the stream first
                 return super.onTouchEvent(event)
@@ -391,9 +417,19 @@ class BeaconCardWebView(context: Context) : WebView(context) {
                     // The first crossing LOCKS the axis for the whole gesture —
                     // no per-move flip-flop (the stutter) and no mid-drag handoff.
                     axis = if (dy > dx) AXIS_VERTICAL else AXIS_HORIZONTAL
-                    if (axis == AXIS_VERTICAL && !canScrollVertically(1) && !canScrollVertically(-1)) {
-                        // The document fits its box — vertical belongs to the page.
-                        axis = AXIS_PASS_VERTICAL
+                    if (axis == AXIS_VERTICAL) {
+                        // DIRECTIONAL lock: the document has to be able to move
+                        // in the drag's direction (finger down = reveal earlier
+                        // doc content = scroll up). The drag is past the slop,
+                        // so the direction is known; a doc that fits its box,
+                        // or that sits exactly at that scroll edge, passes the
+                        // gesture straight to the chat list.
+                        val canFollow = cardScrollFollows(
+                            event.y - downY,
+                            canScrollUp = canScrollVertically(-1),
+                            canScrollDown = canScrollVertically(1),
+                        )
+                        if (!canFollow) axis = AXIS_PASS_VERTICAL
                     }
                     if (axis == AXIS_HORIZONTAL || axis == AXIS_VERTICAL) {
                         // Only CONSUMED gestures take the claim (a claimed-but-
@@ -407,16 +443,23 @@ class BeaconCardWebView(context: Context) : WebView(context) {
                 return when (axis) {
                     AXIS_PASS_VERTICAL -> false // locked page-vertical -> the chat list
                     AXIS_VERTICAL -> {
-                        if (!canScrollVertically(1) && !canScrollVertically(-1)) {
-                            // The document hit its scroll edge mid-drag: hand the
-                            // REST of the gesture to the chat list (release the
-                            // claim first - a claimed-and-declined drag freezes
-                            // the page).
+                        val moveDy = event.y - lastFingerY
+                        lastFingerY = event.y
+                        val canFollow = cardScrollFollows(
+                            moveDy,
+                            canScrollUp = canScrollVertically(-1),
+                            canScrollDown = canScrollVertically(1),
+                        )
+                        if (canFollow) {
+                            super.onTouchEvent(event)
+                        } else {
+                            // The document has nothing in the drag's direction:
+                            // hand the REST of the gesture to the chat list
+                            // (release the claim first - a claimed-and-declined
+                            // drag freezes the page).
                             parent?.requestDisallowInterceptTouchEvent(false)
                             axis = AXIS_PASS_VERTICAL
                             false
-                        } else {
-                            super.onTouchEvent(event)
                         }
                     }
                     else -> super.onTouchEvent(event)
@@ -444,6 +487,7 @@ private fun CardWebView(
     onHeight: (Float) -> Unit,
     onWide: (Int) -> Unit = {},
     onPrompt: ((String) -> Unit)? = null,
+    shrinkToFit: Boolean = false,
 ) {
     // Display-density key: a WebView bakes the density of the display it was
     // created on (its scale never hot-swaps) — an unfold from cover to the
@@ -459,6 +503,7 @@ private fun CardWebView(
             onHeight = onHeight,
             onWide = onWide,
             onPrompt = onPrompt,
+            shrinkToFit = shrinkToFit,
         )
     }
 }
@@ -473,6 +518,7 @@ private fun CardWebViewImpl(
     onHeight: (Float) -> Unit,
     onWide: (Int) -> Unit,
     onPrompt: ((String) -> Unit)?,
+    shrinkToFit: Boolean = false,
 ) {
     val context = LocalContext.current
     val webView = remember {
@@ -534,7 +580,7 @@ private fun CardWebViewImpl(
         webView.webChromeClient = PopupChromeClient(instanceUrl) { url ->
             mainViewNavigation(url, webView, instanceUrl, context)
         }
-        webView.webViewClient = EmbedWebViewClient(client, instanceUrl, onHeight, onWide)
+        webView.webViewClient = EmbedWebViewClient(client, instanceUrl, onHeight, onWide, shrinkToFit)
         onDispose {
             // The close-crash fix (0.3.2 report): destroy() on a WebView still
             // attached to a window (mid sheet-exit animation / interop declaim)
@@ -697,6 +743,9 @@ private class EmbedWebViewClient(
     private val onMeasuredHeight: ((Float) -> Unit)? = null,
     /** CSP-proof fallback for the shim's Beacon.wide report (oversize scroll). */
     private val onMeasuredWide: ((Int) -> Unit)? = null,
+    /** Scale shrunken content: zoom the root down when the document overflows
+     *  its width so it fits the pane instead of scrolling (docked pane). */
+    private val shrinkToFit: Boolean = false,
 ) : WebViewClient() {
     private val measureJs =
         "(function(){var d=document.scrollingElement||document.documentElement;" +
@@ -707,6 +756,20 @@ private class EmbedWebViewClient(
             "return h;})()"
     private val wideJs =
         "(function(){var d=document.documentElement;return (d && d.scrollWidth > d.clientWidth) ? 1 : 0;})()"
+    /**
+     * Shrink-to-fit pass (docked pane): when the document overflows its width,
+     * scale the root down (CSS zoom) by the overflow ratio — the host-side
+     * evaluateJavascript runs regardless of the document's CSP, so nonce-CSP'd
+     * cards get the same fit rule. Converges over the measure rounds (each pass
+     * multiplies by clientWidth/scrollWidth, re-read after the previous pass
+     * reflowed); the 0.4 floor gives up on absurdly wide content and leaves it
+     * to the oversize-scroll fallback (fade + hint row).
+     */
+    private val fitJs =
+        "(function(){try{var de=document.documentElement;" +
+            "var cw=de.clientWidth,sw=de.scrollWidth;" +
+            "if(sw>cw+1){var cur=parseFloat(de.style.zoom)||1;" +
+            "de.style.zoom=Math.max(0.4,cur*(cw/sw));}}catch(e){}return 0;})()"
 
     // Stability loop state: nonce-CSP'd cards (Frontier) can't run the injected
     // height shim, and their content lands LATE (staggered block animations +
@@ -746,19 +809,28 @@ private class EmbedWebViewClient(
     private fun measureLoop(view: WebView) {
         if (round++ > MEASURE_MAX_ROUNDS) return
         runCatching {
-            view.evaluateJavascript(measureJs) { value ->
-                val px = value?.trim()?.removeSurrounding("\"")?.toFloatOrNull()
-                if (px != null && px > 0f) onMeasuredHeight?.invoke(px)
-                if (px == prevHeight) stableRounds += 1 else stableRounds = 0
-                prevHeight = px ?: -1f
-                if (px != null && stableRounds < 2) {
-                    runCatching { view.postDelayed({ measureLoop(view) }, MEASURE_INTERVAL_MS) }
+            val measure: () -> Unit = {
+                view.evaluateJavascript(measureJs) { value ->
+                    val px = value?.trim()?.removeSurrounding("\"")?.toFloatOrNull()
+                    if (px != null && px > 0f) onMeasuredHeight?.invoke(px)
+                    if (px == prevHeight) stableRounds += 1 else stableRounds = 0
+                    prevHeight = px ?: -1f
+                    if (px != null && stableRounds < 2) {
+                        runCatching { view.postDelayed({ measureLoop(view) }, MEASURE_INTERVAL_MS) }
+                    }
+                }
+                onMeasuredWide?.let { cb ->
+                    view.evaluateJavascript(wideJs) { v ->
+                        v?.trim()?.removeSurrounding("\"")?.toIntOrNull()?.let(cb)
+                    }
                 }
             }
-            onMeasuredWide?.let { cb ->
-                view.evaluateJavascript(wideJs) { v ->
-                    v?.trim()?.removeSurrounding("\"")?.toIntOrNull()?.let(cb)
-                }
+            if (shrinkToFit) {
+                // Fit pass FIRST: the height/wide reads below must see the
+                // zoomed layout, not the overflow this pass is correcting.
+                view.evaluateJavascript(fitJs) { measure() }
+            } else {
+                measure()
             }
         }
     }

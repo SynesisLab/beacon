@@ -137,9 +137,12 @@ fun CompanionPane(
                         // Phone-width render (user request 2026-11-17): the docked
                         // card renders at a PHONE layout viewport (412dp, centered
                         // in the pane) — the unfolded pane's full width reads way
-                        // out of scale. Inline chat cards cap too (same
-                        // user request); the Expand sheet stays full width. The
-                        // surfaces' caps remain decoupled per call site.
+                        // out of scale. Inline chat cards fill the chat width
+                        // instead (the cap read too small there); the Expand sheet
+                        // stays full width. The surfaces' scales remain decoupled
+                        // per call site. Plus shrink-to-fit: content wider than
+                        // the pane scales down instead of overflowing (user
+                        // request: the docked card read "too big" / not fitting).
                         Box(Modifier.fillMaxSize()) {
                             HtmlCardPane(
                                 card = card,
@@ -149,6 +152,7 @@ fun CompanionPane(
                                 onPrompt = onPrompt,
                                 fillHeight = true, // docked: the pane owns the full height, not the 60% cap
                                 phoneWidthCap = true,
+                                shrinkToFit = true,
                             )
                         }
                     } else {

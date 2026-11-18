@@ -6,6 +6,10 @@ import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.Public
+import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -19,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -162,6 +167,8 @@ private fun BeaconNavHost(
             var sidebarMenuChat by remember { mutableStateOf<dev.beacon.core.data.local.ChatEntity?>(null) }
             var sidebarFolderCreate by remember { mutableStateOf(false) }
             suspend fun openSidebar() {
+                // The drawer reads the same feeds; refresh silently while it opens.
+                homeVm.refreshQuiet()
                 surfacesVm.refresh()
                 drawerState.open()
             }
@@ -237,7 +244,10 @@ private fun BeaconNavHost(
                 },
                 chatActions = { chat -> sidebarMenuChat = chat },
                 newChat = { nav.navigate(ROUTE_CHAT_NEW) },
-                expandDrawer = { navScope.launch { surfacesVm.refresh(); drawerState.open() } },
+                expandDrawer = {
+                    navScope.launch { surfacesVm.refresh(); drawerState.open() }
+                },
+                chatsPopoverOpened = { homeVm.refreshQuiet() },
                 search = homeVm::setSearch,
             )
 
@@ -357,6 +367,13 @@ private fun BeaconNavHost(
                     // the sidebar reads — one source for recents/search.
                     val homeState = homeVm.ui.collectAsStateWithLifecycle().value
                     val homeBanners = homeVm.banners.collectAsStateWithLifecycle().value
+                    // Re-fetch on every resume of this entry: returning from a
+                    // chat (title/tag changes on the server) shows fresh data —
+                    // the SurfaceRoute stale-list fix, same mechanism.
+                    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+                        homeVm.refreshQuiet()
+                        onPauseOrDispose { }
+                    }
                     dev.beacon.feature.home.ChatsHomeScreen(
                         state = homeState,
                         banners = homeBanners,
@@ -1078,6 +1095,8 @@ private fun BeaconChatSurface(
         }
         if (addToChatOpen) {
             val chatUi = vm.ui.collectAsStateWithLifecycle().value
+            val terminalServers by vm.terminalServers.collectAsStateWithLifecycle()
+            val selectedTerminal by vm.selectedTerminalId.collectAsStateWithLifecycle()
             AddToChatSheet(
                 toggles = chatUi.toggles,
                 gate = chatUi.featuresGate,
@@ -1087,6 +1106,10 @@ private fun BeaconChatSurface(
                 onToggleWeb = vm::toggleWebSearch,
                 onToggleImage = vm::toggleImageGeneration,
                 onToggleCode = vm::toggleCodeInterpreter,
+                terminalServers = terminalServers,
+                selectedTerminalId = selectedTerminal,
+                onToggleTerminal = vm::toggleOpenTerminal,
+                onSelectTerminal = vm::selectTerminal,
                 onDismiss = { addToChatOpen = false },
             )
         }
@@ -1142,24 +1165,60 @@ private fun BeaconChatSurface(
     } // BoxWithConstraints
 }
 
-/** One toggle row of the Add-to-chat sheet. */
+/** ⊕ sheet feature chip: icon + label in a bordered box. ON = filled with the
+ *  primary container (and ON-tinted icon/text), OFF = plain surface + outline. */
 @Composable
-private fun AddToChatToggleRow(label: String, checked: Boolean, onToggle: () -> Unit) {
-    androidx.compose.foundation.layout.Row(
-        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+private fun AddToChatFeatureChip(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    androidx.compose.material3.Surface(
+        onClick = onClick,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+        color = if (selected) {
+            androidx.compose.material3.MaterialTheme.colorScheme.primaryContainer
+        } else {
+            androidx.compose.material3.MaterialTheme.colorScheme.surface
+        },
+        border = androidx.compose.foundation.BorderStroke(1.dp, androidx.compose.material3.MaterialTheme.colorScheme.outline),
     ) {
-        Text(label, Modifier.weight(1f), style = androidx.compose.material3.MaterialTheme.typography.bodyLarge)
-        androidx.compose.material3.Switch(checked = checked, onCheckedChange = { onToggle() })
+        androidx.compose.foundation.layout.Row(
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = if (selected) {
+                    androidx.compose.material3.MaterialTheme.colorScheme.onPrimaryContainer
+                } else {
+                    androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                modifier = Modifier.size(18.dp),
+            )
+            Text(
+                label,
+                maxLines = 1,
+                style = androidx.compose.material3.MaterialTheme.typography.labelLarge,
+                color = if (selected) {
+                    androidx.compose.material3.MaterialTheme.colorScheme.onPrimaryContainer
+                } else {
+                    androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+        }
     }
 }
 
 /**
  * Mockup 05 — the ⊕ "Add to chat" sheet: Camera / Photos / Files tiles, then
- * the Web / Image / Code toggles (the chips' only home; server-gated rows
- * hide). feature-map §10.3.
+ * the Web / Image / Code / Terminal toggles (the chips' only home; server-gated
+ * rows hide). Terminal adds a server selector under its row (feature-map §10.4).
  */
 @androidx.compose.material3.ExperimentalMaterial3Api
+@kotlin.OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun AddToChatSheet(
     toggles: dev.beacon.feature.chat.ChatViewModel.Toggles,
@@ -1170,6 +1229,10 @@ private fun AddToChatSheet(
     onToggleWeb: () -> Unit,
     onToggleImage: () -> Unit,
     onToggleCode: () -> Unit,
+    terminalServers: List<dev.beacon.core.api.TerminalServer> = emptyList(),
+    selectedTerminalId: String? = null,
+    onToggleTerminal: () -> Unit = {},
+    onSelectTerminal: (String) -> Unit = {},
     onDismiss: () -> Unit,
 ) {
     androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -1201,9 +1264,88 @@ private fun AddToChatSheet(
                 }
             }
             androidx.compose.material3.HorizontalDivider()
-            if (gate?.enable_web_search == true) AddToChatToggleRow("Web search", toggles.webSearch, onToggleWeb)
-            if (gate?.enable_image_generation == true) AddToChatToggleRow("Image gen", toggles.imageGeneration, onToggleImage)
-            if (gate?.enable_code_interpreter == true) AddToChatToggleRow("Code interpreter", toggles.codeInterpreter, onToggleCode)
+            // Feature chips (icon + label in a box; the box highlights while
+            // the feature rides the next send). Terminal's server chips hang
+            // under it once the terminal toggle is on.
+            androidx.compose.foundation.layout.FlowRow(
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+            ) {
+                if (gate?.enable_web_search == true) {
+                    AddToChatFeatureChip(
+                        icon = Icons.Outlined.Public,
+                        label = "Web search",
+                        selected = toggles.webSearch,
+                        onClick = onToggleWeb,
+                    )
+                }
+                if (gate?.enable_image_generation == true) {
+                    AddToChatFeatureChip(
+                        icon = Icons.Outlined.Image,
+                        label = "Image gen",
+                        selected = toggles.imageGeneration,
+                        onClick = onToggleImage,
+                    )
+                }
+                if (gate?.enable_code_interpreter == true && !toggles.openTerminal) {
+                    AddToChatFeatureChip(
+                        icon = Icons.Outlined.Code,
+                        label = "Code interpreter",
+                        selected = toggles.codeInterpreter,
+                        onClick = onToggleCode,
+                    )
+                }
+                if (gate?.enable_tool_servers == true && !toggles.codeInterpreter) {
+                    AddToChatFeatureChip(
+                        icon = Icons.Outlined.Terminal,
+                        label = "Open terminal",
+                        selected = toggles.openTerminal,
+                        onClick = onToggleTerminal,
+                    )
+                }
+            }
+            if (toggles.openTerminal && gate?.enable_tool_servers == true) {
+                if (terminalServers.isEmpty()) {
+                    Text(
+                        "No terminal servers available for this account.",
+                        style = androidx.compose.material3.MaterialTheme.typography.labelMedium,
+                        color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    // Server selector: one chip per terminal server; the filled
+                    // chip is the one whose id rides the next send (terminal_id).
+                    androidx.compose.foundation.layout.FlowRow(
+                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+                        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+                    ) {
+                        terminalServers.forEach { server ->
+                            val selected = server.id == selectedTerminalId
+                            androidx.compose.material3.Surface(
+                                onClick = { onSelectTerminal(server.id) },
+                                shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+                                color = if (selected) {
+                                    androidx.compose.material3.MaterialTheme.colorScheme.primaryContainer
+                                } else {
+                                    androidx.compose.material3.MaterialTheme.colorScheme.surface
+                                },
+                                border = androidx.compose.foundation.BorderStroke(1.dp, androidx.compose.material3.MaterialTheme.colorScheme.outline),
+                            ) {
+                                Text(
+                                    server.name.ifBlank { server.id },
+                                    maxLines = 1,
+                                    style = androidx.compose.material3.MaterialTheme.typography.labelLarge,
+                                    color = if (selected) {
+                                        androidx.compose.material3.MaterialTheme.colorScheme.onPrimaryContainer
+                                    } else {
+                                        androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                    modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
             Text(
                 "Defaults pre-seeded from the server: user settings → model defaults → capabilities.",
                 style = androidx.compose.material3.MaterialTheme.typography.labelSmall,

@@ -68,6 +68,8 @@ data class RailActions(
     /** Rail glyph / popover header → expand the full v3 drawer over the content. */
     val expandDrawer: () -> Unit = {},
     val search: (String) -> Unit = {},
+    /** A chats-bearing popover is about to open — host refreshes the list. */
+    val chatsPopoverOpened: () -> Unit = {},
 )
 
 /** Fixed rail width — Material navigation-rail width, not a window percentage (§2.1). */
@@ -126,13 +128,13 @@ fun IconRail(
                 modifier = Modifier
                     .size(40.dp)
                     .background(MaterialTheme.colorScheme.surface, CircleShape)
-                    .clickable { popover = RailPopover.Search }
+                    .clickable { popover = RailPopover.Search; actions.chatsPopoverOpened() }
                     .semantics { testTag = "rail_search" },
             ) {
                 Text("⌕", fontSize = 17.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Spacer(Modifier.height(10.dp))
-            RailItem("chats", "◌", state.activeRow == "chats", "Chats") { popover = RailPopover.Chats }
+            RailItem("chats", "◌", state.activeRow == "chats", "Chats") { popover = RailPopover.Chats; actions.chatsPopoverOpened() }
             if ("notes" !in state.hiddenRows) RailItem("notes", "▤", state.activeRow == "notes", "Notes") { actions.goto("notes") }
             if ("files" !in state.hiddenRows) RailItem("files", "▥", state.activeRow == "files", "Files") { actions.goto("files") }
             if ("workspace" !in state.hiddenRows) RailItem("workspace", "▦", state.activeRow == "workspace", "Workspace") { actions.goto("workspace") }

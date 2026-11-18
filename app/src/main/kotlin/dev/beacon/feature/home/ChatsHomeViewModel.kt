@@ -60,6 +60,11 @@ class ChatsHomeViewModel @Inject constructor(
     private var page = 1
     private var exhausted = false
 
+    private companion object {
+        /** Cooldown for the ambient (quiet) list refreshes: 10s. */
+        const val QUIET_REFRESH_COOLDOWN_MS = 10_000L
+    }
+
     init {
         refresh()
         viewModelScope.launch {
@@ -163,6 +168,24 @@ class ChatsHomeViewModel @Inject constructor(
             } catch (_: Exception) {
                 exhausted = true
             }
+        }
+    }
+
+    /**
+     * Ambient refresh for the chats surfaces (drawer open, rail popover,
+     * home re-entry): throttled on [lastQuietRefreshAt] so repeated opens
+     * never hammer the list endpoint, silent — Room already shows the last
+     * known rows — and error-swallowed (offline = keep the cache, no banner).
+     */
+    private var lastQuietRefreshAt: Long = 0L
+
+    fun refreshQuiet() {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastQuietRefreshAt < QUIET_REFRESH_COOLDOWN_MS) return
+        lastQuietRefreshAt = now
+        viewModelScope.launch {
+            runCatching { repository.refreshChats(page = 1) }
+            runCatching { apis.folders() }
         }
     }
 

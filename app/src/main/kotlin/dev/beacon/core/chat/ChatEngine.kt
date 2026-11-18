@@ -444,11 +444,12 @@ class ChatEngine(
         temporary: Boolean = false,
         toolIds: List<String> = emptyList(),
         skillIds: List<String> = emptyList(),
+        terminalId: String? = null,
     ) {
         if (text.isBlank() || _state.value.busy) return
         launchStream {
             sendParams(text, modelId, toolIds = toolIds, skillIds = skillIds)
-                .copy(files = files, features = features, temporary = temporary)
+                .copy(files = files, features = features, temporary = temporary, terminalId = terminalId)
         }
     }
 
@@ -630,6 +631,9 @@ class ChatEngine(
         val continueAssistantId: String? = null,
         /** composer feature toggles (§9.3; server-gated) — the wire-typed set. */
         val features: Features? = null,
+        /** Open Terminal attach: the selected terminal server id (⊕ sheet
+         *  selector) — rides the request's top-level `terminal_id`. */
+        val terminalId: String? = null,
         /** The model's default workspace TOOLS + SKILLS (Chat.svelte:1121-1140:
          *  meta.toolIds ∪ sticky, meta.skillIds ∩ active) — the wire's
          *  tool_ids/skill_ids; empty = no tools selected. */
@@ -893,6 +897,7 @@ class ChatEngine(
             regeneration_prompt = null,
             assistant_message_id = plan.continueAssistantId,
             features = plan.features ?: Features(),
+            terminal_id = plan.terminalId,
             params = reasoningEffort?.takeIf { it.isNotBlank() }?.let { Params(reasoning_effort = it) },
             tool_ids = plan.toolIds,
             skill_ids = plan.skillIds,

@@ -207,6 +207,10 @@ data class Capabilities(
     val web_search: Boolean? = null,
     val image_generation: Boolean? = null,
     val code_interpreter: Boolean? = null,
+    /** Open Terminal (web MessageInput.svelte ModelCapability union: 'terminal').
+     *  Dropped silently before → a terminal-capable model never seeded the
+     *  composer's terminal toggle. */
+    val terminal: Boolean? = null,
 )
 
 /** GET /api/v1/auths/ — session user (auths.py:178; SessionUserInfoResponse). */

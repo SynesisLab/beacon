@@ -93,6 +93,32 @@ class CompletionRequestEncodeTest {
     }
 
     @Test
+    fun terminalAttachRidesOnlyWhenToggled() {
+        // Off: neither key rides the wire (explicitNulls omits both).
+        val plain = CompletionRequests.encode(
+            CompletionRequest(
+                model = "m1",
+                messages = listOf(ProjectionMessage.user("hi")),
+                id = "a1",
+            ),
+        )
+        assertFalse(plain.contains("terminal"))
+
+        // On: features.open_terminal + the selected server's terminal_id.
+        val attached = CompletionRequests.encode(
+            CompletionRequest(
+                model = "m1",
+                messages = listOf(ProjectionMessage.user("hi")),
+                id = "a1",
+                features = Features(open_terminal = true),
+                terminal_id = "ts-1",
+            ),
+        )
+        assertTrue(attached.contains("\"open_terminal\":true"))
+        assertTrue(attached.contains("\"terminal_id\":\"ts-1\""))
+    }
+
+    @Test
     fun reasoningEffortRidesParams() {
         // params.reasoning_effort — wire-verified (Chat.svelte:4420-4495;
         // docs/interface-mapping.md "reasoning effort = request params.reasoning_effort").

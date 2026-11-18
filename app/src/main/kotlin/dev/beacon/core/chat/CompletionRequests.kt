@@ -41,6 +41,10 @@ data class CompletionRequest(
     /** Continue: append to this assistant turn (Chat.svelte:4478). */
     val assistant_message_id: String? = null,
     val features: Features = Features(),
+    /** Open Terminal attach (Chat.svelte request body carries `terminal_id`,
+     *  docs/protocol-notes.md §body): the selected terminal server id.
+     *  Null = omitted — no terminal attached. */
+    val terminal_id: String? = null,
     /** Request `params` — carries `reasoning_effort` (Chat.svelte:4420-4495;
      *  docs/interface-mapping.md). Null = server default. */
     val params: Params? = null,
@@ -83,6 +87,10 @@ data class Features(
     val image_generation: Boolean = false,
     val web_search: Boolean = false,
     val code_interpreter: Boolean = false,
+    /** Open Terminal attach flag. Nullable on purpose: explicitNulls=false
+     *  omits it unless the user toggled terminal on, so unverified keys never
+     *  ride the default request. */
+    val open_terminal: Boolean? = null,
 )
 
 /** Chat.svelte:4489-4497 — title/tags only when fresh chat; follow-ups per setting. */

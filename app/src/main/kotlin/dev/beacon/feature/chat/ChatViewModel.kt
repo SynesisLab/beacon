@@ -40,6 +40,7 @@ class ChatViewModel @Inject constructor(
     private val session: SessionStore,
     @ApplicationContext private val appContext: Context,
     private val uploads: UploadQueue,
+    private val terminals: dev.beacon.core.api.TerminalsApi,
 ) : ViewModel() {
 
     data class Attachment(
@@ -182,6 +183,7 @@ class ChatViewModel @Inject constructor(
                 webSearch = "web" in seedIds,
                 imageGeneration = "image" in seedIds,
                 codeInterpreter = "code" in seedIds,
+                openTerminal = "terminal" in seedIds,
             )
         }
         viewModelScope.launch {
@@ -226,6 +228,7 @@ class ChatViewModel @Inject constructor(
                         if (toggles.value.webSearch) add("web")
                         if (toggles.value.imageGeneration) add("image")
                         if (toggles.value.codeInterpreter) add("code")
+                        if (toggles.value.openTerminal) add("terminal")
                     },
                 ),
                 cachedChipGates = dev.beacon.core.data.chipsCsv(
@@ -235,6 +238,7 @@ class ChatViewModel @Inject constructor(
                             if (gate.enable_web_search == true) add("web")
                             if (gate.enable_image_generation == true) add("image")
                             if (gate.enable_code_interpreter == true) add("code")
+                            if (gate.enable_tool_servers == true) add("tool_servers")
                         }
                     },
                 ),
@@ -250,6 +254,7 @@ class ChatViewModel @Inject constructor(
             enable_web_search = "web" in csv,
             enable_image_generation = "image" in csv,
             enable_code_interpreter = "code" in csv,
+            enable_tool_servers = "tool_servers" in csv,
         )
     }
 
@@ -305,6 +310,9 @@ class ChatViewModel @Inject constructor(
         val webSearch: Boolean = false,
         val imageGeneration: Boolean = false,
         val codeInterpreter: Boolean = false,
+        /** Open Terminal attach (⊕ sheet): the next send carries the selected
+         *  terminal server (terminal_id + features.open_terminal). */
+        val openTerminal: Boolean = false,
     )
 
     fun toggleWebSearch() {
@@ -316,7 +324,49 @@ class ChatViewModel @Inject constructor(
     }
 
     fun toggleCodeInterpreter() {
-        toggles.value = toggles.value.copy(codeInterpreter = !toggles.value.codeInterpreter)
+        val next = !toggles.value.codeInterpreter
+        toggles.value = toggles.value.copy(
+            codeInterpreter = next,
+            // Terminal/code share one slot (user request 2026-11-17): enabling
+            // the interpreter drops any terminal attach — the sheet hides its
+            // chip and nothing terminal-ish rides the send.
+            openTerminal = toggles.value.openTerminal && !next,
+        )
+    }
+
+    /** Open Terminal servers + the picked one (⊕ sheet selector). The list is
+     *  fetched when the toggle first turns on; failures leave it empty and a
+     *  re-toggle retries. */
+    private val terminalServersFlow = MutableStateFlow<List<dev.beacon.core.api.TerminalServer>>(emptyList())
+    private val selectedTerminalFlow = MutableStateFlow<String?>(null)
+    val terminalServers: StateFlow<List<dev.beacon.core.api.TerminalServer>> = terminalServersFlow
+    val selectedTerminalId: StateFlow<String?> = selectedTerminalFlow
+
+    fun toggleOpenTerminal() {
+        val next = !toggles.value.openTerminal
+        toggles.value = if (next) {
+            // Web parity: the terminal replaces the code interpreter, never rides with it.
+            toggles.value.copy(openTerminal = true, codeInterpreter = false)
+        } else {
+            toggles.value.copy(openTerminal = false)
+        }
+        if (next) refreshTerminalServers()
+    }
+
+    fun selectTerminal(id: String) {
+        selectedTerminalFlow.value = id
+    }
+
+    private fun refreshTerminalServers() {
+        viewModelScope.launch {
+            runCatching { terminals.servers() }.onSuccess { list ->
+                terminalServersFlow.value = list
+                val current = selectedTerminalFlow.value
+                if (current == null || list.none { it.id == current }) {
+                    selectedTerminalFlow.value = list.firstOrNull()?.id
+                }
+            }
+        }
     }
 
     fun toggleTempMode() {
@@ -331,11 +381,19 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch { session.update { it.copy(reasoningEffort = e) } }
     }
 
-    private fun currentFeatures(): dev.beacon.core.chat.Features = dev.beacon.core.chat.Features(
-        web_search = toggles.value.webSearch && (configFeaturesFlow.value?.enable_web_search ?: true),
-        image_generation = toggles.value.imageGeneration && (configFeaturesFlow.value?.enable_image_generation ?: true),
-        code_interpreter = toggles.value.codeInterpreter && (configFeaturesFlow.value?.enable_code_interpreter ?: true),
-    )
+    private fun currentFeatures(): dev.beacon.core.chat.Features {
+        // open_terminal stays NULL when off — the key is omitted from the wire
+        // entirely (unverified keys never ride default requests), true only
+        // when toggled on and the server exposes tool servers.
+        val terminalRides = toggles.value.openTerminal &&
+            (configFeaturesFlow.value?.enable_tool_servers ?: true)
+        return dev.beacon.core.chat.Features(
+            web_search = toggles.value.webSearch && (configFeaturesFlow.value?.enable_web_search ?: true),
+            image_generation = toggles.value.imageGeneration && (configFeaturesFlow.value?.enable_image_generation ?: true),
+            code_interpreter = toggles.value.codeInterpreter && (configFeaturesFlow.value?.enable_code_interpreter ?: true),
+            open_terminal = if (terminalRides) true else null,
+        )
+    }
 
     fun send() {
         val text = draft.value.trim()
@@ -344,7 +402,16 @@ class ChatViewModel @Inject constructor(
         val pending = attachments.value.toList()
         if (pending.isEmpty()) {
             draft.value = ""
-            engine.send(text, modelId, features = currentFeatures(), temporary = tempMode.value, toolIds = toolSelection.value.toList(), skillIds = skillSelection.value.toList())
+            engine.send(
+                text,
+                modelId,
+                features = currentFeatures(),
+                temporary = tempMode.value,
+                toolIds = toolSelection.value.toList(),
+                skillIds = skillSelection.value.toList(),
+                // Open Terminal attach: the picked server rides only while the toggle is on.
+                terminalId = selectedTerminalFlow.value.takeIf { toggles.value.openTerminal },
+            )
             return
         }
 
@@ -537,6 +604,7 @@ class ChatViewModel @Inject constructor(
                 "web_search" -> f.enable_web_search
                 "image_generation" -> f.enable_image_generation
                 "code_interpreter" -> f.enable_code_interpreter
+                "open_terminal" -> f.enable_tool_servers
                 else -> false
             } } == true
         }
@@ -544,10 +612,19 @@ class ChatViewModel @Inject constructor(
             "web_search" -> caps?.web_search
             "image_generation" -> caps?.image_generation
             "code_interpreter" -> caps?.code_interpreter
+            // model.capabilities.terminal — the Open Terminal default-on flag
+            // (MessageInput.svelte's ModelCapability union: 'terminal').
+            "open_terminal" -> caps?.terminal
             else -> false
         } == true }
         val on = { feature: String ->
-            (alwaysOnFeature(userSettingsSnapshot, feature) || ids.contains(feature) || capable(feature)) &&
+            // The model's default_feature_ids may spell the terminal either way
+            // (builtin name "open_terminal" or plain "terminal" — both seen).
+            val listed = when (feature) {
+                "open_terminal" -> ids.any { it == "open_terminal" || it == "terminal" }
+                else -> ids.contains(feature)
+            }
+            (alwaysOnFeature(userSettingsSnapshot, feature) || listed || capable(feature)) &&
                 gateOn(feature)
         }
         android.util.Log.d(
@@ -555,13 +632,25 @@ class ChatViewModel @Inject constructor(
             "model=$modelId own=$own global=$globalDefaultFeatureIds " +
                 "caps=$caps ui=${userSettingsSnapshot?.get("ui")} " +
                 "gate(webSearch=${gate?.enable_web_search},image=${gate?.enable_image_generation}," +
-                "code=${gate?.enable_code_interpreter})",
+                "code=${gate?.enable_code_interpreter},toolsrv=${gate?.enable_tool_servers})",
         )
+        // Open Terminal is FULLY model-driven (user request 2026-11-17):
+        // on iff the model's capabilities.default_feature_ids declare the
+        // terminal (id "open_terminal"/"terminal" or capabilities.terminal)
+        // and the server exposes tool servers — no sticky OR, so a model
+        // without it turns the attach back off.
+        val terminalOn = on("open_terminal")
         toggles.value = Toggles(
             webSearch = on("web_search") || toggles.value.webSearch,
             imageGeneration = on("image_generation") || toggles.value.imageGeneration,
-            codeInterpreter = on("code_interpreter") || toggles.value.codeInterpreter,
+            // Web parity (MessageInput.svelte:1015): terminal and code
+            // interpreter are mutually exclusive — terminal active wins.
+            codeInterpreter = !terminalOn && (on("code_interpreter") || toggles.value.codeInterpreter),
+            openTerminal = terminalOn,
         )
+        if (toggles.value.openTerminal && terminalServersFlow.value.isEmpty()) {
+            refreshTerminalServers()
+        }
         // The model's default TOOLS + SKILLS selections (Chat.svelte:1121-1140):
         // meta.toolIds (or the caller's settings.tools when the meta has none),
         // meta.skillIds — carried monotone-sticky across model changes until

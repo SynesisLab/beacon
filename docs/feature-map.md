@@ -270,6 +270,7 @@ listed here:
 | Attach Webpage row | URL fetch → upload | FilesApi §3 | M5 |
 | Add to folder row | pick folder for this chat | folders §4 + tree save §3 | live |
 | Web/Image/Code toggles | same flags as 10.2 chips | §3 defaults chain | M3 |
+| Terminal toggle | attach a terminal to the next send; selector picks the server (id rides `terminal_id`, flag rides `features.open_terminal`). Default = model-driven: `capabilities.terminal` / `terminal`-ish `default_feature_ids`, gated by `enable_tool_servers`; mutually exclusive with code interpreter (web MessageInput parity) | `/api/v1/terminals/` for the server list | live |
 
 ### 10.5 Drawer (ChatsDrawer §1)
 
